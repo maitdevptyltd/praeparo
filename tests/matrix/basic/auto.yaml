@@ -1,0 +1,15 @@
+type: matrix
+title: "Automatic Documents"
+
+rows:
+  - "{{MortMgrName}} ({{FundingChannelTypeName}})" # inline row template → infers fields
+
+values:
+  - id: "percent_sent_auto"
+    label: "% sent"
+    format: "percent:0"
+  - id: "avg_time_sec"
+    label: "hh:mm:ss"
+    format: "duration:hms"
+
+totals: off
