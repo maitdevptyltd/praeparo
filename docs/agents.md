@@ -14,6 +14,11 @@ This guide keeps Codex/agents aligned while evolving the Praeparo proof of conce
 3. Coordinate schema changes with generated JSON schema updates so IDE IntelliSense stays accurate.
 4. Use mock data providers and clear TODOs when live integrations are deferred.
 
+## Testing & Tooling
+- Use the Poetry environment for local commands: `poetry install` and `poetry run pytest`.
+- `pytest` relies on `pytest.ini` for root import paths; keep it in sync if the package layout changes.
+- When new CLI features arrive, add smoke tests or fixture updates so `poetry run pytest` stays green.
+
 ## Handoff Checklist
 - Ensure open tasks are captured in "Next Steps" of the latest timeline entry.
 - Mention pending approvals or environment constraints.
