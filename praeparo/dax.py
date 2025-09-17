@@ -22,7 +22,7 @@ SHOW_AS_PERCENT_COLUMN_TOTAL = "percent of column total"
 
 
 def _escape_label(label: str) -> str:
-    return label.replace('"', '""')
+    return label.replace('\"', '\"\"')
 
 
 def _format_measure(identifier: str) -> str:
@@ -37,11 +37,15 @@ def _apply_show_as(show_as: str | None, measure: str, row_fields: Sequence[Field
         return measure
 
     normalized = show_as.strip().lower()
-    if normalized == SHOW_AS_PERCENT_COLUMN_TOTAL:
-        removers = ", ".join(f"REMOVEFILTERS({field.dax_reference})" for field in row_fields)
-        if removers:
-            return f"DIVIDE({measure}, CALCULATE({measure}, {removers}))"
-        return f"DIVIDE({measure}, CALCULATE({measure}))"
+    if normalized == SHOW_AS_PERCENT_COLUMN_TOTAL and row_fields:
+        clauses = []
+        primary = row_fields[-1]
+        clauses.append(f"REMOVEFILTERS({primary.dax_reference})")
+        for field in row_fields[:-1]:
+            target = field.table or field.dax_reference
+            clauses.append(f"REMOVEFILTERS({target})")
+        arguments = ", ".join(clauses)
+        return f"DIVIDE({measure}, CALCULATE({measure}, {arguments}))"
 
     return measure
 
@@ -50,7 +54,7 @@ def build_matrix_query(config: MatrixConfig, row_fields: Sequence[FieldReference
     """Construct a simple SUMMARIZECOLUMNS query for the given matrix configuration."""
 
     ordered_rows = tuple(row_fields)
-    row_lines: list[str] = [f'"{reference.placeholder}", {reference.dax_reference}' for reference in ordered_rows]
+    row_lines: list[str] = [reference.dax_reference for reference in ordered_rows]
 
     value_lines: list[str] = []
     measure_names: list[str] = []
@@ -59,7 +63,7 @@ def build_matrix_query(config: MatrixConfig, row_fields: Sequence[FieldReference
         measure = _format_measure(value.id)
         expression = _apply_show_as(value.show_as, measure, ordered_rows)
         measure_names.append(measure)
-        value_lines.append(f'"{alias}", {expression}')
+        value_lines.append(f'\"{alias}\", {expression}')
 
     inner_parts: list[str] = []
     inner_parts.extend(row_lines)
