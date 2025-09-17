@@ -53,6 +53,27 @@ def test_build_matrix_query_supports_expression_filter(snapshot) -> None:
     assert plan.define is None
 
 
+
+def test_build_matrix_query_includes_hidden_rows_in_dax(snapshot) -> None:
+    config = MatrixConfig(
+        type="matrix",
+        rows=[
+            {"template": "{{dim.City}}", "hidden": True},
+            "{{dim.State}}",
+        ],
+        values=[MatrixValueConfig(id="Total Sales", label="Sales")],
+    )
+
+    row_fields = [
+        FieldReference(expression="dim.City", table="dim", column="City"),
+        FieldReference(expression="dim.State", table="dim", column="State"),
+    ]
+
+    plan = build_matrix_query(config, row_fields)
+
+    assert plan.statement == snapshot
+    assert plan.define is None
+
 def test_build_matrix_query_with_define(snapshot) -> None:
     config = MatrixConfig(
         type="matrix",

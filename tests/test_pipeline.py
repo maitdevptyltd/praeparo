@@ -40,9 +40,16 @@ def test_visual_snapshots(snapshot, yaml_path: Path) -> None:
     assert figure.data
 
     header_values = list(figure.data[0].header["values"])
-    for index, row in enumerate(config.rows):
+    visible_rows = [row for row in config.rows if not row.hidden]
+    row_header_values = header_values[: len(visible_rows)]
+    for index, row in enumerate(visible_rows):
         expected = row.label or label_from_template(row.template, dataset.row_fields)
-        assert header_values[index] == expected
+        assert row_header_values[index] == expected
+
+    hidden_rows = [row for row in config.rows if row.hidden]
+    for row in hidden_rows:
+        expected = row.label or label_from_template(row.template, dataset.row_fields)
+        assert expected not in row_header_values
 
     html_extension = type(
         f"PlotlyHtmlSnapshotExtension_{case}",

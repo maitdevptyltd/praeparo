@@ -137,6 +137,12 @@
           "default": null,
           "description": "Optional override for the rendered column header.",
           "title": "Label"
+        },
+        "hidden": {
+          "default": false,
+          "description": "If true, the row participates in queries but is omitted from rendered outputs.",
+          "title": "Hidden",
+          "type": "boolean"
         }
       },
       "required": [

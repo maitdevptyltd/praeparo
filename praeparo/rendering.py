@@ -33,6 +33,8 @@ def _format_value(value: object, fmt: str | None) -> object:
 def _row_headers(config: MatrixConfig, references: Iterable[FieldReference]) -> list[str]:
     headers: list[str] = []
     for row in config.rows:
+        if row.hidden:
+            continue
         if row.label:
             headers.append(row.label)
         else:
@@ -43,6 +45,8 @@ def _row_headers(config: MatrixConfig, references: Iterable[FieldReference]) -> 
 def _row_columns(config: MatrixConfig, dataset: MatrixResultSet) -> list[list[object]]:
     columns: list[list[object]] = []
     for row_config in config.rows:
+        if row_config.hidden:
+            continue
         column_values = [render_template(row_config.template, record) for record in dataset.rows]
         columns.append(column_values)
     return columns

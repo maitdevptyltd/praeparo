@@ -64,7 +64,7 @@ children:
 
 Run the build, and you’ll get a finished PowerPoint deck — no copy-pasting, no manual formatting.
 
-Matrix configs also support a top-level `define:` block for staging DAX tables or measures before `EVALUATE`. Those definitions can be referenced from row templates and global filters (see `tests/visuals/matrix/auto.yaml`). Filters accept either `field`/`include` pairs or direct `expression` strings for complex predicates.
+Matrix configs also support a top-level `define:` block for staging DAX tables or measures before `EVALUATE`. Those definitions can be referenced from row templates and global filters (see `tests/visuals/matrix/auto.yaml`). Filters accept either `field`/`include` pairs or direct `expression` strings for complex predicates. Rows can also be marked `hidden: true` to remain in queries while disappearing from rendered tables.
 
 ## Who is it for?
 
@@ -121,6 +121,7 @@ When `--dataset-id` is omitted the mock provider remains available for offline d
 
 
 Run `python -m praeparo.schema` to regenerate `schemas/matrix.json`. Import this schema into your editor to unlock auto-complete and validation for matrix YAML files.
+
 
 
 

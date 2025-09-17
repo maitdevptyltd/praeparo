@@ -63,6 +63,10 @@ class RowTemplate(BaseModel):
         default=None,
         description="Optional override for the rendered column header.",
     )
+    hidden: bool = Field(
+        default=False,
+        description="If true, the row participates in queries but is omitted from rendered outputs.",
+    )
 
     @field_validator("template")
     @classmethod

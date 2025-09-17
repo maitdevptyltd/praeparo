@@ -32,6 +32,17 @@
   )
   '''
 # ---
+# name: test_build_matrix_query_includes_hidden_rows_in_dax
+  '''
+  EVALUATE
+  SUMMARIZECOLUMNS(
+      dim[City],
+      dim[State],
+      "Sales", [Total Sales]
+  )
+  '''
+# ---
+
 # name: test_build_matrix_query_with_define
   '''
   DEFINE
