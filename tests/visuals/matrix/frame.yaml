@@ -1,0 +1,10 @@
+﻿type: frame
+layout: vertical
+title: "Average time to prepare documents"
+children:
+  - ref: ./auto.yaml
+    title: "Automatic Documents"
+  - ref: ./manual.yaml
+    title: "Manual Documents"
+    parameters:
+      IsDigiDocs: "FALSE()"

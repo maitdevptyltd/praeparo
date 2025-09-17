@@ -108,3 +108,4 @@ def test_powerbi_matrix_snapshot(snapshot, yaml_path: Path) -> None:
         png_snapshot.assert_match(
             figure.to_image(format="png", scale=2.0),
         )
+

@@ -3,14 +3,18 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Mapping, cast
 
 import re
 
 import yaml
 from pydantic import ValidationError
 
-from ..models import MatrixConfig
+from ..models import (
+    FrameChildConfig,
+    FrameConfig,
+    MatrixConfig,
+)
 from ..templating import render_template
 
 
@@ -18,12 +22,13 @@ class ConfigLoadError(RuntimeError):
     """Raised when a configuration file cannot be parsed or validated."""
 
 
-
 PLACEHOLDER_RE = re.compile(r"\{\{\s*(?P<expr>[^}]+?)\s*\}}")
+
 
 def _clean_placeholder(expression: str) -> str:
     base = expression.split("|", 1)[0].strip()
     return base
+
 
 def _render_with_context(value: str, context: Mapping[str, str], *, location: str) -> str:
     missing: list[str] = []
@@ -37,6 +42,8 @@ def _render_with_context(value: str, context: Mapping[str, str], *, location: st
         msg = f"Unresolved template variable(s) in {location}: {missing_list}"
         raise ConfigLoadError(msg)
     return rendered
+
+
 def _merge_dicts(base: dict[str, Any], update: Mapping[str, Any]) -> dict[str, Any]:
     merged = dict(base)
     for key, value in update.items():
@@ -120,25 +127,119 @@ def _apply_parameter_templates(data: dict[str, Any], *, context: Mapping[str, st
                     item["expression"] = _render_with_context(expression, context, location="filter expression")
 
 
-def load_matrix_config(path: Path) -> MatrixConfig:
-    """Load and validate a matrix YAML file with composition and parameters."""
-
-    merged = _load_composed_yaml(path.resolve())
-
-    parameters = merged.pop("parameters", {}) or {}
-    if not isinstance(parameters, dict):
+def _finalize_matrix_config(data: dict[str, Any], *, path: Path) -> MatrixConfig:
+    parameters = data.pop("parameters", {}) or {}
+    if not isinstance(parameters, Mapping):
         msg = f"parameters must be a mapping when provided ({path})"
         raise ConfigLoadError(msg)
 
-    context = _build_context(merged, parameters)
-    _apply_parameter_templates(merged, context=context)
+    context = _build_context(data, parameters)
+    _apply_parameter_templates(data, context=context)
 
     try:
-        return MatrixConfig.model_validate(merged)
+        return MatrixConfig.model_validate(data)
     except ValidationError as exc:
         msg = f"Configuration validation failed for {path}"
         raise ConfigLoadError(msg) from exc
 
 
-__all__ = ["ConfigLoadError", "load_matrix_config"]
+def load_matrix_config(
+    path: Path,
+    *,
+    parameters_override: Mapping[str, Any] | None = None,
+    overrides: Mapping[str, Any] | None = None,
+    stack: tuple[Path, ...] | None = None,
+) -> MatrixConfig:
+    """Load and validate a matrix YAML file."""
+
+    resolved = path.resolve()
+    merged = _load_composed_yaml(resolved, stack=stack or ())
+
+    if overrides:
+        merged = _merge_dicts(merged, overrides)
+
+    if parameters_override:
+        existing = merged.get("parameters", {}) or {}
+        if not isinstance(existing, Mapping):
+            msg = f"parameters must be a mapping when provided ({path})"
+            raise ConfigLoadError(msg)
+        merged["parameters"] = {**{str(k): v for k, v in existing.items()}, **parameters_override}
+
+    return _finalize_matrix_config(merged, path=resolved)
+
+
+def _load_frame_config(path: Path, data: dict[str, Any], *, stack: tuple[Path, ...]) -> FrameConfig:
+    children = data.get("children")
+    if not isinstance(children, list) or not children:
+        msg = f"Frame configuration must define a non-empty 'children' list ({path})"
+        raise ConfigLoadError(msg)
+
+    layout = str(data.get("layout", "vertical")).lower()
+    if layout not in {"vertical", "horizontal"}:
+        msg = f"Unsupported frame layout '{layout}' ({path})"
+        raise ConfigLoadError(msg)
+
+    show_titles = bool(data.get("show_titles", False))
+
+    resolved_children: list[FrameChildConfig] = []
+    for index, entry in enumerate(children, start=1):
+        if not isinstance(entry, Mapping):
+            msg = f"Frame child at position {index} must be a mapping ({path})"
+            raise ConfigLoadError(msg)
+
+        ref = entry.get("ref")
+        if not isinstance(ref, str) or not ref.strip():
+            msg = f"Frame child at position {index} is missing a 'ref' path ({path})"
+            raise ConfigLoadError(msg)
+
+        child_path = (path.parent / ref).resolve()
+        parameters = entry.get("parameters") or {}
+        if not isinstance(parameters, Mapping):
+            msg = f"Child parameters must be a mapping ({child_path})"
+            raise ConfigLoadError(msg)
+
+        overrides = {key: value for key, value in entry.items() if key not in {"ref", "parameters"}}
+
+        child_config = load_matrix_config(
+            child_path,
+            parameters_override=parameters,
+            overrides=overrides,
+            stack=stack + (path,),
+        )
+        resolved_children.append(
+            FrameChildConfig(
+                source=child_path,
+                config=child_config,
+                parameters={str(k): str(v) if not isinstance(v, str) else v for k, v in parameters.items()},
+            )
+        )
+
+    return FrameConfig(
+        type="frame",
+        title=data.get("title"),
+        layout=layout,  # type: ignore[arg-type]
+        show_titles=show_titles,
+        children=tuple(resolved_children),
+    )
+
+
+def load_visual_config(path: Path) -> MatrixConfig | FrameConfig:
+    """Load a Praeparo visual configuration of any supported type."""
+
+    resolved = path.resolve()
+    merged = _load_composed_yaml(resolved)
+
+    visual_type = merged.get("type")
+    if visual_type == "matrix" or visual_type is None:
+        # Treat missing type as matrix for backward compatibility.
+        return _finalize_matrix_config(dict(merged), path=resolved)
+
+    if visual_type == "frame":
+        return _load_frame_config(resolved, dict(merged), stack=(resolved,))
+
+    msg = f"Unsupported visual type '{visual_type}' in {path}"
+    raise ConfigLoadError(msg)
+
+
+__all__ = ["ConfigLoadError", "load_matrix_config", "load_visual_config"]
 
