@@ -1,11 +1,19 @@
+DEFINE
+TABLE __dim_funding_channel_type = ADDCOLUMNS(
+  dim_funding_channel_type,
+  "Channel",
+    VAR channel_id = [FundingChannelTypeId]
+    RETURN IF(channel_id = 7, "Broker", "Direct")
+)
+
 EVALUATE
 CALCULATETABLE(
     SUMMARIZECOLUMNS(
         dim_mortmgr[MortMgrName],
-        dim_funding_channel_type[FundingChannelTypeName],
-        "% sent", DIVIDE([Documents sent], CALCULATE([Documents sent], REMOVEFILTERS(dim_funding_channel_type[FundingChannelTypeName]), REMOVEFILTERS(dim_mortmgr))),
+        __dim_funding_channel_type[Channel],
+        "% sent", DIVIDE([Documents sent], CALCULATE([Documents sent], REMOVEFILTERS(__dim_funding_channel_type[Channel]), REMOVEFILTERS(dim_mortmgr))),
         "hh:mm:ss", [Average Business Hours to Send Processed Documents]
     ),
     dim_mortmgr[MortMgrName] IN { "P&N Bank", "BCU Bank" },
-    dim_funding_channel_type[FundingChannelTypeName] IN { "Direct", "Broker" }
+    __dim_funding_channel_type[Channel] IN { "Direct", "Broker" }
 )

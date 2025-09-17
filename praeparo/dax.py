@@ -19,6 +19,7 @@ class DaxQueryPlan:
     statement: str
     rows: tuple[FieldReference, ...]
     values: tuple[str, ...]
+    define: str | None = None
 
 
 SHOW_AS_PERCENT_COLUMN_TOTAL = "percent of column total"
@@ -121,9 +122,25 @@ def build_matrix_query(config: MatrixConfig, row_fields: Sequence[FieldReference
     summarize = _summarize_columns(row_lines, value_lines)
     body = summarize if not filter_lines else _wrap_with_filters(summarize, filter_lines)
 
-    statement = "EVALUATE\n" + body
+    define_block: str | None = None
+    if config.define:
+        candidate = config.define.strip()
+        if candidate:
+            define_block = candidate
 
-    return DaxQueryPlan(statement=statement, rows=ordered_rows, values=tuple(measure_names))
+    parts: list[str] = []
+    if define_block:
+        parts.append("DEFINE\n" + define_block)
+    parts.append("EVALUATE\n" + body)
+    statement = "\n\n".join(parts)
+
+    return DaxQueryPlan(
+        statement=statement,
+        rows=ordered_rows,
+        values=tuple(measure_names),
+        define=define_block,
+    )
 
 
 __all__ = ["DaxQueryPlan", "build_matrix_query"]
+

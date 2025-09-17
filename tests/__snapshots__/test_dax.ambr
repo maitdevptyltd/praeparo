@@ -20,3 +20,15 @@
   )
   '''
 # ---
+# name: test_build_matrix_query_with_define
+  '''
+  DEFINE
+  MEASURE Sales[Total Sales] = SUM(Sales[Amount])
+  
+  EVALUATE
+  SUMMARIZECOLUMNS(
+      Sales[Region],
+      "Total Sales", [Total Sales]
+  )
+  '''
+# ---

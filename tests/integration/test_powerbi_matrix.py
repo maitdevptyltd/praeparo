@@ -1,4 +1,4 @@
-import asyncio
+﻿import asyncio
 import os
 from pathlib import Path
 
@@ -42,6 +42,10 @@ def test_powerbi_matrix_snapshot(snapshot, yaml_path: Path) -> None:
     _ensure_env()
 
     config, row_fields, plan = load_visual_artifacts(yaml_path)
+    if config.define:
+        assert plan.define == config.define.strip()
+    else:
+        assert plan.define is None
 
     dataset = asyncio.run(
         powerbi_matrix_data(

@@ -1,8 +1,16 @@
 ﻿type: matrix
 title: "Automatic Documents"
 
+define: |
+  TABLE __dim_funding_channel_type = ADDCOLUMNS(
+    dim_funding_channel_type,
+    "Channel",
+      VAR channel_id = [FundingChannelTypeId]
+      RETURN IF(channel_id = 7, "Broker", "Direct")
+  )
+
 rows:
-  - template: "{{dim_mortmgr.MortMgrName}} ({{dim_funding_channel_type.FundingChannelTypeName}})"
+  - template: "{{dim_mortmgr.MortMgrName}} ({{__dim_funding_channel_type.Channel}})"
     label: "Automatic Documents"
 
 values:
@@ -20,7 +28,7 @@ filters:
     include:
       - "P&N Bank"
       - "BCU Bank"
-  - field: dim_funding_channel_type.FundingChannelTypeName
+  - field: __dim_funding_channel_type.Channel
     include:
       - "Direct"
       - "Broker"

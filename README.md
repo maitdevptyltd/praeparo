@@ -64,6 +64,8 @@ children:
 
 Run the build, and you’ll get a finished PowerPoint deck — no copy-pasting, no manual formatting.
 
+Matrix configs also support a top-level `define:` block for staging DAX tables or measures before `EVALUATE`. Those definitions can be referenced from row templates and global filters (see `tests/visuals/matrix/auto.yaml`).
+
 ## Who is it for?
 
 - **Business leaders** who want decks that always reflect the latest numbers.

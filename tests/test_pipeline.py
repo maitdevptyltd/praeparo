@@ -1,4 +1,4 @@
-from importlib import util
+﻿from importlib import util
 from pathlib import Path
 
 import pytest
@@ -20,6 +20,10 @@ VISUAL_FILES = discover_yaml_files(VISUAL_ROOT)
 @pytest.mark.parametrize("yaml_path", VISUAL_FILES, ids=lambda path: case_name(path, VISUAL_ROOT))
 def test_visual_snapshots(snapshot, yaml_path: Path) -> None:
     config, row_fields, plan = load_visual_artifacts(yaml_path)
+    if config.define:
+        assert plan.define == config.define.strip()
+    else:
+        assert plan.define is None
     dataset: MatrixResultSet = mock_matrix_data(config, row_fields)
 
     case = case_name(yaml_path, VISUAL_ROOT)
@@ -64,7 +68,11 @@ def test_visual_snapshots(snapshot, yaml_path: Path) -> None:
 
 @pytest.mark.parametrize("yaml_path", VISUAL_FILES, ids=lambda path: case_name(path, VISUAL_ROOT))
 def test_matrix_html_and_png_writers(tmp_path: Path, yaml_path: Path) -> None:
-    config, row_fields, _ = load_visual_artifacts(yaml_path)
+    config, row_fields, plan = load_visual_artifacts(yaml_path)
+    if config.define:
+        assert plan.define == config.define.strip()
+    else:
+        assert plan.define is None
     dataset = mock_matrix_data(config, row_fields)
     case = case_name(yaml_path, VISUAL_ROOT)
 

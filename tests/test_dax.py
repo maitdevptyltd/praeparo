@@ -16,6 +16,7 @@ def test_build_matrix_query_constructs_summarizecolumns(snapshot) -> None:
     plan = build_matrix_query(config, row_fields)
 
     assert plan.statement == snapshot
+    assert plan.define is None
 
 
 def test_build_matrix_query_includes_filters(snapshot) -> None:
@@ -31,3 +32,21 @@ def test_build_matrix_query_includes_filters(snapshot) -> None:
     plan = build_matrix_query(config, row_fields)
 
     assert plan.statement == snapshot
+    assert plan.define is None
+
+
+def test_build_matrix_query_with_define(snapshot) -> None:
+    config = MatrixConfig(
+        type="matrix",
+        define="MEASURE Sales[Total Sales] = SUM(Sales[Amount])",
+        rows=["{{Sales.Region}}"],
+        values=[MatrixValueConfig(id="Total Sales", label="Total Sales")],
+    )
+
+    row_fields = [FieldReference(expression="Sales.Region", table="Sales", column="Region")]
+
+    plan = build_matrix_query(config, row_fields)
+
+    assert plan.statement == snapshot
+    assert plan.define == "MEASURE Sales[Total Sales] = SUM(Sales[Amount])"
+

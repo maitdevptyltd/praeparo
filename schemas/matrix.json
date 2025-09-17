@@ -157,6 +157,19 @@
       "description": "Optional helper text for authors.",
       "title": "Description"
     },
+    "define": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Optional DAX DEFINE statements prefixed to generated queries.",
+      "title": "Define"
+    },
     "rows": {
       "description": "Row templates expressed using Jinja-style placeholders.",
       "items": {

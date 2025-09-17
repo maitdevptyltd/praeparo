@@ -146,6 +146,10 @@ class MatrixConfig(BaseModel):
     type: Literal["matrix"] = Field(description="Visual type identifier; must be 'matrix'.")
     title: str | None = Field(default=None, description="Matrix title used in decks or charts.")
     description: str | None = Field(default=None, description="Optional helper text for authors.")
+    define: str | None = Field(
+        default=None,
+        description="Optional DAX DEFINE statements prefixed to generated queries.",
+    )
     rows: list[RowTemplate] = Field(
         ...,
         description="Row templates expressed using Jinja-style placeholders.",
@@ -164,6 +168,14 @@ class MatrixConfig(BaseModel):
         default_factory=list,
         description="Global filters applied to every generated query before evaluation.",
     )
+
+    @field_validator("define")
+    @classmethod
+    def _normalize_define(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        normalized = value.strip()
+        return normalized or None
 
     @field_validator("rows", mode="before")
     @classmethod
