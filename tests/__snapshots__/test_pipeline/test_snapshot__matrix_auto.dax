@@ -1,0 +1,7 @@
+EVALUATE
+SUMMARIZECOLUMNS(
+    dim_mortmgr[MortMgrName],
+    dim_funding_channel_type[FundingChannelTypeName],
+    "% sent", [Documents sent],
+    "hh:mm:ss", [Average Business Hours to Send Processed Documents]
+)

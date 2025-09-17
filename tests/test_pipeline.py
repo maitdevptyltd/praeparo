@@ -9,7 +9,7 @@ from praeparo.dax import build_matrix_query
 from praeparo.io.yaml_loader import load_matrix_config
 from praeparo.rendering import matrix_figure, matrix_html, matrix_png
 from praeparo.templating import extract_field_references, label_from_template
-from .snapshot_extensions import PlotlyHtmlSnapshotExtension, PlotlyPngSnapshotExtension
+from .snapshot_extensions import PlotlyHtmlSnapshotExtension, PlotlyPngSnapshotExtension, DaxSnapshotExtension
 
 VISUAL_ROOT = Path("tests/visuals")
 
@@ -41,6 +41,14 @@ def _snapshot_test(yaml_path: Path) -> Callable:
 
         assert "EVALUATE" in plan.statement
         assert dataset.rows
+
+        dax_extension = type(
+            f"DaxSnapshotExtension_{case}",
+            (DaxSnapshotExtension,),
+            {"snapshot_name": f"test_snapshot__{case}"},
+        )
+        dax_snapshot = snapshot.use_extension(dax_extension)
+        dax_snapshot.assert_match(plan.statement)
 
         figure = matrix_figure(config, dataset)
         assert figure.data  # ensure table created

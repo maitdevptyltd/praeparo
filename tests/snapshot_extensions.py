@@ -41,8 +41,22 @@ class PlotlyPngSnapshotExtension(NamedSingleFileSnapshotExtension):
         raise TypeError(msg)
 
 
+class DaxSnapshotExtension(NamedSingleFileSnapshotExtension):
+    """Capture generated DAX statements as text snapshots."""
+
+    _write_mode = WriteMode.TEXT
+    _file_extension = "dax"
+
+    def serialize(self, data, *, exclude=None, include=None, matcher=None):  # type: ignore[override]
+        if not isinstance(data, str):
+            msg = "DAX snapshots expect string content."
+            raise TypeError(msg)
+        return data
+
+
 __all__ = [
     "NamedSingleFileSnapshotExtension",
     "PlotlyHtmlSnapshotExtension",
     "PlotlyPngSnapshotExtension",
+    "DaxSnapshotExtension",
 ]

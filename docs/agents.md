@@ -19,7 +19,7 @@ This guide keeps Codex/agents aligned while evolving the Praeparo proof of conce
 - Manage dependencies with Poetry commands (`poetry add`, `poetry remove`) instead of editing `pyproject.toml` by hand.
 - `pytest` relies on `pytest.ini` for root import paths; keep it in sync if the package layout changes.
 - Snapshot tests run via `syrupy`; regenerate expected output with `poetry run pytest --snapshot-update`.
-- Snapshot artifacts (HTML + PNG) live in `tests/__snapshots__/`; regenerate with `poetry run pytest --snapshot-update`. Kaleido is required for PNG snapshots (`poetry add kaleido`).
+- Snapshot artifacts (DAX/HTML/PNG) live in `tests/__snapshots__/`; regenerate with `poetry run pytest --snapshot-update`. Kaleido is required for PNG snapshots (`poetry add kaleido`).
 - When new CLI features arrive, add smoke tests or fixture updates so `poetry run pytest` stays green.
 
 ## Handoff Checklist
