@@ -8,3 +8,15 @@
   )
   '''
 # ---
+# name: test_build_matrix_query_includes_filters
+  '''
+  EVALUATE
+  CALCULATETABLE(
+      SUMMARIZECOLUMNS(
+          dim[City],
+          "Sales", [Total Sales]
+      ),
+      dim[City] IN { "Seattle", "Portland" }
+  )
+  '''
+# ---

@@ -15,4 +15,14 @@ values:
     label: "hh:mm:ss"
     format: "duration:hms"
 
+filters:
+  - field: dim_mortmgr.MortMgrName
+    include:
+      - "P&N Bank"
+      - "BCU Bank"
+  - field: dim_funding_channel_type.FundingChannelTypeName
+    include:
+      - "Direct"
+      - "Broker"
+
 totals: "off"

@@ -1,5 +1,11 @@
-"""Pydantic models describing Praeparo configuration objects."""
+﻿"""Pydantic models describing Praeparo configuration objects."""
 
-from .matrix import MatrixConfig, MatrixTotals, MatrixValueConfig, RowTemplate
+from .matrix import MatrixConfig, MatrixFilterConfig, MatrixTotals, MatrixValueConfig, RowTemplate
 
-__all__ = ["MatrixConfig", "MatrixTotals", "MatrixValueConfig", "RowTemplate"]
+__all__ = [
+    "MatrixConfig",
+    "MatrixFilterConfig",
+    "MatrixTotals",
+    "MatrixValueConfig",
+    "RowTemplate",
+]

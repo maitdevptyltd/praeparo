@@ -1,5 +1,31 @@
 {
   "$defs": {
+    "MatrixFilterConfig": {
+      "additionalProperties": false,
+      "description": "Declarative global filter applied to a matrix query.",
+      "properties": {
+        "field": {
+          "description": "Target column expressed as 'table.column'.",
+          "title": "Field",
+          "type": "string"
+        },
+        "include": {
+          "description": "Allowed values that remain after the filter is applied.",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Include",
+          "type": "array"
+        }
+      },
+      "required": [
+        "field",
+        "include"
+      ],
+      "title": "MatrixFilterConfig",
+      "type": "object"
+    },
     "MatrixTotals": {
       "description": "Supported total display options for a matrix visual.",
       "enum": [
@@ -153,6 +179,14 @@
       "$ref": "#/$defs/MatrixTotals",
       "default": "off",
       "description": "Controls whether grand totals are displayed for rows, columns, or both."
+    },
+    "filters": {
+      "description": "Global filters applied to every generated query before evaluation.",
+      "items": {
+        "$ref": "#/$defs/MatrixFilterConfig"
+      },
+      "title": "Filters",
+      "type": "array"
     }
   },
   "required": [

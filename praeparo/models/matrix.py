@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from enum import Enum
 from typing import Literal
@@ -82,6 +82,62 @@ class RowTemplate(BaseModel):
         return normalized or None
 
 
+class MatrixFilterConfig(BaseModel):
+    """Declarative global filter applied to a matrix query."""
+
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    field: str = Field(
+        ...,
+        description="Target column expressed as 'table.column'.",
+    )
+    include: list[str] = Field(
+        ...,
+        min_length=1,
+        description="Allowed values that remain after the filter is applied.",
+    )
+
+    @field_validator("field")
+    @classmethod
+    def _normalize_field(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            msg = "Filter field cannot be empty."
+            raise ValueError(msg)
+        if "." not in normalized:
+            msg = "Filter field must be expressed as 'table.column'."
+            raise ValueError(msg)
+        left, right = normalized.split(".", 1)
+        if not left or not right:
+            msg = "Filter field must include both table and column."
+            raise ValueError(msg)
+        return normalized
+
+    @field_validator("include", mode="before")
+    @classmethod
+    def _ensure_list(cls, value):
+        if isinstance(value, str):
+            return [value]
+        return value
+
+    @field_validator("include")
+    @classmethod
+    def _normalize_include(cls, value: list[str]) -> list[str]:
+        cleaned: list[str] = []
+        for item in value:
+            if item is None:
+                continue
+            text = str(item).strip()
+            if not text:
+                continue
+            cleaned.append(text)
+        if not cleaned:
+            msg = "Filter include list must contain at least one value."
+            raise ValueError(msg)
+        deduplicated = list(dict.fromkeys(cleaned))
+        return deduplicated
+
+
 class MatrixConfig(BaseModel):
     """Top-level configuration for a matrix visual."""
 
@@ -103,6 +159,10 @@ class MatrixConfig(BaseModel):
     totals: MatrixTotals = Field(
         default=MatrixTotals.OFF,
         description="Controls whether grand totals are displayed for rows, columns, or both.",
+    )
+    filters: list[MatrixFilterConfig] = Field(
+        default_factory=list,
+        description="Global filters applied to every generated query before evaluation.",
     )
 
     @field_validator("rows", mode="before")
@@ -142,3 +202,12 @@ class MatrixConfig(BaseModel):
             if value.label is None:
                 value.label = value.id
         return self
+
+
+__all__ = [
+    "MatrixConfig",
+    "MatrixFilterConfig",
+    "MatrixTotals",
+    "MatrixValueConfig",
+    "RowTemplate",
+]
