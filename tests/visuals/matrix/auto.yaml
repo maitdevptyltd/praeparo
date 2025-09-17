@@ -1,43 +1,6 @@
-﻿type: matrix
+﻿compose:
+  - ./base.yaml
+
 title: "Automatic Documents"
-
-define: |
-  TABLE __dim_funding_channel_type = ADDCOLUMNS(
-    dim_funding_channel_type,
-    "Channel",
-      VAR channel_id = [FundingChannelTypeId]
-      RETURN IF(channel_id = 7, "Broker", "Direct")
-  )
-
-  MEASURE dim_matter[_Documents sent %] = 
-    DIVIDE(
-      [Documents sent],
-      CALCULATE(
-        [Documents sent],
-        REMOVEFILTERS(dim_matter[IsDigiDocs])
-      )
-    )
-
-rows:
-  - template: "{{dim_matter.IsDigiDocs}}"
-    hidden: true
-  - template: "{{dim_mortmgr.MortMgrName}} ({{__dim_funding_channel_type.Channel}})"
-    label: "Automatic Documents"
-
-values:
-  - id: "_Documents sent %"
-    label: "% sent"
-    format: "percent:0"
-
-  - id: "Average Business Hours to Send Processed Documents "
-    label: "hh:mm:ss"
-    format: "duration:hms"
-
-filters:
-  - field: dim_mortmgr.MortMgrName
-    include:
-      - "P&N Bank"
-      - "BCU Bank"
-  - expression: "dim_matter[IsDigiDocs] = TRUE()"
-
-totals: "off"
+parameters:
+  IsDigiDocs: "TRUE()"

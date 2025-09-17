@@ -230,6 +230,30 @@
       },
       "title": "Filters",
       "type": "array"
+    },
+    "parameters": {
+      "type": "object",
+      "title": "Parameters",
+      "description": "Template values injected into the configuration before validation.",
+      "additionalProperties": {
+        "type": "string"
+      },
+      "default": {}
+    },
+    "compose": {
+      "title": "Compose",
+      "description": "List of additional YAML files to merge before validation.",
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      ]
     }
   },
   "required": [

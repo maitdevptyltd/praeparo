@@ -1,4 +1,4 @@
-"""Utilities for exporting JSON schemas from Praeparo models."""
+﻿"""Utilities for exporting JSON schemas from Praeparo models."""
 
 from __future__ import annotations
 
@@ -13,7 +13,30 @@ from .models import MatrixConfig
 def matrix_json_schema() -> dict[str, Any]:
     """Return the JSON schema for matrix configurations."""
 
-    return MatrixConfig.model_json_schema()
+    schema = MatrixConfig.model_json_schema()
+    properties = schema.setdefault("properties", {})
+    properties.setdefault(
+        "parameters",
+        {
+            "type": "object",
+            "title": "Parameters",
+            "description": "Template values injected into the configuration before validation.",
+            "additionalProperties": {"type": "string"},
+            "default": {},
+        },
+    )
+    properties.setdefault(
+        "compose",
+        {
+            "title": "Compose",
+            "description": "List of additional YAML files to merge before validation.",
+            "anyOf": [
+                {"type": "string"},
+                {"type": "array", "items": {"type": "string"}},
+            ],
+        },
+    )
+    return schema
 
 
 def write_matrix_schema(path: Path) -> None:
@@ -48,3 +71,4 @@ __all__ = ["matrix_json_schema", "write_matrix_schema", "run", "main"]
 
 if __name__ == "__main__":
     main()
+

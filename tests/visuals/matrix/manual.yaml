@@ -1,0 +1,6 @@
+﻿compose:
+  - ./base.yaml
+
+title: "Manual Documents"
+parameters:
+  IsDigiDocs: "FALSE()"
