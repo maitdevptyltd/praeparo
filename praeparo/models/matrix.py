@@ -87,19 +87,24 @@ class MatrixFilterConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
-    field: str = Field(
-        ...,
+    field: str | None = Field(
+        default=None,
         description="Target column expressed as 'table.column'.",
     )
-    include: list[str] = Field(
-        ...,
-        min_length=1,
+    include: list[str] | None = Field(
+        default=None,
         description="Allowed values that remain after the filter is applied.",
+    )
+    expression: str | None = Field(
+        default=None,
+        description="Raw DAX filter expression inserted into the evaluation context.",
     )
 
     @field_validator("field")
     @classmethod
-    def _normalize_field(cls, value: str) -> str:
+    def _normalize_field(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
         normalized = value.strip()
         if not normalized:
             msg = "Filter field cannot be empty."
@@ -116,13 +121,17 @@ class MatrixFilterConfig(BaseModel):
     @field_validator("include", mode="before")
     @classmethod
     def _ensure_list(cls, value):
+        if value is None:
+            return value
         if isinstance(value, str):
             return [value]
         return value
 
     @field_validator("include")
     @classmethod
-    def _normalize_include(cls, value: list[str]) -> list[str]:
+    def _normalize_include(cls, value: list[str] | None) -> list[str] | None:
+        if value is None:
+            return value
         cleaned: list[str] = []
         for item in value:
             if item is None:
@@ -136,6 +145,30 @@ class MatrixFilterConfig(BaseModel):
             raise ValueError(msg)
         deduplicated = list(dict.fromkeys(cleaned))
         return deduplicated
+
+    @field_validator("expression")
+    @classmethod
+    def _normalize_expression(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        normalized = value.strip()
+        if not normalized:
+            msg = "Filter expression cannot be empty."
+            raise ValueError(msg)
+        return normalized
+
+    @model_validator(mode="after")
+    def _validate_filter_mode(self) -> "MatrixFilterConfig":
+        if self.expression:
+            if self.field or self.include:
+                msg = "Expression filters cannot include field/include properties."
+                raise ValueError(msg)
+            return self
+        if not self.field or not self.include:
+            msg = "Field filters must provide both 'field' and 'include'."
+            raise ValueError(msg)
+        return self
+
 
 
 class MatrixConfig(BaseModel):

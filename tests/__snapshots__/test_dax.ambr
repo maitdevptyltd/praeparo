@@ -20,6 +20,18 @@
   )
   '''
 # ---
+# name: test_build_matrix_query_supports_expression_filter
+  '''
+  EVALUATE
+  CALCULATETABLE(
+      SUMMARIZECOLUMNS(
+          dim[City],
+          "Sales", [Total Sales]
+      ),
+      dim[City] <> "Unknown"
+  )
+  '''
+# ---
 # name: test_build_matrix_query_with_define
   '''
   DEFINE

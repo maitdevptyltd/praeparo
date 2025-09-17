@@ -5,24 +5,48 @@
       "description": "Declarative global filter applied to a matrix query.",
       "properties": {
         "field": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
           "description": "Target column expressed as 'table.column'.",
-          "title": "Field",
-          "type": "string"
+          "title": "Field"
         },
         "include": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
           "description": "Allowed values that remain after the filter is applied.",
-          "items": {
-            "type": "string"
-          },
-          "minItems": 1,
-          "title": "Include",
-          "type": "array"
+          "title": "Include"
+        },
+        "expression": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Raw DAX filter expression inserted into the evaluation context.",
+          "title": "Expression"
         }
       },
-      "required": [
-        "field",
-        "include"
-      ],
       "title": "MatrixFilterConfig",
       "type": "object"
     },

@@ -35,6 +35,24 @@ def test_build_matrix_query_includes_filters(snapshot) -> None:
     assert plan.define is None
 
 
+
+
+def test_build_matrix_query_supports_expression_filter(snapshot) -> None:
+    config = MatrixConfig(
+        type="matrix",
+        rows=["{{dim.City}}"],
+        values=[MatrixValueConfig(id="Total Sales", label="Sales")],
+        filters=[MatrixFilterConfig(expression='dim[City] <> "Unknown"')],
+    )
+
+    row_fields = [FieldReference(expression="dim.City", table="dim", column="City")]
+
+    plan = build_matrix_query(config, row_fields)
+
+    assert plan.statement == snapshot
+    assert plan.define is None
+
+
 def test_build_matrix_query_with_define(snapshot) -> None:
     config = MatrixConfig(
         type="matrix",
