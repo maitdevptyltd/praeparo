@@ -12,6 +12,7 @@ dependencies = [
     "plotly (>=6.3.0,<7.0.0)",
     "pydantic (>=2.11.9,<3.0.0)",
     "pyyaml (>=6.0.2,<7.0.0)",
+    "kaleido (>=1.1.0,<2.0.0)",
 ]
 
 [project.scripts]

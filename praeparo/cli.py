@@ -9,7 +9,7 @@ from typing import Sequence
 from .dax import build_matrix_query
 from .data import mock_matrix_data
 from .io.yaml_loader import ConfigLoadError, load_matrix_config
-from .rendering import matrix_html
+from .rendering import matrix_html, matrix_png
 from .templating import extract_field_references
 
 
@@ -21,6 +21,12 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=Path("matrix.html"),
         help="Destination for the generated HTML output (defaults to ./matrix.html).",
+    )
+    parser.add_argument(
+        "--png-out",
+        type=Path,
+        default=None,
+        help="Optional destination for a static PNG snapshot of the matrix.",
     )
     parser.add_argument(
         "--print-dax",
@@ -44,13 +50,26 @@ def run(argv: Sequence[str] | None = None) -> int:
     query = build_matrix_query(config, row_fields)
     dataset = mock_matrix_data(config, row_fields)
 
+    outputs: list[Path] = []
     args.out.parent.mkdir(parents=True, exist_ok=True)
     matrix_html(config, dataset, str(args.out))
+    outputs.append(args.out)
+
+    if args.png_out is not None:
+        try:
+            args.png_out.parent.mkdir(parents=True, exist_ok=True)
+            matrix_png(config, dataset, str(args.png_out))
+            outputs.append(args.png_out)
+        except RuntimeError as exc:
+            parser.error(str(exc))
+            return 2
 
     if args.print_dax:
         print(query.statement)
 
-    print(f"Wrote matrix visualization to {args.out}")
+    if outputs:
+        rendered = ", ".join(str(path) for path in outputs)
+        print(f"Wrote matrix visualization to {rendered}")
     return 0
 
 

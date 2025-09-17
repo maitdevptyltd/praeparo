@@ -16,8 +16,10 @@ This guide keeps Codex/agents aligned while evolving the Praeparo proof of conce
 
 ## Testing & Tooling
 - Use the Poetry environment for local commands: `poetry install` and `poetry run pytest`.
+- Manage dependencies with Poetry commands (`poetry add`, `poetry remove`) instead of editing `pyproject.toml` by hand.
 - `pytest` relies on `pytest.ini` for root import paths; keep it in sync if the package layout changes.
 - Snapshot tests run via `syrupy`; regenerate expected output with `poetry run pytest --snapshot-update`.
+- PNG exports require Kaleido. Install it via Poetry (`poetry add kaleido`) and run `poetry run pytest` to verify the optional PNG test.
 - When new CLI features arrive, add smoke tests or fixture updates so `poetry run pytest` stays green.
 
 ## Handoff Checklist

@@ -1,4 +1,4 @@
-# Praeparo
+﻿# Praeparo
 
 _Slides, prepared._
 
@@ -25,10 +25,10 @@ Praeparo bridges this gap. It lets you keep using Power BI as the **data engine*
 
 ## How it works
 
-- **YAML components** – Each chart, table, or matrix is a small `.yaml` file.
-- **Composition** – Just like pages in a web framework, you compose components into slides.
-- **Customization** – Plotly rendering gives full control over styling, formatting, and layouts.
-- **Export** – The build process generates **ready-to-share PPTX decks**, fully branded and up to date.
+- **YAML components** — Each chart, table, or matrix is a small `.yaml` file.
+- **Composition** — Just like pages in a web framework, you compose components into slides.
+- **Customization** — Plotly rendering gives full control over styling, formatting, and layouts.
+- **Export** — The build process generates **ready-to-share PPTX decks**, fully branded and up to date.
 
 ## Example
 
@@ -71,18 +71,19 @@ Run the build, and you’ll get a finished PowerPoint deck — no copy-pasting, 
 
 ## Benefits
 
-- **Save time** – automate recurring decks
-- **Consistency** – every chart and slide follows the same definitions and styles
-- **Transparency** – YAML is human-readable and version-controlled
-- **Flexibility** – Plotly unlocks custom visuals not possible in Power BI
-- **Scalability** – add new KPIs or slides with just a YAML file
+- **Save time** — automate recurring decks
+- **Consistency** — every chart and slide follows the same definitions and styles
+- **Transparency** — YAML is human-readable and version-controlled
+- **Flexibility** — Plotly unlocks custom visuals not possible in Power BI
+- **Scalability** — add new KPIs or slides with just a YAML file
 
 ## Proof-of-Concept Workflow
 
 1. Define a matrix visual in YAML (see `tests/matrix/basic/auto.yaml`).
 2. Validate and render it with the CLI:
    - `praeparo tests/matrix/basic/auto.yaml --out build/matrix.html --print-dax`
-3. Open the generated HTML file to explore the Plotly-powered matrix.
+   - Add `--png-out build/matrix.png` to capture a static snapshot for slide decks (requires Kaleido: `poetry add kaleido`).
+3. Open the generated HTML (and PNG if requested) to explore the Plotly-powered matrix.
 
 The CLI orchestrates YAML validation (via Pydantic), field extraction, DAX query generation, and a mock data provider before building a Plotly table. The DAX output is printed when `--print-dax` is supplied so you can copy it into live environments later.
 

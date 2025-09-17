@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Sequence
+from importlib import util as importlib_util
 
 import plotly.graph_objects as go
 
@@ -67,4 +67,15 @@ def matrix_html(config: MatrixConfig, dataset: MockResultSet, output_path: str) 
     figure.write_html(output_path, include_plotlyjs="cdn", full_html=True)
 
 
-__all__ = ["matrix_figure", "matrix_html"]
+def matrix_png(config: MatrixConfig, dataset: MockResultSet, output_path: str, scale: float = 2.0) -> None:
+    """Export the rendered figure to a static PNG file."""
+
+    if importlib_util.find_spec("kaleido") is None:
+        msg = "PNG export requires the 'kaleido' package. Install it to enable static image output."
+        raise RuntimeError(msg)
+
+    figure = matrix_figure(config, dataset)
+    figure.write_image(output_path, format="png", scale=scale)
+
+
+__all__ = ["matrix_figure", "matrix_html", "matrix_png"]
