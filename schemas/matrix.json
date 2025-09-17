@@ -1,0 +1,136 @@
+{
+  "$defs": {
+    "MatrixTotals": {
+      "description": "Supported total display options for a matrix visual.",
+      "enum": [
+        "off",
+        "row",
+        "column",
+        "both"
+      ],
+      "title": "MatrixTotals",
+      "type": "string"
+    },
+    "MatrixValueConfig": {
+      "additionalProperties": false,
+      "description": "Declarative configuration for a matrix value column.",
+      "properties": {
+        "id": {
+          "description": "Unique identifier or measure name for the value column.",
+          "title": "Id",
+          "type": "string"
+        },
+        "show_as": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional calculation hint such as 'Percent of column total'.",
+          "title": "Display rule"
+        },
+        "label": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Friendly label used in rendered visuals; defaults to the value id.",
+          "title": "Label"
+        },
+        "format": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Formatting directive, e.g. 'percent:0' or 'duration:hms'.",
+          "title": "Format"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "MatrixValueConfig",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Top-level configuration for a matrix visual.",
+  "properties": {
+    "type": {
+      "const": "matrix",
+      "description": "Visual type identifier; must be 'matrix'.",
+      "title": "Type",
+      "type": "string"
+    },
+    "title": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Matrix title used in decks or charts.",
+      "title": "Title"
+    },
+    "description": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Optional helper text for authors.",
+      "title": "Description"
+    },
+    "rows": {
+      "description": "Row templates expressed using Jinja-style placeholders.",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Rows",
+      "type": "array"
+    },
+    "values": {
+      "description": "Collection of value columns that populate the matrix body.",
+      "items": {
+        "$ref": "#/$defs/MatrixValueConfig"
+      },
+      "minItems": 1,
+      "title": "Values",
+      "type": "array"
+    },
+    "totals": {
+      "$ref": "#/$defs/MatrixTotals",
+      "default": "off",
+      "description": "Controls whether grand totals are displayed for rows, columns, or both."
+    }
+  },
+  "required": [
+    "type",
+    "rows",
+    "values"
+  ],
+  "title": "MatrixConfig",
+  "type": "object"
+}
