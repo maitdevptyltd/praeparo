@@ -1,0 +1,10 @@
+# serializer version: 1
+# name: test_build_matrix_query_constructs_summarizecolumns
+  '''
+  EVALUATE
+  SUMMARIZECOLUMNS(
+      dim[City],
+      "Sales", [Total Sales]
+  )
+  '''
+# ---

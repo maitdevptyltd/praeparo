@@ -3,7 +3,7 @@ from praeparo.models import MatrixConfig, MatrixValueConfig, MatrixTotals
 from praeparo.templating import FieldReference
 
 
-def test_build_matrix_query_constructs_summarizecolumns() -> None:
+def test_build_matrix_query_constructs_summarizecolumns(snapshot) -> None:
     config = MatrixConfig(
         type="matrix",
         rows=["{{dim.City}}"],
@@ -15,6 +15,4 @@ def test_build_matrix_query_constructs_summarizecolumns() -> None:
 
     plan = build_matrix_query(config, row_fields)
 
-    assert "SUMMARIZECOLUMNS" in plan.statement
-    assert "dim[City]" in plan.statement
-    assert '"Sales", [Total Sales]' in plan.statement
+    assert plan.statement == snapshot
