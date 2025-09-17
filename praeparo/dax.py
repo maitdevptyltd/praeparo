@@ -38,9 +38,9 @@ def _apply_show_as(show_as: str | None, measure: str, row_fields: Sequence[Field
 
     normalized = show_as.strip().lower()
     if normalized == SHOW_AS_PERCENT_COLUMN_TOTAL:
-        if row_fields:
-            scope = ", ".join(field.dax_reference for field in row_fields)
-            return f"DIVIDE({measure}, CALCULATE({measure}, ALL({scope})))"
+        removers = ", ".join(f"REMOVEFILTERS({field.dax_reference})" for field in row_fields)
+        if removers:
+            return f"DIVIDE({measure}, CALCULATE({measure}, {removers}))"
         return f"DIVIDE({measure}, CALCULATE({measure}))"
 
     return measure
