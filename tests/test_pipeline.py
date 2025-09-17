@@ -1,10 +1,11 @@
 ﻿from importlib import util
 from pathlib import Path
+from typing import Sequence
 
 import pytest
 
 from praeparo.data import MatrixResultSet, mock_matrix_data
-from praeparo.models import MatrixConfig
+from praeparo.models import FrameConfig, MatrixConfig
 from praeparo.rendering import (
     frame_figure,
     frame_html,
@@ -13,6 +14,14 @@ from praeparo.rendering import (
     matrix_html,
     matrix_png,
 )
+from praeparo.rendering._shared import estimate_table_height
+from praeparo.rendering.frame import (
+    AUTO_FRAME_VERTICAL_SPACING,
+    DEFAULT_CHILD_HEIGHT,
+    FRAME_TITLE_MARGIN,
+    SUBPLOT_TITLE_MARGIN,
+)
+from praeparo.rendering.matrix import MATRIX_TITLE_MARGIN
 from praeparo.templating import label_from_template
 from tests.snapshot_extensions import (
     DaxSnapshotExtension,
@@ -35,6 +44,42 @@ VISUAL_FILES = discover_yaml_files(VISUAL_ROOT)
 def _slugify(value: str) -> str:
     slug = value.strip().lower().replace(" ", "_")
     return "".join(char for char in slug if char.isalnum() or char in {"_", "-"}) or "section"
+
+
+def _expected_matrix_height(config: MatrixConfig, dataset: MatrixResultSet) -> int:
+    height = estimate_table_height(len(dataset.rows))
+    if config.title:
+        height += MATRIX_TITLE_MARGIN
+    return height
+
+
+def _expected_frame_height(
+    frame: FrameConfig,
+    child_pairs: Sequence[tuple[MatrixConfig, MatrixResultSet]],
+) -> int:
+    top_margin = FRAME_TITLE_MARGIN if frame.title else 0
+    if frame.show_titles:
+        top_margin += SUBPLOT_TITLE_MARGIN
+
+    row_count = len(child_pairs)
+    if frame.auto_height:
+        child_heights: list[int] = []
+        for config, dataset in child_pairs:
+            if config.auto_height:
+                height = estimate_table_height(len(dataset.rows))
+            else:
+                height = DEFAULT_CHILD_HEIGHT
+            child_heights.append(height)
+
+        content_height = sum(child_heights)
+        spacing_fraction = AUTO_FRAME_VERTICAL_SPACING if row_count > 1 else 0.0
+        domain_fraction = 1 - spacing_fraction * (row_count - 1)
+        if domain_fraction <= 0:
+            domain_fraction = 1.0
+        base_height = content_height / domain_fraction
+        return int(round(base_height + top_margin))
+
+    return DEFAULT_CHILD_HEIGHT * row_count + top_margin
 
 
 def _assert_matrix_headers(config: MatrixConfig, dataset: MatrixResultSet, header_values: list[str]) -> None:
@@ -71,6 +116,13 @@ def test_visual_snapshots(snapshot, yaml_path: Path) -> None:
         header_values = list(figure.data[0].header["values"])
         _assert_matrix_headers(artifacts.config, dataset, header_values)
 
+        if artifacts.config.auto_height:
+            expected_height = _expected_matrix_height(artifacts.config, dataset)
+            assert figure.layout.height == expected_height
+            assert figure.layout.autosize is False
+        else:
+            assert figure.layout.height in {None, 0}
+
         html_extension = type(
             f"PlotlyHtmlSnapshotExtension_{case}",
             (PlotlyHtmlSnapshotExtension,),
@@ -88,8 +140,11 @@ def test_visual_snapshots(snapshot, yaml_path: Path) -> None:
                 {"snapshot_name": f"test_snapshot__{case}"},
             )
             png_snapshot = snapshot.use_extension(png_extension)
+            png_kwargs = {"format": "png", "scale": 2.0}
+            if figure.layout.height:
+                png_kwargs["height"] = figure.layout.height
             png_snapshot.assert_match(
-                figure.to_image(format="png", scale=2.0),
+                figure.to_image(**png_kwargs),
             )
         return
 
@@ -114,10 +169,15 @@ def test_visual_snapshots(snapshot, yaml_path: Path) -> None:
 
         child_datasets.append((child, dataset))
 
-    figure = frame_figure(
-        artifacts.config,
-        [(child.config, dataset) for child, dataset in child_datasets],
-    )
+    rendered_children = [
+        (child.config, dataset) for child, dataset in child_datasets
+    ]
+    figure = frame_figure(artifacts.config, rendered_children)
+
+    expected_height = _expected_frame_height(artifacts.config, rendered_children)
+    assert figure.layout.height == expected_height
+    assert figure.layout.autosize is False
+
     html_extension = type(
         f"PlotlyHtmlSnapshotExtension_{case}",
         (PlotlyHtmlSnapshotExtension,),
@@ -135,8 +195,11 @@ def test_visual_snapshots(snapshot, yaml_path: Path) -> None:
             {"snapshot_name": f"test_snapshot__{case}"},
         )
         png_snapshot = snapshot.use_extension(png_extension)
+        png_kwargs = {"format": "png", "scale": 2.0}
+        if figure.layout.height:
+            png_kwargs["height"] = figure.layout.height
         png_snapshot.assert_match(
-            figure.to_image(format="png", scale=2.0),
+            figure.to_image(**png_kwargs),
         )
 
 

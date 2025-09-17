@@ -179,6 +179,17 @@ def _load_frame_config(path: Path, data: dict[str, Any], *, stack: tuple[Path, .
         msg = f"Unsupported frame layout '{layout}' ({path})"
         raise ConfigLoadError(msg)
 
+    raw_auto_height = data.get("autoHeight")
+    if raw_auto_height is None:
+        raw_auto_height = data.get("auto_height")
+    if raw_auto_height is None:
+        auto_height = True
+    elif isinstance(raw_auto_height, bool):
+        auto_height = raw_auto_height
+    else:
+        msg = f"autoHeight must be a boolean when provided ({path})"
+        raise ConfigLoadError(msg)
+
     show_titles = bool(data.get("show_titles", False))
 
     resolved_children: list[FrameChildConfig] = []
@@ -218,6 +229,7 @@ def _load_frame_config(path: Path, data: dict[str, Any], *, stack: tuple[Path, .
         type="frame",
         title=data.get("title"),
         layout=layout,  # type: ignore[arg-type]
+        auto_height=auto_height,
         show_titles=show_titles,
         children=tuple(resolved_children),
     )

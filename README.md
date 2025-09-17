@@ -66,6 +66,8 @@ Run the build, and you’ll get a finished PowerPoint deck — no copy-pasting, 
 
 Matrix configs also support a top-level `define:` block for staging DAX tables or measures before `EVALUATE`. Those definitions can be referenced from row templates and global filters (see `tests/visuals/matrix/auto.yaml`). Filters accept either `field`/`include` pairs or direct `expression` strings for complex predicates. Rows can also be marked `hidden: true` to remain in queries while disappearing from rendered tables. Compose lists and top-level `parameters` let base YAML power variants like digital vs manual document runs.
 
+Auto-sized visuals: matrix and frame YAMLs expose an `autoHeight` flag (defaulting to `true`) so Plotly figures match their tabular content when exported to PNG, removing the dead space beneath stacked tables.
+
 ## Who is it for?
 
 - **Business leaders** who want decks that always reflect the latest numbers.

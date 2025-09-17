@@ -12,6 +12,18 @@ from ..models import MatrixConfig
 from ..templating import FieldReference, label_from_template, render_template
 
 
+TABLE_HEADER_HEIGHT = 40
+TABLE_ROW_HEIGHT = 32
+_MIN_VISIBLE_ROWS = 1
+
+
+def estimate_table_height(row_count: int) -> int:
+    """Return the pixel height required to render *row_count* records."""
+
+    visible_rows = max(row_count, _MIN_VISIBLE_ROWS)
+    return TABLE_HEADER_HEIGHT + visible_rows * TABLE_ROW_HEIGHT
+
+
 def _format_value(value: object, fmt: str | None) -> object:
     if value is None or fmt is None:
         return value
@@ -66,9 +78,20 @@ def table_trace(config: MatrixConfig, dataset: MatrixResultSet) -> go.Table:
         columns.append(formatted)
 
     return go.Table(
-        header=dict(values=headers, fill_color="#1f77b4", font=dict(color="white", size=12), align="left"),
-        cells=dict(values=columns, fill_color="white", align="left"),
+        header=dict(
+            values=headers,
+            fill_color="#1f77b4",
+            font=dict(color="white", size=12),
+            align="left",
+            height=TABLE_HEADER_HEIGHT,
+        ),
+        cells=dict(
+            values=columns,
+            fill_color="white",
+            align="left",
+            height=TABLE_ROW_HEIGHT,
+        ),
     )
 
 
-__all__ = ["table_trace"]
+__all__ = ["estimate_table_height", "table_trace", "TABLE_HEADER_HEIGHT", "TABLE_ROW_HEIGHT"]

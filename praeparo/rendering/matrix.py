@@ -9,7 +9,10 @@ import plotly.graph_objects as go
 
 from ..data import MatrixResultSet
 from ..models import MatrixConfig
-from ._shared import table_trace
+from ._shared import estimate_table_height, table_trace
+
+
+MATRIX_TITLE_MARGIN = 48
 
 
 def matrix_figure(config: MatrixConfig, dataset: MatrixResultSet) -> go.Figure:
@@ -18,12 +21,23 @@ def matrix_figure(config: MatrixConfig, dataset: MatrixResultSet) -> go.Figure:
     table = table_trace(config, dataset)
     figure = go.Figure(data=[table])
 
-    figure.update_layout(
+    title_margin = MATRIX_TITLE_MARGIN if config.title else 0
+    margin = dict(l=0, r=0, t=title_margin, b=0)
+
+    layout_kwargs = dict(
         title=config.title,
-        margin=dict(l=0, r=0, t=0, b=0),
+        margin=margin,
         paper_bgcolor="white",
         plot_bgcolor="white",
     )
+
+    if config.auto_height:
+        content_height = estimate_table_height(len(dataset.rows))
+        total_height = content_height + margin["t"] + margin["b"]
+        layout_kwargs["height"] = total_height
+        layout_kwargs["autosize"] = False
+
+    figure.update_layout(**layout_kwargs)
 
     return figure
 
@@ -53,7 +67,10 @@ def matrix_png(config: MatrixConfig, dataset: MatrixResultSet, output_path: str,
         raise RuntimeError(msg)
 
     figure = matrix_figure(config, dataset)
-    figure.write_image(output_path, format="png", scale=scale)
+    write_kwargs: dict[str, object] = {"format": "png", "scale": scale}
+    if figure.layout.height:
+        write_kwargs["height"] = figure.layout.height
+    figure.write_image(output_path, **write_kwargs)
 
 
 __all__ = ["matrix_figure", "matrix_html", "matrix_png", "table_trace"]

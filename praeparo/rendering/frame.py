@@ -10,7 +10,14 @@ from plotly.subplots import make_subplots
 
 from ..data import MatrixResultSet
 from ..models import FrameConfig, MatrixConfig
+from ._shared import estimate_table_height
 from .matrix import table_trace
+
+
+DEFAULT_CHILD_HEIGHT = 350
+AUTO_FRAME_VERTICAL_SPACING = 0.015
+FRAME_TITLE_MARGIN = 48
+SUBPLOT_TITLE_MARGIN = 16
 
 
 def frame_figure(
@@ -22,17 +29,31 @@ def frame_figure(
     if not children:
         raise ValueError("Frame requires at least one child visual to render")
 
+    row_count = len(children)
     specs = [[{"type": "table"}] for _ in children]
     titles = [child_config.title or f"Section {index}" for index, (child_config, _) in enumerate(children, start=1)]
+    vertical_spacing = AUTO_FRAME_VERTICAL_SPACING if frame.auto_height else 0.08
+
     subplot_kwargs: dict[str, object] = {}
     if frame.show_titles:
         subplot_kwargs["subplot_titles"] = titles
 
+    computed_heights: list[float] | None = None
+    if frame.auto_height:
+        computed_heights = []
+        for child_config, dataset in children:
+            if child_config.auto_height:
+                height = estimate_table_height(len(dataset.rows))
+            else:
+                height = DEFAULT_CHILD_HEIGHT
+            computed_heights.append(height)
+        subplot_kwargs["row_heights"] = computed_heights
+
     figure = make_subplots(
-        rows=len(children),
+        rows=row_count,
         cols=1,
         specs=specs,
-        vertical_spacing=0.08,
+        vertical_spacing=vertical_spacing,
         **subplot_kwargs,
     )
 
@@ -40,14 +61,33 @@ def frame_figure(
         table = table_trace(child_config, dataset)
         figure.add_trace(table, row=index, col=1)
 
-    figure.update_layout(
+    top_margin = FRAME_TITLE_MARGIN if frame.title else 0
+    if frame.show_titles:
+        top_margin += SUBPLOT_TITLE_MARGIN
+    margin = dict(l=0, r=0, t=top_margin, b=0)
+
+    layout_kwargs = dict(
         title=frame.title,
-        margin=dict(l=0, r=0, t=0, b=0),
+        margin=margin,
         paper_bgcolor="white",
         plot_bgcolor="white",
-        height=350 * len(children),
         showlegend=False,
     )
+
+    if frame.auto_height and computed_heights:
+        content_height = sum(computed_heights)
+        spacing_fraction = vertical_spacing if row_count > 1 else 0.0
+        domain_fraction = 1 - spacing_fraction * (row_count - 1)
+        if domain_fraction <= 0:
+            domain_fraction = 1.0
+        base_height = content_height / domain_fraction
+        layout_kwargs["height"] = int(round(base_height + margin["t"] + margin["b"]))
+    else:
+        fallback_height = DEFAULT_CHILD_HEIGHT * row_count
+        layout_kwargs["height"] = fallback_height + margin["t"] + margin["b"]
+
+    layout_kwargs["autosize"] = False
+    figure.update_layout(**layout_kwargs)
 
     return figure
 
@@ -88,7 +128,10 @@ def frame_png(
         raise RuntimeError(msg)
 
     figure = frame_figure(frame, children)
-    figure.write_image(output_path, format="png", scale=scale)
+    write_kwargs: dict[str, object] = {"format": "png", "scale": scale}
+    if figure.layout.height:
+        write_kwargs["height"] = figure.layout.height
+    figure.write_image(output_path, **write_kwargs)
 
 
 __all__ = ["frame_figure", "frame_html", "frame_png"]

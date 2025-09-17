@@ -24,6 +24,7 @@ class FrameConfig:
     title: str | None
     layout: Literal["vertical", "horizontal"]
     children: tuple[FrameChildConfig, ...]
+    auto_height: bool = True
     show_titles: bool = False
 
 

@@ -206,6 +206,12 @@ class MatrixConfig(BaseModel):
         description="Global filters applied to every generated query before evaluation.",
     )
 
+    auto_height: bool = Field(
+        default=True,
+        alias="autoHeight",
+        description="Automatically size the rendered matrix height based on row count.",
+    )
+
     @field_validator("define")
     @classmethod
     def _normalize_define(cls, value: str | None) -> str | None:

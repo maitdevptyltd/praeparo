@@ -231,6 +231,12 @@
       "title": "Filters",
       "type": "array"
     },
+    "autoHeight": {
+      "default": true,
+      "description": "Automatically size the rendered matrix height based on row count.",
+      "title": "Autoheight",
+      "type": "boolean"
+    },
     "parameters": {
       "type": "object",
       "title": "Parameters",
