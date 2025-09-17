@@ -1,12 +1,9 @@
 ﻿type: matrix
 title: "Automatic Documents"
 define: |
-  TABLE __dim_funding_channel_type = ADDCOLUMNS(
-    dim_funding_channel_type,
-    "Channel",
-      VAR channel_id = [FundingChannelTypeId]
-      RETURN IF(channel_id = 7, "Broker", "Direct")
-  )
+  COLUMN dim_funding_channel_type[Channel] =
+    VAR channel_id = [FundingChannelTypeId]
+    RETURN IF(channel_id = 7, "Broker", "Direct")
 
   MEASURE dim_matter[_Documents sent %] = 
     DIVIDE(
@@ -20,7 +17,7 @@ define: |
 rows:
   - template: "{{dim_matter.IsDigiDocs}}"
     hidden: true
-  - template: "{{dim_mortmgr.MortMgrName}} ({{__dim_funding_channel_type.Channel}})"
+  - template: "{{dim_mortmgr.MortMgrName}} ({{dim_funding_channel_type.Channel}})"
     label: "Automatic Documents"
 
 values:
