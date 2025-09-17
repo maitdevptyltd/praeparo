@@ -42,6 +42,7 @@ rows:
     label: "Automatic Documents"
 values:
   - id: "percent_sent"
+    show_as: "Percent of column total"
     label: "% sent"
     format: "percent:0"
   - id: "avg_time_sec"

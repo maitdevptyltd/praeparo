@@ -2,6 +2,6 @@ EVALUATE
 SUMMARIZECOLUMNS(
     dim_mortmgr[MortMgrName],
     dim_funding_channel_type[FundingChannelTypeName],
-    "% sent", [Documents sent],
+    "% sent", DIVIDE([Documents sent], CALCULATE([Documents sent], ALL(dim_mortmgr[MortMgrName], dim_funding_channel_type[FundingChannelTypeName]))),
     "hh:mm:ss", [Average Business Hours to Send Processed Documents]
 )

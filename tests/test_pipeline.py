@@ -27,7 +27,7 @@ def _case_name(path: Path) -> str:
 
 def _load_artifacts(yaml_path: Path):
     config = load_matrix_config(yaml_path)
-    row_fields = extract_field_references(row.template for row in config.rows)
+    row_fields = extract_field_references([row.template for row in config.rows])
     plan = build_matrix_query(config, row_fields)
     dataset = mock_matrix_data(config, row_fields)
     return config, dataset, plan
