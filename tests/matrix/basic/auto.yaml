@@ -2,13 +2,16 @@ type: matrix
 title: "Automatic Documents"
 
 rows:
-  - "{{MortMgrName}} ({{FundingChannelTypeName}})" # inline row template → infers fields
+  - "{{dim_mortmgr.MortMgrName}} ({{dim_funding_channel_type.FundingChannelTypeName}})"
 
 values:
-  - id: "percent_sent_auto"
+  - id: "Documents sent"
+    show_as: "Percent of column total"
+
     label: "% sent"
     format: "percent:0"
-  - id: "avg_time_sec"
+
+  - id: "Average Business Hours to Send Processed Documents "
     label: "hh:mm:ss"
     format: "duration:hms"
 
