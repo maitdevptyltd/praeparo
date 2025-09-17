@@ -1,18 +1,12 @@
-﻿import asyncio
+import asyncio
 import os
 from pathlib import Path
 
 import pytest
 
-from praeparo.data import powerbi_matrix_data
-from praeparo.rendering import matrix_figure
-from praeparo.templating import label_from_template
-from tests.snapshot_extensions import (
-    DaxSnapshotExtension,
-    PlotlyHtmlSnapshotExtension,
-    PlotlyPngSnapshotExtension,
-)
-from tests.utils.visual_cases import case_name, discover_yaml_files, load_visual_artifacts
+from praeparo.data import mock_matrix_data, powerbi_matrix_data
+from tests.utils.matrix_cases import MatrixDataProviderRegistry, run_matrix_case
+from tests.utils.visual_cases import MatrixArtifacts, case_name, discover_yaml_files, load_visual_artifacts
 
 GROUP_ID = "ca3752a3-d81b-41f9-a991-143521f57c2e"
 DATASET_ID = "937e5b45-9241-4079-8caf-94ec91ac70bd"
@@ -24,6 +18,7 @@ REQUIRED_ENV = (
 )
 INTEGRATION_ROOT = Path("tests/integration")
 INTEGRATION_FILES = discover_yaml_files(INTEGRATION_ROOT)
+CAPTURE_PNG = os.getenv("PRAEPARO_PBI_CAPTURE_PNG", "1") == "1"
 
 
 def _ensure_env() -> None:
@@ -32,22 +27,13 @@ def _ensure_env() -> None:
         pytest.skip(f"Missing Power BI environment variables: {', '.join(missing)}")
 
 
-@pytest.mark.integration
-@pytest.mark.skipif(
-    os.getenv("PRAEPARO_RUN_POWERBI_TESTS") != "1",
-    reason="Set PRAEPARO_RUN_POWERBI_TESTS=1 to enable live Power BI integration tests.",
-)
-@pytest.mark.parametrize("yaml_path", INTEGRATION_FILES, ids=lambda path: case_name(path, INTEGRATION_ROOT))
-def test_powerbi_matrix_snapshot(snapshot, yaml_path: Path) -> None:
+def _mock_matrix_provider(config, row_fields, plan):
+    return mock_matrix_data(config, row_fields)
+
+
+def _powerbi_matrix_provider(config, row_fields, plan):
     _ensure_env()
-
-    config, row_fields, plan = load_visual_artifacts(yaml_path)
-    if config.define:
-        assert plan.define == config.define.strip()
-    else:
-        assert plan.define is None
-
-    dataset = asyncio.run(
+    return asyncio.run(
         powerbi_matrix_data(
             config,
             row_fields,
@@ -57,55 +43,65 @@ def test_powerbi_matrix_snapshot(snapshot, yaml_path: Path) -> None:
         )
     )
 
-    assert dataset.rows, "Power BI query returned no rows"
 
+def _provider_for(key: str):
+    key = key.strip().lower()
+    if key == "mock":
+        return _mock_matrix_provider
+    if key == "powerbi":
+        return _powerbi_matrix_provider
+    raise ValueError(f"Unsupported matrix data provider '{key}'")
+
+
+def _parse_provider_overrides(raw: str) -> dict[str, str]:
+    overrides: dict[str, str] = {}
+    if not raw:
+        return overrides
+    for entry in raw.split(";"):
+        entry = entry.strip()
+        if not entry or "=" not in entry:
+            continue
+        case_key, provider_key = (part.strip() for part in entry.split("=", 1))
+        if case_key:
+            overrides[case_key] = provider_key.strip()
+    return overrides
+
+
+def _build_provider_registry() -> MatrixDataProviderRegistry:
+    default_key = os.getenv("PRAEPARO_MATRIX_PROVIDER", "powerbi")
+    default_provider = _provider_for(default_key)
+    overrides_raw = os.getenv("PRAEPARO_MATRIX_PROVIDER_CASES", "")
+    overrides = {
+        case: _provider_for(provider_key)
+        for case, provider_key in _parse_provider_overrides(overrides_raw).items()
+    }
+    return MatrixDataProviderRegistry(default=default_provider, overrides=overrides)
+
+
+DATA_PROVIDERS = _build_provider_registry()
+
+
+@pytest.mark.integration
+@pytest.mark.skipif(
+    os.getenv("PRAEPARO_RUN_POWERBI_TESTS") != "1",
+    reason="Set PRAEPARO_RUN_POWERBI_TESTS=1 to enable live Power BI integration tests.",
+)
+@pytest.mark.parametrize("yaml_path", INTEGRATION_FILES, ids=lambda path: case_name(path, INTEGRATION_ROOT))
+def test_powerbi_matrix_snapshot(snapshot, yaml_path: Path) -> None:
     case = case_name(yaml_path, INTEGRATION_ROOT)
+    artifacts = load_visual_artifacts(yaml_path)
+    assert isinstance(artifacts, MatrixArtifacts), "Integration visuals must be matrix configs"
 
-    dax_extension = type(
-        f"DaxSnapshotExtension_{case}",
-        (DaxSnapshotExtension,),
-        {"snapshot_name": f"test_snapshot__{case}"},
+    provider = DATA_PROVIDERS.resolve(case)
+
+    run_matrix_case(
+        snapshot,
+        case,
+        artifacts,
+        data_provider=provider,
+        capture_png=CAPTURE_PNG,
+        png_requires_kaleido=False,
+        ensure_non_empty_rows=True,
+        ensure_values_present=True,
+        validate_define=True,
     )
-    dax_snapshot = snapshot.use_extension(dax_extension)
-    dax_snapshot.assert_match(plan.statement)
-
-    figure = matrix_figure(config, dataset)
-
-    header_values = list(figure.data[0].header["values"])
-    visible_rows = [row for row in config.rows if not row.hidden]
-    row_header_values = header_values[: len(visible_rows)]
-    for index, row in enumerate(visible_rows):
-        expected = row.label or label_from_template(row.template, dataset.row_fields)
-        assert row_header_values[index] == expected
-
-    hidden_rows = [row for row in config.rows if row.hidden]
-    for row in hidden_rows:
-        expected = row.label or label_from_template(row.template, dataset.row_fields)
-        assert expected not in row_header_values
-
-    first_row = dataset.rows[0]
-    for value in config.values:
-        alias = value.label or value.id
-        assert first_row.get(alias) is not None, f"Value '{alias}' missing from dataset row"
-
-    html_extension = type(
-        f"PlotlyHtmlSnapshotExtension_{case}",
-        (PlotlyHtmlSnapshotExtension,),
-        {"snapshot_name": f"test_snapshot__{case}"},
-    )
-    html_snapshot = snapshot.use_extension(html_extension)
-    html_snapshot.assert_match(
-        figure.to_html(full_html=True, include_plotlyjs="cdn", div_id=case),
-    )
-
-    if os.getenv("PRAEPARO_PBI_CAPTURE_PNG", "1") == "1":
-        png_extension = type(
-            f"PlotlyPngSnapshotExtension_{case}",
-            (PlotlyPngSnapshotExtension,),
-            {"snapshot_name": f"test_snapshot__{case}"},
-        )
-        png_snapshot = snapshot.use_extension(png_extension)
-        png_snapshot.assert_match(
-            figure.to_image(format="png", scale=2.0),
-        )
-

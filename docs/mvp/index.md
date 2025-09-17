@@ -11,7 +11,7 @@ Praeparo turns YAML-defined visuals into automated, Plotly-powered presentations
 ## Quick Links
 
 - [Visual model architecture](./visual_model_architecture.md)
-- [Latest timeline](./2025-09-17.md)
+- [Latest timeline](./2025-09-18.md)
 - [Agent guidelines](../../AGENTS.md)
 
 ## How to Update
@@ -19,3 +19,4 @@ Praeparo turns YAML-defined visuals into automated, Plotly-powered presentations
 1. Add a new dated file in this folder using the format `YYYY-MM-DD.md` whenever plans or status change.
 2. Update the "Latest timeline" link above to point at the newest entry.
 3. Capture objectives, progress, blockers, and next steps in each dated file to keep continuity between agents.
+
