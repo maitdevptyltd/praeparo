@@ -1,0 +1,18 @@
+﻿type: matrix
+title: "Automatic Documents"
+
+rows:
+  - template: "{{dim_mortmgr.MortMgrName}} ({{dim_funding_channel_type.FundingChannelTypeName}})"
+    label: "Automatic Documents"
+
+values:
+  - id: "Documents sent"
+    show_as: "Percent of column total"
+    label: "% sent"
+    format: "percent:0"
+
+  - id: "Average Business Hours to Send Processed Documents "
+    label: "hh:mm:ss"
+    format: "duration:hms"
+
+totals: "off"

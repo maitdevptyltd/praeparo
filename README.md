@@ -92,6 +92,14 @@ The CLI orchestrates YAML validation (via Pydantic), field extraction, DAX query
 ### IntelliSense Support
 ### Power BI Integration
 
+#### Integration Tests
+
+Run live verification manually (skipped by default):
+
+```
+PRAEPARO_RUN_POWERBI_TESTS=1 poetry run pytest -m integration
+```
+
 Set the following environment variables (see `.env`) to enable live DAX queries:
 - `PRAEPARO_PBI_CLIENT_ID`
 - `PRAEPARO_PBI_CLIENT_SECRET`

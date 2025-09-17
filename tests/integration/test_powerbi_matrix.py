@@ -1,10 +1,11 @@
-from importlib import util
+import asyncio
+import os
 from pathlib import Path
 
 import pytest
 
-from praeparo.data import MatrixResultSet, mock_matrix_data
-from praeparo.rendering import matrix_figure, matrix_html, matrix_png
+from praeparo.data import powerbi_matrix_data
+from praeparo.rendering import matrix_figure
 from praeparo.templating import label_from_template
 from tests.snapshot_extensions import (
     DaxSnapshotExtension,
@@ -13,16 +14,48 @@ from tests.snapshot_extensions import (
 )
 from tests.utils.visual_cases import case_name, discover_yaml_files, load_visual_artifacts
 
-VISUAL_ROOT = Path("tests/visuals")
-VISUAL_FILES = discover_yaml_files(VISUAL_ROOT)
+GROUP_ID = "ca3752a3-d81b-41f9-a991-143521f57c2e"
+DATASET_ID = "937e5b45-9241-4079-8caf-94ec91ac70bd"
+REQUIRED_ENV = (
+    "PRAEPARO_PBI_CLIENT_ID",
+    "PRAEPARO_PBI_CLIENT_SECRET",
+    "PRAEPARO_PBI_TENANT_ID",
+    "PRAEPARO_PBI_REFRESH_TOKEN",
+)
+INTEGRATION_ROOT = Path("tests/integration")
+INTEGRATION_FILES = discover_yaml_files(INTEGRATION_ROOT)
 
 
-@pytest.mark.parametrize("yaml_path", VISUAL_FILES, ids=lambda path: case_name(path, VISUAL_ROOT))
-def test_visual_snapshots(snapshot, yaml_path: Path) -> None:
+def _ensure_env() -> None:
+    missing = [name for name in REQUIRED_ENV if not os.getenv(name)]
+    if missing:
+        pytest.skip(f"Missing Power BI environment variables: {', '.join(missing)}")
+
+
+@pytest.mark.integration
+@pytest.mark.skipif(
+    os.getenv("PRAEPARO_RUN_POWERBI_TESTS") != "1",
+    reason="Set PRAEPARO_RUN_POWERBI_TESTS=1 to enable live Power BI integration tests.",
+)
+@pytest.mark.parametrize("yaml_path", INTEGRATION_FILES, ids=lambda path: case_name(path, INTEGRATION_ROOT))
+def test_powerbi_matrix_snapshot(snapshot, yaml_path: Path) -> None:
+    _ensure_env()
+
     config, row_fields, plan = load_visual_artifacts(yaml_path)
-    dataset: MatrixResultSet = mock_matrix_data(config, row_fields)
 
-    case = case_name(yaml_path, VISUAL_ROOT)
+    dataset = asyncio.run(
+        powerbi_matrix_data(
+            config,
+            row_fields,
+            plan,
+            dataset_id=DATASET_ID,
+            group_id=GROUP_ID,
+        )
+    )
+
+    assert dataset.rows, "Power BI query returned no rows"
+
+    case = case_name(yaml_path, INTEGRATION_ROOT)
 
     dax_extension = type(
         f"DaxSnapshotExtension_{case}",
@@ -33,7 +66,6 @@ def test_visual_snapshots(snapshot, yaml_path: Path) -> None:
     dax_snapshot.assert_match(plan.statement)
 
     figure = matrix_figure(config, dataset)
-    assert figure.data
 
     header_values = list(figure.data[0].header["values"])
     for index, row in enumerate(config.rows):
@@ -50,7 +82,7 @@ def test_visual_snapshots(snapshot, yaml_path: Path) -> None:
         figure.to_html(full_html=True, include_plotlyjs="cdn", div_id=case),
     )
 
-    if util.find_spec("kaleido") is not None:
+    if os.getenv("PRAEPARO_PBI_CAPTURE_PNG", "1") == "1":
         png_extension = type(
             f"PlotlyPngSnapshotExtension_{case}",
             (PlotlyPngSnapshotExtension,),
@@ -60,22 +92,3 @@ def test_visual_snapshots(snapshot, yaml_path: Path) -> None:
         png_snapshot.assert_match(
             figure.to_image(format="png", scale=2.0),
         )
-
-
-@pytest.mark.parametrize("yaml_path", VISUAL_FILES, ids=lambda path: case_name(path, VISUAL_ROOT))
-def test_matrix_html_and_png_writers(tmp_path: Path, yaml_path: Path) -> None:
-    config, row_fields, _ = load_visual_artifacts(yaml_path)
-    dataset = mock_matrix_data(config, row_fields)
-    case = case_name(yaml_path, VISUAL_ROOT)
-
-    html_output = tmp_path / f"{case}.html"
-    matrix_html(config, dataset, str(html_output))
-    assert html_output.exists() and html_output.read_text(encoding="utf-8")
-
-    png_output = tmp_path / f"{case}.png"
-    if util.find_spec("kaleido") is not None:
-        matrix_png(config, dataset, str(png_output))
-        assert png_output.exists() and png_output.stat().st_size > 0
-    else:
-        with pytest.raises(RuntimeError):
-            matrix_png(config, dataset, str(png_output))
