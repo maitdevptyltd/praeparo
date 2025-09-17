@@ -72,6 +72,11 @@ def test_powerbi_matrix_snapshot(snapshot, yaml_path: Path) -> None:
         expected = row.label or label_from_template(row.template, dataset.row_fields)
         assert header_values[index] == expected
 
+    first_row = dataset.rows[0]
+    for value in config.values:
+        alias = value.label or value.id
+        assert first_row.get(alias) is not None, f"Value '{alias}' missing from dataset row"
+
     html_extension = type(
         f"PlotlyHtmlSnapshotExtension_{case}",
         (PlotlyHtmlSnapshotExtension,),

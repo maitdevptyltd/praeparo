@@ -47,6 +47,16 @@ def mock_matrix_data(config: MatrixConfig, row_fields: Iterable[FieldReference])
     return MatrixResultSet(rows=generated_rows, row_fields=ordered_fields)
 
 
+def _lookup_with_variants(raw: dict[str, object], key: str) -> object | None:
+    variants = {key}
+    if not key.startswith('[') and not key.endswith(']'):
+        variants.add(f"[{key}]")
+    for variant in variants:
+        if variant in raw:
+            return raw[variant]
+    return None
+
+
 async def powerbi_matrix_data(
     config: MatrixConfig,
     row_fields: Sequence[FieldReference],
@@ -68,15 +78,17 @@ async def powerbi_matrix_data(
     for raw in rows:
         record: dict[str, object] = {}
         for field in ordered_fields:
-            for candidate in (field.placeholder, field.dax_reference, field.column):
-                if candidate in raw:
-                    record[field.placeholder] = raw[candidate]
-                    break
-            else:
-                record[field.placeholder] = None
+            value = (
+                raw.get(field.placeholder)
+                or raw.get(field.dax_reference)
+                or raw.get(field.column)
+                or _lookup_with_variants(raw, field.placeholder)
+            )
+            record[field.placeholder] = value
         for value_config in config.values:
             alias = value_config.label or value_config.id
-            record[alias] = raw.get(alias)
+            value = raw.get(alias) or _lookup_with_variants(raw, alias)
+            record[alias] = value
         materialized.append(record)
 
     return MatrixResultSet(rows=materialized, row_fields=ordered_fields)
