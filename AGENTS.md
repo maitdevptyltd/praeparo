@@ -35,6 +35,13 @@ This guide keeps Codex/agents aligned while evolving the Praeparo proof of conce
 - Highlight any tests or commands that future agents should rerun.
 - After closing out work, propose a Conventional Commit-style message summarizing the changes.
 
+
+## Code Style Preferences
+
+- Favour high-quality, prudent SOLID design; prefer composition and clear extension points without unnecessary abstractions.
+- Add docstrings or concise comments whenever behaviour is non-obvious from structure alone (e.g. complex control flow, regex helpers, or template handling).
+- Keep code comments focused and actionable; explain why decisions were made rather than restating what the code does.
+
 ## Communication Norms
 
 - Prefer concise, actionable notes in docs rather than long chat transcripts.
