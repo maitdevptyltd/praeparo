@@ -50,7 +50,7 @@ def build_matrix_query(config: MatrixConfig, row_fields: Sequence[FieldReference
     """Construct a simple SUMMARIZECOLUMNS query for the given matrix configuration."""
 
     ordered_rows = tuple(row_fields)
-    row_lines: list[str] = [reference.dax_reference for reference in ordered_rows]
+    row_lines: list[str] = [f'"{reference.placeholder}", {reference.dax_reference}' for reference in ordered_rows]
 
     value_lines: list[str] = []
     measure_names: list[str] = []

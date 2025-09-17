@@ -4,7 +4,7 @@ from typing import Callable
 
 import pytest
 
-from praeparo.data import mock_matrix_data
+from praeparo.data import MatrixResultSet, mock_matrix_data
 from praeparo.dax import build_matrix_query
 from praeparo.io.yaml_loader import load_matrix_config
 from praeparo.rendering import matrix_figure, matrix_html, matrix_png

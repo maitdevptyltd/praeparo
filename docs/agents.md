@@ -20,6 +20,7 @@ This guide keeps Codex/agents aligned while evolving the Praeparo proof of conce
 - `pytest` relies on `pytest.ini` for root import paths; keep it in sync if the package layout changes.
 - Snapshot tests run via `syrupy`; regenerate expected output with `poetry run pytest --snapshot-update`.
 - Snapshot artifacts (DAX/HTML/PNG) live in `tests/__snapshots__/`; regenerate with `poetry run pytest --snapshot-update`. Kaleido is required for PNG snapshots (`poetry add kaleido`).
+- Configure Power BI credentials in `.env` (`PRAEPARO_PBI_CLIENT_ID`, `PRAEPARO_PBI_CLIENT_SECRET`, `PRAEPARO_PBI_TENANT_ID`, `PRAEPARO_PBI_REFRESH_TOKEN`) when running live queries.
 - When new CLI features arrive, add smoke tests or fixture updates so `poetry run pytest` stays green.
 
 ## Handoff Checklist

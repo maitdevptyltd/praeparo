@@ -8,7 +8,7 @@ from typing import Iterable
 
 import plotly.graph_objects as go
 
-from .data import MockResultSet
+from .data import MatrixResultSet
 from .models import MatrixConfig
 from .templating import FieldReference, label_from_template, render_template
 
@@ -40,15 +40,15 @@ def _row_headers(config: MatrixConfig, references: Iterable[FieldReference]) -> 
     return headers
 
 
-def _row_columns(config: MatrixConfig, dataset: MockResultSet) -> list[list[object]]:
+def _row_columns(config: MatrixConfig, dataset: MatrixResultSet) -> list[list[object]]:
     columns: list[list[object]] = []
-    for row in config.rows:
-        column_values = [render_template(row.template, record) for record in dataset.rows]
+    for row_config in config.rows:
+        column_values = [render_template(row_config.template, record) for record in dataset.rows]
         columns.append(column_values)
     return columns
 
 
-def matrix_figure(config: MatrixConfig, dataset: MockResultSet) -> go.Figure:
+def matrix_figure(config: MatrixConfig, dataset: MatrixResultSet) -> go.Figure:
     """Render a Plotly table representing the matrix visual."""
 
     row_headers = _row_headers(config, dataset.row_fields)
@@ -83,8 +83,8 @@ def matrix_figure(config: MatrixConfig, dataset: MockResultSet) -> go.Figure:
     return figure
 
 
-def matrix_html(config: MatrixConfig, dataset: MockResultSet, output_path: str) -> None:
-    """Write the rendered figure to an HTML file with minimal chrome."""
+def matrix_html(config: MatrixConfig, dataset: MatrixResultSet, output_path: str) -> None:
+    """Write the rendered figure to an HTML file."""
 
     figure = matrix_figure(config, dataset)
     div_id = Path(output_path).stem.replace(" ", "_") or "matrix"
@@ -100,7 +100,7 @@ def matrix_html(config: MatrixConfig, dataset: MockResultSet, output_path: str) 
     Path(output_path).write_text(html, encoding="utf-8")
 
 
-def matrix_png(config: MatrixConfig, dataset: MockResultSet, output_path: str, scale: float = 2.0) -> None:
+def matrix_png(config: MatrixConfig, dataset: MatrixResultSet, output_path: str, scale: float = 2.0) -> None:
     """Export the rendered figure to a static PNG file."""
 
     if importlib_util.find_spec("kaleido") is None:

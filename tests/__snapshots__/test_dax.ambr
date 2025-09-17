@@ -3,7 +3,7 @@
   '''
   EVALUATE
   SUMMARIZECOLUMNS(
-      dim[City],
+      "dim.City", dim[City],
       "Sales", [Total Sales]
   )
   '''

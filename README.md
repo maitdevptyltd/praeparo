@@ -90,6 +90,25 @@ Run the build, and you’ll get a finished PowerPoint deck — no copy-pasting, 
 The CLI orchestrates YAML validation (via Pydantic), field extraction, DAX query generation, and a mock data provider before building a Plotly table. The DAX output is printed when `--print-dax` is supplied so you can copy it into live environments later.
 
 ### IntelliSense Support
+### Power BI Integration
+
+Set the following environment variables (see `.env`) to enable live DAX queries:
+- `PRAEPARO_PBI_CLIENT_ID`
+- `PRAEPARO_PBI_CLIENT_SECRET`
+- `PRAEPARO_PBI_TENANT_ID`
+- `PRAEPARO_PBI_REFRESH_TOKEN`
+- Optional: `PRAEPARO_PBI_SCOPE` (defaults to Power BI API scope)
+
+Render a YAML visual against a real dataset:
+
+```
+praeparo tests/visuals/matrix/auto.yaml --dataset-id <dataset_guid> --workspace-id <workspace_guid> --out build/matrix.html --png-out build/matrix.png --print-dax
+```
+
+The CLI exchanges the refresh token for an access token, issues the DAX statement via the Power BI `executeQueries` API, and snapshots the response for regression tests.
+
+When `--dataset-id` is omitted the mock provider remains available for offline development.
+
 
 Run `python -m praeparo.schema` to regenerate `schemas/matrix.json`. Import this schema into your editor to unlock auto-complete and validation for matrix YAML files.
 
