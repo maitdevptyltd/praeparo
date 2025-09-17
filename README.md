@@ -76,3 +76,16 @@ Run the build, and you’ll get a finished PowerPoint deck — no copy-pasting, 
 - **Transparency** – YAML is human-readable and version-controlled
 - **Flexibility** – Plotly unlocks custom visuals not possible in Power BI
 - **Scalability** – add new KPIs or slides with just a YAML file
+
+## Proof-of-Concept Workflow
+
+1. Define a matrix visual in YAML (see `tests/matrix/basic/auto.yaml`).
+2. Validate and render it with the CLI:
+   - `praeparo tests/matrix/basic/auto.yaml --out build/matrix.html --print-dax`
+3. Open the generated HTML file to explore the Plotly-powered matrix.
+
+The CLI orchestrates YAML validation (via Pydantic), field extraction, DAX query generation, and a mock data provider before building a Plotly table. The DAX output is printed when `--print-dax` is supplied so you can copy it into live environments later.
+
+### IntelliSense Support
+
+Run `python -m praeparo.schema` to regenerate `schemas/matrix.json`. Import this schema into your editor to unlock auto-complete and validation for matrix YAML files.

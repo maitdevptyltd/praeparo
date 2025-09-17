@@ -15,4 +15,4 @@ values:
     label: "hh:mm:ss"
     format: "duration:hms"
 
-totals: off
+totals: "off"
