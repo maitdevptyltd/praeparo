@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections import OrderedDict
 from dataclasses import dataclass
 import re
-from typing import Iterable, Iterator
+from typing import Iterable, Iterator, Mapping
 
 JINJA_PLACEHOLDER = re.compile(r"\{\{\s*(?P<expr>[^}]+?)\s*\}\}")
 
@@ -77,4 +77,39 @@ def extract_field_references(templates: Iterable[str]) -> list[FieldReference]:
     return list(ordered.values())
 
 
-__all__ = ["FieldReference", "extract_field_references", "iter_field_references"]
+def render_template(template: str, values: Mapping[str, object]) -> str:
+    """Render *template* using values keyed by placeholder expression."""
+
+    def replace(match: re.Match[str]) -> str:
+        expr = _clean_expression(match.group("expr"))
+        value = values.get(expr)
+        if value is None:
+            return ""
+        return str(value)
+
+    return JINJA_PLACEHOLDER.sub(replace, template)
+
+
+def label_from_template(template: str, references: Iterable[FieldReference]) -> str:
+    """Generate a human-friendly column label for the provided template."""
+
+    ref_map = {reference.expression: reference for reference in references}
+
+    def replace(match: re.Match[str]) -> str:
+        expr = _clean_expression(match.group("expr"))
+        reference = ref_map.get(expr)
+        if reference is None:
+            return expr
+        return reference.column
+
+    label = JINJA_PLACEHOLDER.sub(replace, template).strip()
+    return label or "Row"
+
+
+__all__ = [
+    "FieldReference",
+    "extract_field_references",
+    "iter_field_references",
+    "label_from_template",
+    "render_template",
+]

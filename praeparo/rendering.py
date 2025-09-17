@@ -8,6 +8,7 @@ import plotly.graph_objects as go
 
 from .data import MockResultSet
 from .models import MatrixConfig
+from .templating import FieldReference, label_from_template, render_template
 
 
 def _format_value(value: object, fmt: str | None) -> object:
@@ -27,17 +28,27 @@ def _format_value(value: object, fmt: str | None) -> object:
     return value
 
 
+def _row_headers(config: MatrixConfig, references: tuple[FieldReference, ...]) -> list[str]:
+    return [label_from_template(template, references) for template in config.rows]
+
+
+def _row_columns(config: MatrixConfig, dataset: MockResultSet) -> list[list[object]]:
+    columns: list[list[object]] = []
+    for template in config.rows:
+        column_values = [render_template(template, row) for row in dataset.rows]
+        columns.append(column_values)
+    return columns
+
+
 def matrix_figure(config: MatrixConfig, dataset: MockResultSet) -> go.Figure:
     """Render a Plotly table representing the matrix visual."""
 
-    row_headers = [reference.placeholder for reference in dataset.row_fields]
+    row_headers = _row_headers(config, dataset.row_fields)
     value_headers = [value.label or value.id for value in config.values]
     headers = row_headers + value_headers
 
     columns: list[list[object]] = []
-
-    for header in row_headers:
-        columns.append([row.get(header) for row in dataset.rows])
+    columns.extend(_row_columns(config, dataset))
 
     format_lookup = {value.label or value.id: value.format for value in config.values}
     for header in value_headers:

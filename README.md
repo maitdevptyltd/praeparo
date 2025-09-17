@@ -79,11 +79,11 @@ Run the build, and you’ll get a finished PowerPoint deck — no copy-pasting, 
 
 ## Proof-of-Concept Workflow
 
-1. Define a matrix visual in YAML (see `tests/matrix/basic/auto.yaml`).
+1. Define a matrix visual in YAML (see `tests/visuals/matrix/auto.yaml`).
 2. Validate and render it with the CLI:
-   - `praeparo tests/matrix/basic/auto.yaml --out build/matrix.html --print-dax`
+   - `praeparo tests/visuals/matrix/auto.yaml --out build/matrix.html --print-dax`
    - Add `--png-out build/matrix.png` to capture a static snapshot for slide decks (requires Kaleido: `poetry add kaleido`).
-3. Open the generated HTML (and PNG if requested) to explore the Plotly-powered matrix.
+3. Regenerate visual snapshots with poetry run pytest --snapshot-update; inspect the HTML/PNG artifacts under 	ests/__snapshots__/test_pipeline/.
 
 The CLI orchestrates YAML validation (via Pydantic), field extraction, DAX query generation, and a mock data provider before building a Plotly table. The DAX output is printed when `--print-dax` is supplied so you can copy it into live environments later.
 

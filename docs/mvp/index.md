@@ -4,7 +4,7 @@ Praeparo turns YAML-defined visuals into automated, Plotly-powered presentations
 
 ## Goals
 - Validate the YAML -> Pydantic -> DAX -> Plotly pipeline end-to-end
-- Ship an opinionated matrix visual based on `tests/matrix/basic/auto.yaml`
+- Ship an opinionated matrix visual based on `tests/visuals/matrix/auto.yaml`
 - Document agent workflow and decision logs so contributions stay aligned
 
 ## Quick Links
