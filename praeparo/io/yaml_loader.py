@@ -1,20 +1,17 @@
-﻿"""YAML loaders that validate against Praeparo models."""
+"""YAML loaders that validate against Praeparo models."""
 
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Any, Mapping, cast
-
+import copy
 import re
+from pathlib import Path
+
+from typing import Annotated, Any, Mapping
 
 import yaml
-from pydantic import ValidationError
+from pydantic import Field, TypeAdapter, ValidationError
 
-from ..models import (
-    FrameChildConfig,
-    FrameConfig,
-    MatrixConfig,
-)
+from ..models import BaseVisualConfig, FrameConfig, MatrixConfig
 from ..templating import render_template
 
 
@@ -24,13 +21,21 @@ class ConfigLoadError(RuntimeError):
 
 PLACEHOLDER_RE = re.compile(r"\{\{\s*(?P<expr>[^}]+?)\s*\}}")
 
+ComposeStack = tuple[Path, ...]  # Tracks nested compose references to prevent cycles.
+VisualConfigUnion = Annotated[MatrixConfig | FrameConfig, Field(discriminator="type")]
+VISUAL_ADAPTER = TypeAdapter(VisualConfigUnion)
+
 
 def _clean_placeholder(expression: str) -> str:
+    """Return the core template variable name before any Jinja filters."""
+
     base = expression.split("|", 1)[0].strip()
     return base
 
 
 def _render_with_context(value: str, context: Mapping[str, str], *, location: str) -> str:
+    """Render a template string and fail fast if any placeholders lack context."""
+
     missing: list[str] = []
     for match in PLACEHOLDER_RE.finditer(value):
         expr = _clean_placeholder(match.group("expr"))
@@ -45,6 +50,8 @@ def _render_with_context(value: str, context: Mapping[str, str], *, location: st
 
 
 def _merge_dicts(base: dict[str, Any], update: Mapping[str, Any]) -> dict[str, Any]:
+    """Deep-merge mapping values, favouring overrides for non-mapping entries."""
+
     merged = dict(base)
     for key, value in update.items():
         if (
@@ -58,7 +65,9 @@ def _merge_dicts(base: dict[str, Any], update: Mapping[str, Any]) -> dict[str, A
     return merged
 
 
-def _load_composed_yaml(path: Path, *, stack: tuple[Path, ...] = ()) -> dict[str, Any]:
+def _load_composed_yaml(path: Path, *, stack: ComposeStack = ()) -> dict[str, Any]:
+    """Load a YAML document and resolve its compose chain depth-first."""
+
     if path in stack:
         joined = " -> ".join(str(item) for item in stack + (path,))
         msg = f"Detected circular composition while loading {joined}"
@@ -100,6 +109,8 @@ def _load_composed_yaml(path: Path, *, stack: tuple[Path, ...] = ()) -> dict[str
 
 
 def _build_context(data: Mapping[str, Any], parameters: Mapping[str, Any]) -> dict[str, str]:
+    """Generate a string-keyed context for template substitution."""
+
     context: dict[str, str] = {}
     for key, value in data.items():
         if isinstance(value, (str, int, float, bool)):
@@ -110,6 +121,8 @@ def _build_context(data: Mapping[str, Any], parameters: Mapping[str, Any]) -> di
 
 
 def _apply_parameter_templates(data: dict[str, Any], *, context: Mapping[str, str]) -> None:
+    """Inject parameter defaults into templated labels and filters."""
+
     rows = data.get("rows")
     if isinstance(rows, list):
         for item in rows:
@@ -127,20 +140,96 @@ def _apply_parameter_templates(data: dict[str, Any], *, context: Mapping[str, st
                     item["expression"] = _render_with_context(expression, context, location="filter expression")
 
 
-def _finalize_matrix_config(data: dict[str, Any], *, path: Path) -> MatrixConfig:
-    parameters = data.pop("parameters", {}) or {}
+def _prepare_payload(
+    path: Path,
+    data: Mapping[str, Any],
+    *,
+    overrides: Mapping[str, Any] | None,
+    parameters_override: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    """Apply overrides, merge parameters, and render templates prior to validation."""
+
+    payload = copy.deepcopy(dict(data))
+
+    if overrides:
+        payload = _merge_dicts(payload, overrides)
+
+    if parameters_override:
+        existing = payload.get("parameters", {}) or {}
+        if not isinstance(existing, Mapping):
+            msg = f"parameters must be a mapping when provided ({path})"
+            raise ConfigLoadError(msg)
+        normalized_existing = {str(k): v for k, v in existing.items()}
+        normalized_override = {str(k): v for k, v in parameters_override.items()}
+        payload["parameters"] = {**normalized_existing, **normalized_override}
+
+    parameters = payload.pop("parameters", {}) or {}
     if not isinstance(parameters, Mapping):
         msg = f"parameters must be a mapping when provided ({path})"
         raise ConfigLoadError(msg)
 
-    context = _build_context(data, parameters)
-    _apply_parameter_templates(data, context=context)
+    context = _build_context(payload, parameters)
+    _apply_parameter_templates(payload, context=context)
+
+    return payload
+
+
+def _finalize_visual(
+    path: Path,
+    payload: dict[str, Any],
+    *,
+    stack: ComposeStack,
+) -> BaseVisualConfig:
+    """Validate the prepared payload and resolve any nested visual references."""
+
+    # Default to matrix for legacy documents that omit the visual discriminator.
+    payload.setdefault("type", "matrix")
 
     try:
-        return MatrixConfig.model_validate(data)
+        visual = VISUAL_ADAPTER.validate_python(payload)
     except ValidationError as exc:
         msg = f"Configuration validation failed for {path}"
         raise ConfigLoadError(msg) from exc
+
+    def _load_child(
+        target_path: Path,
+        child_overrides: Mapping[str, Any] | None,
+        child_parameters: Mapping[str, Any] | None,
+        child_stack: ComposeStack,
+    ) -> BaseVisualConfig:
+        """Recursively load child visuals while preserving the compose stack."""
+
+        return load_visual_config(
+            target_path,
+            overrides=child_overrides,
+            parameters_override=child_parameters,
+            stack=child_stack,
+        )
+
+    return visual.resolve(load_visual=_load_child, path=path, stack=stack)
+
+
+def load_visual_config(
+    path: Path,
+    *,
+    overrides: Mapping[str, Any] | None = None,
+    parameters_override: Mapping[str, Any] | None = None,
+    stack: ComposeStack | None = None,
+) -> BaseVisualConfig:
+    """Load a visual, applying overrides and resolving compose/child references."""
+
+    resolved = path.resolve()
+    compose_stack: ComposeStack = stack or ()
+    # Resolve any declared compose chain before validation.
+    merged = _load_composed_yaml(resolved, stack=compose_stack)
+    payload = _prepare_payload(
+        resolved,
+        merged,
+        overrides=overrides,
+        parameters_override=parameters_override,
+    )
+
+    return _finalize_visual(resolved, payload, stack=compose_stack)
 
 
 def load_matrix_config(
@@ -148,110 +237,20 @@ def load_matrix_config(
     *,
     parameters_override: Mapping[str, Any] | None = None,
     overrides: Mapping[str, Any] | None = None,
-    stack: tuple[Path, ...] | None = None,
+    stack: ComposeStack | None = None,
 ) -> MatrixConfig:
     """Load and validate a matrix YAML file."""
 
-    resolved = path.resolve()
-    merged = _load_composed_yaml(resolved, stack=stack or ())
-
-    if overrides:
-        merged = _merge_dicts(merged, overrides)
-
-    if parameters_override:
-        existing = merged.get("parameters", {}) or {}
-        if not isinstance(existing, Mapping):
-            msg = f"parameters must be a mapping when provided ({path})"
-            raise ConfigLoadError(msg)
-        merged["parameters"] = {**{str(k): v for k, v in existing.items()}, **parameters_override}
-
-    return _finalize_matrix_config(merged, path=resolved)
-
-
-def _load_frame_config(path: Path, data: dict[str, Any], *, stack: tuple[Path, ...]) -> FrameConfig:
-    children = data.get("children")
-    if not isinstance(children, list) or not children:
-        msg = f"Frame configuration must define a non-empty 'children' list ({path})"
-        raise ConfigLoadError(msg)
-
-    layout = str(data.get("layout", "vertical")).lower()
-    if layout not in {"vertical", "horizontal"}:
-        msg = f"Unsupported frame layout '{layout}' ({path})"
-        raise ConfigLoadError(msg)
-
-    raw_auto_height = data.get("autoHeight")
-    if raw_auto_height is None:
-        raw_auto_height = data.get("auto_height")
-    if raw_auto_height is None:
-        auto_height = True
-    elif isinstance(raw_auto_height, bool):
-        auto_height = raw_auto_height
-    else:
-        msg = f"autoHeight must be a boolean when provided ({path})"
-        raise ConfigLoadError(msg)
-
-    show_titles = bool(data.get("show_titles", False))
-
-    resolved_children: list[FrameChildConfig] = []
-    for index, entry in enumerate(children, start=1):
-        if not isinstance(entry, Mapping):
-            msg = f"Frame child at position {index} must be a mapping ({path})"
-            raise ConfigLoadError(msg)
-
-        ref = entry.get("ref")
-        if not isinstance(ref, str) or not ref.strip():
-            msg = f"Frame child at position {index} is missing a 'ref' path ({path})"
-            raise ConfigLoadError(msg)
-
-        child_path = (path.parent / ref).resolve()
-        parameters = entry.get("parameters") or {}
-        if not isinstance(parameters, Mapping):
-            msg = f"Child parameters must be a mapping ({child_path})"
-            raise ConfigLoadError(msg)
-
-        overrides = {key: value for key, value in entry.items() if key not in {"ref", "parameters"}}
-
-        child_config = load_matrix_config(
-            child_path,
-            parameters_override=parameters,
-            overrides=overrides,
-            stack=stack + (path,),
-        )
-        resolved_children.append(
-            FrameChildConfig(
-                source=child_path,
-                config=child_config,
-                parameters={str(k): str(v) if not isinstance(v, str) else v for k, v in parameters.items()},
-            )
-        )
-
-    return FrameConfig(
-        type="frame",
-        title=data.get("title"),
-        layout=layout,  # type: ignore[arg-type]
-        auto_height=auto_height,
-        show_titles=show_titles,
-        children=tuple(resolved_children),
+    visual = load_visual_config(
+        path,
+        overrides=overrides,
+        parameters_override=parameters_override,
+        stack=stack,
     )
-
-
-def load_visual_config(path: Path) -> MatrixConfig | FrameConfig:
-    """Load a Praeparo visual configuration of any supported type."""
-
-    resolved = path.resolve()
-    merged = _load_composed_yaml(resolved)
-
-    visual_type = merged.get("type")
-    if visual_type == "matrix" or visual_type is None:
-        # Treat missing type as matrix for backward compatibility.
-        return _finalize_matrix_config(dict(merged), path=resolved)
-
-    if visual_type == "frame":
-        return _load_frame_config(resolved, dict(merged), stack=(resolved,))
-
-    msg = f"Unsupported visual type '{visual_type}' in {path}"
-    raise ConfigLoadError(msg)
+    if not isinstance(visual, MatrixConfig):
+        msg = f"Expected matrix visual but found type '{visual.type}' in {path}"
+        raise ConfigLoadError(msg)
+    return visual
 
 
 __all__ = ["ConfigLoadError", "load_matrix_config", "load_visual_config"]
-

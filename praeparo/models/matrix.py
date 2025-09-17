@@ -5,6 +5,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from .visual_base import BaseVisualConfig
+
 
 class MatrixTotals(str, Enum):
     """Supported total display options for a matrix visual."""
@@ -127,13 +129,15 @@ class MatrixFilterConfig(BaseModel):
     def _ensure_list(cls, value):
         if value is None:
             return value
-        if isinstance(value, str):
-            return [value]
-        return value
+        if isinstance(value, list):
+            return value
+        if isinstance(value, tuple):
+            return list(value)
+        return [value]
 
     @field_validator("include")
     @classmethod
-    def _normalize_include(cls, value: list[str] | None) -> list[str] | None:
+    def _validate_include(cls, value: list[str] | None) -> list[str] | None:
         if value is None:
             return value
         cleaned: list[str] = []
@@ -174,8 +178,7 @@ class MatrixFilterConfig(BaseModel):
         return self
 
 
-
-class MatrixConfig(BaseModel):
+class MatrixConfig(BaseVisualConfig):
     """Top-level configuration for a matrix visual."""
 
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
