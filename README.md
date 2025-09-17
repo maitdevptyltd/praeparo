@@ -35,10 +35,11 @@ Praeparo bridges this gap. It lets you keep using Power BI as the **data engine*
 Define a matrix once:
 
 ```yaml
-type: matrix
 title: "Automatic Documents"
+type: matrix
 rows:
-  - "{{MortMgrName}} ({{FundingChannelTypeName}})"
+  - template: "{{MortMgrName}} ({{FundingChannelTypeName}})"
+    label: "Automatic Documents"
 values:
   - id: "percent_sent"
     label: "% sent"
@@ -90,3 +91,5 @@ The CLI orchestrates YAML validation (via Pydantic), field extraction, DAX query
 ### IntelliSense Support
 
 Run `python -m praeparo.schema` to regenerate `schemas/matrix.json`. Import this schema into your editor to unlock auto-complete and validation for matrix YAML files.
+
+

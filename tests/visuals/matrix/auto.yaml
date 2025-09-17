@@ -2,12 +2,12 @@ type: matrix
 title: "Automatic Documents"
 
 rows:
-  - "{{dim_mortmgr.MortMgrName}} ({{dim_funding_channel_type.FundingChannelTypeName}})"
+  - template: "{{dim_mortmgr.MortMgrName}} ({{dim_funding_channel_type.FundingChannelTypeName}})"
+    label: "Automatic Documents"
 
 values:
   - id: "Documents sent"
     show_as: "Percent of column total"
-
     label: "% sent"
     format: "percent:0"
 

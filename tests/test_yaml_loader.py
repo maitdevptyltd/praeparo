@@ -23,7 +23,7 @@ def test_load_matrix_config_success(tmp_path: Path) -> None:
     config = load_matrix_config(path)
 
     assert config.type == "matrix"
-    assert config.rows == ["{{table.column}}"]
+    assert [row.template for row in config.rows] == ["{{table.column}}"]
     assert config.values[0].id == "Value"
 
 

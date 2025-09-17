@@ -65,6 +65,35 @@
       ],
       "title": "MatrixValueConfig",
       "type": "object"
+    },
+    "RowTemplate": {
+      "additionalProperties": false,
+      "description": "Template configuration for a matrix row dimension column.",
+      "properties": {
+        "template": {
+          "description": "Row template expressed using Jinja-style placeholders.",
+          "title": "Template",
+          "type": "string"
+        },
+        "label": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional override for the rendered column header.",
+          "title": "Label"
+        }
+      },
+      "required": [
+        "template"
+      ],
+      "title": "RowTemplate",
+      "type": "object"
     }
   },
   "additionalProperties": false,
@@ -105,7 +134,7 @@
     "rows": {
       "description": "Row templates expressed using Jinja-style placeholders.",
       "items": {
-        "type": "string"
+        "$ref": "#/$defs/RowTemplate"
       },
       "minItems": 1,
       "title": "Rows",

@@ -46,7 +46,7 @@ def run(argv: Sequence[str] | None = None) -> int:
         parser.error(str(exc))
         return 2
 
-    row_fields = extract_field_references(config.rows)
+    row_fields = extract_field_references([row.template for row in config.rows])
     query = build_matrix_query(config, row_fields)
     dataset = mock_matrix_data(config, row_fields)
 

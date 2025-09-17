@@ -53,6 +53,35 @@ class MatrixValueConfig(BaseModel):
         return normalized or None
 
 
+class RowTemplate(BaseModel):
+    """Template configuration for a matrix row dimension column."""
+
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    template: str = Field(..., description="Row template expressed using Jinja-style placeholders.")
+    label: str | None = Field(
+        default=None,
+        description="Optional override for the rendered column header.",
+    )
+
+    @field_validator("template")
+    @classmethod
+    def _normalize_template(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            msg = "Row template cannot be empty."
+            raise ValueError(msg)
+        return normalized
+
+    @field_validator("label")
+    @classmethod
+    def _normalize_label(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        normalized = value.strip()
+        return normalized or None
+
+
 class MatrixConfig(BaseModel):
     """Top-level configuration for a matrix visual."""
 
@@ -61,7 +90,7 @@ class MatrixConfig(BaseModel):
     type: Literal["matrix"] = Field(description="Visual type identifier; must be 'matrix'.")
     title: str | None = Field(default=None, description="Matrix title used in decks or charts.")
     description: str | None = Field(default=None, description="Optional helper text for authors.")
-    rows: list[str] = Field(
+    rows: list[RowTemplate] = Field(
         ...,
         description="Row templates expressed using Jinja-style placeholders.",
         min_length=1,
@@ -78,17 +107,25 @@ class MatrixConfig(BaseModel):
 
     @field_validator("rows", mode="before")
     @classmethod
-    def _ensure_rows(cls, value):
+    def _normalize_rows(cls, value):
         if value is None:
             msg = "Matrix requires at least one row template."
             raise ValueError(msg)
         if isinstance(value, list):
-            cleaned = [item.strip() for item in value if isinstance(item, str) and item.strip()]
-            if not cleaned:
+            normalized = []
+            for item in value:
+                if isinstance(item, str):
+                    normalized.append({"template": item})
+                elif isinstance(item, dict):
+                    normalized.append(item)
+                else:
+                    msg = "Row definitions must be strings or mappings with 'template'."
+                    raise TypeError(msg)
+            if not normalized:
                 msg = "Matrix requires at least one row template."
                 raise ValueError(msg)
-            return cleaned
-        msg = "rows must be provided as a list of strings"
+            return normalized
+        msg = "rows must be provided as a list"
         raise TypeError(msg)
 
     @model_validator(mode="after")
