@@ -34,6 +34,7 @@ This guide keeps Codex/agents aligned while evolving the Praeparo proof of conce
 - Ensure open tasks are captured in the "Next Steps" section of the relevant documentation file.
 - Mention pending approvals or environment constraints.
 - Highlight any tests or commands that future agents should rerun.
+- Run Pylance type validation in basic `typeCheckingMode` and ensure modified files pass; limit fixes to files touched in this task so unrelated errors can be handled later.
 - After closing out work, propose a Conventional Commit-style message summarizing the changes.
 
 
