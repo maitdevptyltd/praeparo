@@ -22,11 +22,13 @@ from tests.utils.matrix_cases import (
     expected_frame_height,
     run_matrix_case,
     slugify,
+    snapshot_file_stem,
 )
 from tests.utils.visual_cases import (
     FrameArtifacts,
     MatrixArtifacts,
     case_name,
+    case_snapshot_path,
     discover_yaml_files,
     load_visual_artifacts,
 )
@@ -50,24 +52,34 @@ DATA_PROVIDERS = MatrixDataProviderRegistry(default=_mock_matrix_provider)
 def test_visual_snapshots(snapshot, yaml_path: Path) -> None:
     artifacts = load_visual_artifacts(yaml_path)
     case = case_name(yaml_path, VISUAL_ROOT)
+    snapshot_path = case_snapshot_path(yaml_path, VISUAL_ROOT)
 
     provider = DATA_PROVIDERS.resolve(case)
 
     if isinstance(artifacts, MatrixArtifacts):
-        run_matrix_case(snapshot, case, artifacts, data_provider=provider)
+        run_matrix_case(
+            snapshot,
+            case,
+            artifacts,
+            data_provider=provider,
+            snapshot_path=snapshot_path,
+        )
         return
 
     assert isinstance(artifacts, FrameArtifacts)
     child_results: list[tuple[MatrixConfig, MatrixResultSet]] = []
 
     for index, child in enumerate(artifacts.children, start=1):
-        child_case = f"{case}__{slugify(child.config.title or f'child_{index}')}"
+        child_slug = slugify(child.config.title or f"child_{index}")
+        child_case = f"{case}__{child_slug}"
         child_provider = DATA_PROVIDERS.resolve(child_case)
+        child_snapshot_path = snapshot_path / child_slug
         child_result = run_matrix_case(
             snapshot,
             child_case,
             child,
             data_provider=child_provider,
+            snapshot_path=child_snapshot_path,
             capture_html=False,
             capture_png=False,
         )
@@ -79,10 +91,11 @@ def test_visual_snapshots(snapshot, yaml_path: Path) -> None:
     assert figure.layout.height == expected_height
     assert figure.layout.autosize is False
 
+    frame_snapshot_stem = snapshot_file_stem(case, snapshot_path)
     html_extension = type(
         f"PlotlyHtmlSnapshotExtension_{case}",
         (PlotlyHtmlSnapshotExtension,),
-        {"snapshot_name": f"test_snapshot__{case}"},
+        {"snapshot_name": frame_snapshot_stem},
     )
     html_snapshot = snapshot.use_extension(html_extension)
     html_snapshot.assert_match(
@@ -93,7 +106,7 @@ def test_visual_snapshots(snapshot, yaml_path: Path) -> None:
         png_extension = type(
             f"PlotlyPngSnapshotExtension_{case}",
             (PlotlyPngSnapshotExtension,),
-            {"snapshot_name": f"test_snapshot__{case}"},
+            {"snapshot_name": frame_snapshot_stem},
         )
         png_snapshot = snapshot.use_extension(png_extension)
         png_kwargs = {"format": "png", "scale": 2.0}

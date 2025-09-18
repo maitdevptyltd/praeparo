@@ -21,6 +21,13 @@ def case_name(path: Path, root: Path) -> str:
     return "_".join(parts)
 
 
+def case_snapshot_path(path: Path, root: Path) -> Path:
+    relative = path.relative_to(root)
+    parts = list(relative.parts)
+    parts[-1] = Path(parts[-1]).stem
+    return Path(*parts)
+
+
 @dataclass(frozen=True)
 class MatrixArtifacts:
     kind: Literal["matrix"]

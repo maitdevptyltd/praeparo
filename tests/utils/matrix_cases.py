@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+from pathlib import Path
 from dataclasses import dataclass, field
 from importlib import util
 from typing import Awaitable, Callable, Mapping, Sequence
@@ -130,8 +131,16 @@ def _resolve_dataset(
     return result
 
 
-def _snapshot_name(case: str) -> str:
-    return f"test_snapshot__{case}"
+SNAPSHOT_BASENAME = "test_snapshot"
+
+
+def snapshot_file_stem(case: str, snapshot_path: Path | None = None) -> str:
+    if snapshot_path is not None:
+        normalized = snapshot_path.as_posix().strip("/" + chr(92))
+        if normalized:
+            return f"{normalized}/{SNAPSHOT_BASENAME}"
+        return SNAPSHOT_BASENAME
+    return f"{SNAPSHOT_BASENAME}__{case}"
 
 
 def run_matrix_case(
@@ -140,6 +149,7 @@ def run_matrix_case(
     artifacts: MatrixArtifactLike,
     *,
     data_provider: MatrixDataProvider,
+    snapshot_path: Path | None = None,
     capture_html: bool = True,
     capture_png: bool = True,
     png_requires_kaleido: bool = True,
@@ -170,11 +180,11 @@ def run_matrix_case(
     if ensure_non_empty_rows:
         assert dataset.rows, f"Matrix data provider for {case} returned no rows"
 
-    snapshot_name = _snapshot_name(case)
+    snapshot_stem = snapshot_file_stem(case, snapshot_path)
     dax_extension = type(
         f"DaxSnapshotExtension_{case}",
         (DaxSnapshotExtension,),
-        {"snapshot_name": snapshot_name},
+        {"snapshot_name": snapshot_stem},
     )
     snapshot.use_extension(dax_extension).assert_match(plan.statement)
 
@@ -201,7 +211,7 @@ def run_matrix_case(
         html_extension = type(
             f"PlotlyHtmlSnapshotExtension_{case}",
             (PlotlyHtmlSnapshotExtension,),
-            {"snapshot_name": snapshot_name},
+            {"snapshot_name": snapshot_stem},
         )
         html_snapshot = snapshot.use_extension(html_extension)
         div_id = html_div_id or case
@@ -214,7 +224,7 @@ def run_matrix_case(
             png_extension = type(
                 f"PlotlyPngSnapshotExtension_{case}",
                 (PlotlyPngSnapshotExtension,),
-                {"snapshot_name": snapshot_name},
+                {"snapshot_name": snapshot_stem},
             )
             png_snapshot = snapshot.use_extension(png_extension)
             png_kwargs = {"format": "png", "scale": png_scale}
@@ -234,4 +244,5 @@ __all__ = [
     "expected_matrix_height",
     "run_matrix_case",
     "slugify",
+    "snapshot_file_stem",
 ]

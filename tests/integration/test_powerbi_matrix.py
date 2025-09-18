@@ -7,7 +7,7 @@ import pytest
 
 from praeparo.data import mock_matrix_data, powerbi_matrix_data
 from tests.utils.matrix_cases import MatrixDataProviderRegistry, run_matrix_case
-from tests.utils.visual_cases import MatrixArtifacts, case_name, discover_yaml_files, load_visual_artifacts
+from tests.utils.visual_cases import MatrixArtifacts, case_name, case_snapshot_path, discover_yaml_files, load_visual_artifacts
 
 GROUP_ID = "ca3752a3-d81b-41f9-a991-143521f57c2e"
 DATASET_ID = "937e5b45-9241-4079-8caf-94ec91ac70bd"
@@ -120,6 +120,7 @@ if not INTEGRATION_CASES:
 )
 def test_powerbi_matrix_snapshot(snapshot, case_root: Path, yaml_path: Path) -> None:
     case = case_name(yaml_path, case_root)
+    snapshot_path = case_snapshot_path(yaml_path, case_root)
     artifacts = load_visual_artifacts(yaml_path)
     assert isinstance(artifacts, MatrixArtifacts), "Integration visuals must be matrix configs"
 
@@ -130,6 +131,7 @@ def test_powerbi_matrix_snapshot(snapshot, case_root: Path, yaml_path: Path) -> 
         case,
         artifacts,
         data_provider=provider,
+        snapshot_path=snapshot_path,
         capture_png=CAPTURE_PNG,
         png_requires_kaleido=False,
         ensure_non_empty_rows=True,
