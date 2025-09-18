@@ -1,6 +1,7 @@
-import asyncio
+﻿import asyncio
 import os
 from pathlib import Path
+from typing import Iterable
 
 import pytest
 
@@ -17,7 +18,7 @@ REQUIRED_ENV = (
     "PRAEPARO_PBI_REFRESH_TOKEN",
 )
 INTEGRATION_ROOT = Path("tests/integration")
-INTEGRATION_FILES = discover_yaml_files(INTEGRATION_ROOT)
+EXAMPLE_ROOT = Path("examples")
 CAPTURE_PNG = os.getenv("PRAEPARO_PBI_CAPTURE_PNG", "1") == "1"
 
 
@@ -78,7 +79,33 @@ def _build_provider_registry() -> MatrixDataProviderRegistry:
     return MatrixDataProviderRegistry(default=default_provider, overrides=overrides)
 
 
+def _discover_example_visuals(root: Path) -> Iterable[tuple[Path, Path]]:
+    if not root.is_dir():
+        return []
+    cases: list[tuple[Path, Path]] = []
+    for project in root.iterdir():
+        visuals_dir = project / "visuals"
+        if visuals_dir.is_dir():
+            for path in discover_yaml_files(visuals_dir):
+                cases.append((visuals_dir, path))
+    return cases
+
+
+def _discover_integration_cases() -> list[tuple[Path, Path]]:
+    cases: list[tuple[Path, Path]] = []
+    if INTEGRATION_ROOT.is_dir():
+        for path in discover_yaml_files(INTEGRATION_ROOT):
+            cases.append((INTEGRATION_ROOT, path))
+    cases.extend(_discover_example_visuals(EXAMPLE_ROOT))
+    return cases
+
+
 DATA_PROVIDERS = _build_provider_registry()
+INTEGRATION_CASES = _discover_integration_cases()
+INTEGRATION_IDS = [case_name(path, root) for root, path in INTEGRATION_CASES]
+
+if not INTEGRATION_CASES:
+    pytestmark = pytest.mark.skip(reason="No integration visuals discovered")
 
 
 @pytest.mark.integration
@@ -86,9 +113,13 @@ DATA_PROVIDERS = _build_provider_registry()
     os.getenv("PRAEPARO_RUN_POWERBI_TESTS") != "1",
     reason="Set PRAEPARO_RUN_POWERBI_TESTS=1 to enable live Power BI integration tests.",
 )
-@pytest.mark.parametrize("yaml_path", INTEGRATION_FILES, ids=lambda path: case_name(path, INTEGRATION_ROOT))
-def test_powerbi_matrix_snapshot(snapshot, yaml_path: Path) -> None:
-    case = case_name(yaml_path, INTEGRATION_ROOT)
+@pytest.mark.parametrize(
+    ("case_root", "yaml_path"),
+    INTEGRATION_CASES,
+    ids=INTEGRATION_IDS or None,
+)
+def test_powerbi_matrix_snapshot(snapshot, case_root: Path, yaml_path: Path) -> None:
+    case = case_name(yaml_path, case_root)
     artifacts = load_visual_artifacts(yaml_path)
     assert isinstance(artifacts, MatrixArtifacts), "Integration visuals must be matrix configs"
 
@@ -104,4 +135,5 @@ def test_powerbi_matrix_snapshot(snapshot, yaml_path: Path) -> None:
         ensure_non_empty_rows=True,
         ensure_values_present=True,
         validate_define=True,
+        sort_rows=True,
     )

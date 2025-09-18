@@ -22,7 +22,9 @@ class MatrixValueConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
-    id: str = Field(..., description="Unique identifier or measure name for the value column.")
+    id: str = Field(
+        ..., description="Unique identifier or measure name for the value column."
+    )
     show_as: str | None = Field(
         default=None,
         title="Display rule",
@@ -60,7 +62,9 @@ class RowTemplate(BaseModel):
 
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
-    template: str = Field(..., description="Row template expressed using Jinja-style placeholders.")
+    template: str = Field(
+        ..., description="Row template expressed using Jinja-style placeholders."
+    )
     label: str | None = Field(
         default=None,
         description="Optional override for the rendered column header.",
@@ -183,9 +187,22 @@ class MatrixConfig(BaseVisualConfig):
 
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
-    type: Literal["matrix"] = Field(description="Visual type identifier; must be 'matrix'.")
-    title: str | None = Field(default=None, description="Matrix title used in decks or charts.")
-    description: str | None = Field(default=None, description="Optional helper text for authors.")
+    type: Literal["matrix"] = Field(
+        description="Visual type identifier; must be 'matrix'."
+    )
+    title: str | None = Field(
+        default=None, description="Matrix title used in decks or charts."
+    )
+    description: str | None = Field(
+        default=None, description="Optional helper text for authors."
+    )
+    datasource: str | None = Field(
+        default=None,
+        alias="dataSource",
+        description=(
+            "Named data source reference or relative path to a data source definition."
+        ),
+    )
     define: str | None = Field(
         default=None,
         description="Optional DAX DEFINE statements prefixed to generated queries.",
@@ -214,6 +231,14 @@ class MatrixConfig(BaseVisualConfig):
         alias="autoHeight",
         description="Automatically size the rendered matrix height based on row count.",
     )
+
+    @field_validator("datasource")
+    @classmethod
+    def _normalize_datasource(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
 
     @field_validator("define")
     @classmethod

@@ -1,11 +1,12 @@
 ﻿type: matrix
 title: "Automatic Documents"
+datasource: default
 define: |
   COLUMN dim_funding_channel_type[Channel] =
     VAR channel_id = [FundingChannelTypeId]
     RETURN IF(channel_id = 7, "Broker", "Direct")
 
-  MEASURE dim_matter[_Documents sent %] = 
+  MEASURE dim_matter[_Documents sent %] =
     DIVIDE(
       [Documents sent],
       CALCULATE(

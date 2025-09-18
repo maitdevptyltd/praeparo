@@ -148,6 +148,7 @@ def run_matrix_case(
     validate_define: bool = False,
     html_div_id: str | None = None,
     png_scale: float = 2.0,
+    sort_rows: bool = False,
 ) -> MatrixCaseResult:
     config = artifacts.config
     row_fields = artifacts.row_fields
@@ -160,6 +161,12 @@ def run_matrix_case(
             assert plan.define is None
 
     dataset = _resolve_dataset(data_provider, config, row_fields, plan)
+    if sort_rows and dataset.rows:
+        sorted_rows = sorted(
+            dataset.rows,
+            key=lambda row: tuple(str(row.get(field.placeholder)) for field in dataset.row_fields),
+        )
+        dataset = MatrixResultSet(rows=sorted_rows, row_fields=dataset.row_fields)
     if ensure_non_empty_rows:
         assert dataset.rows, f"Matrix data provider for {case} returned no rows"
 

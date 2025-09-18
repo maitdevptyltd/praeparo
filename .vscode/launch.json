@@ -1,0 +1,19 @@
+﻿{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Praeparo: Render Visual",
+            "type": "python",
+            "request": "launch",
+            "module": "praeparo.cli",
+            "args": [
+                "${file}",
+                "--png-out",
+                "${fileDirname}/../build/${fileBasenameNoExtension}.png"
+            ],
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "justMyCode": false
+        }
+    ]
+}

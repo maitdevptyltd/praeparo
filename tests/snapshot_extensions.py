@@ -25,7 +25,7 @@ class PlotlyHtmlSnapshotExtension(NamedSingleFileSnapshotExtension):
         if not isinstance(data, str):
             msg = "Plotly HTML snapshots expect a string payload."
             raise TypeError(msg)
-        return data
+        return data.replace("\r\n", "\n")
 
 
 class PlotlyPngSnapshotExtension(NamedSingleFileSnapshotExtension):
@@ -51,7 +51,7 @@ class DaxSnapshotExtension(NamedSingleFileSnapshotExtension):
         if not isinstance(data, str):
             msg = "DAX snapshots expect string content."
             raise TypeError(msg)
-        return data
+        return data.replace("\r\n", "\n")
 
 
 __all__ = [

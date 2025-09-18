@@ -64,7 +64,7 @@ children:
 
 Run the build, and you’ll get a finished PowerPoint deck — no copy-pasting, no manual formatting.
 
-Matrix configs also support a top-level `define:` block for staging DAX tables or measures before `EVALUATE`. Those definitions can be referenced from row templates and global filters (see `tests/visuals/matrix/auto.yaml`). Filters accept either `field`/`include` pairs or direct `expression` strings for complex predicates. Rows can also be marked `hidden: true` to remain in queries while disappearing from rendered tables. Compose lists and top-level `parameters` let base YAML power variants like digital vs manual document runs.
+Matrix configs also support a top-level `define:` block for staging DAX tables or measures before `EVALUATE`. Those definitions can be referenced from row templates and global filters (see `examples/automatic_documents/visuals/automatic_documents.yaml`). Filters accept either `field`/`include` pairs or direct `expression` strings for complex predicates. Rows can also be marked `hidden: true` to remain in queries while disappearing from rendered tables. Compose lists and top-level `parameters` let base YAML power variants like digital vs manual document runs.
 
 Auto-sized visuals: matrix and frame YAMLs expose an `autoHeight` flag (defaulting to `true`) so Plotly figures match their tabular content when exported to PNG, removing the dead space beneath stacked tables.
 
@@ -85,11 +85,11 @@ Auto-sized visuals: matrix and frame YAMLs expose an `autoHeight` flag (defaulti
 
 ## Proof-of-Concept Workflow
 
-1. Define a matrix visual in YAML (see `tests/visuals/matrix/auto.yaml`).
-2. Validate and render it with the CLI:
-   - `praeparo tests/visuals/matrix/auto.yaml --out build/matrix.html --print-dax`
-   - Add `--png-out build/matrix.png` to capture a static snapshot for slide decks (requires Kaleido: `poetry add kaleido`).
-3. Regenerate visual snapshots with poetry run pytest --snapshot-update; inspect the HTML/PNG artifacts under 	ests/__snapshots__/test_pipeline/.
+1. Define a matrix visual in YAML (see `examples/automatic_documents/visuals/automatic_documents.yaml`).
+2. Validate and render it with the CLI (HTML defaults to `<project>/build/<name>.html`):
+   - `poetry run praeparo examples/automatic_documents/visuals/automatic_documents.yaml --png-out examples/automatic_documents/build/automatic_documents.png --print-dax`
+   - Add `--data-source powerbi` to reuse the example Power BI descriptor when live credentials are available.
+3. Regenerate visual snapshots with `poetry run pytest --snapshot-update`; inspect the HTML/PNG artifacts under `tests/__snapshots__/test_pipeline/`.
 
 The CLI orchestrates YAML validation (via Pydantic), field extraction, DAX query generation, and a mock data provider before building a Plotly table. The DAX output is printed when `--print-dax` is supplied so you can copy it into live environments later.
 
@@ -114,7 +114,7 @@ Set the following environment variables (see `.env`) to enable live DAX queries:
 Render a YAML visual against a real dataset:
 
 ```
-praeparo tests/visuals/matrix/auto.yaml --dataset-id <dataset_guid> --workspace-id <workspace_guid> --out build/matrix.html --png-out build/matrix.png --print-dax
+poetry run praeparo examples/automatic_documents/visuals/automatic_documents.yaml --data-source powerbi --png-out examples/automatic_documents/build/automatic_documents.png --print-dax
 ```
 
 The CLI exchanges the refresh token for an access token, issues the DAX statement via the Power BI `executeQueries` API, and snapshots the response for regression tests.
