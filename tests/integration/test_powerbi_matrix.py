@@ -9,23 +9,25 @@ from praeparo.data import mock_matrix_data, powerbi_matrix_data
 from tests.utils.matrix_cases import MatrixDataProviderRegistry, run_matrix_case
 from tests.utils.visual_cases import MatrixArtifacts, case_name, case_snapshot_path, discover_yaml_files, load_visual_artifacts
 
-GROUP_ID = "ca3752a3-d81b-41f9-a991-143521f57c2e"
-DATASET_ID = "937e5b45-9241-4079-8caf-94ec91ac70bd"
+DATASET_ENV_KEY = "PRAEPARO_PBI_DATASET_ID"
+WORKSPACE_ENV_KEY = "PRAEPARO_PBI_WORKSPACE_ID"
 REQUIRED_ENV = (
     "PRAEPARO_PBI_CLIENT_ID",
     "PRAEPARO_PBI_CLIENT_SECRET",
     "PRAEPARO_PBI_TENANT_ID",
     "PRAEPARO_PBI_REFRESH_TOKEN",
+    DATASET_ENV_KEY,
 )
 INTEGRATION_ROOT = Path("tests/integration")
 EXAMPLE_ROOT = Path("examples")
 CAPTURE_PNG = os.getenv("PRAEPARO_PBI_CAPTURE_PNG", "1") == "1"
 
 
-def _ensure_env() -> None:
+def _ensure_env() -> dict[str, str]:
     missing = [name for name in REQUIRED_ENV if not os.getenv(name)]
     if missing:
         pytest.skip(f"Missing Power BI environment variables: {', '.join(missing)}")
+    return {name: os.getenv(name, "") for name in REQUIRED_ENV}
 
 
 def _mock_matrix_provider(config, row_fields, plan):
@@ -33,14 +35,18 @@ def _mock_matrix_provider(config, row_fields, plan):
 
 
 def _powerbi_matrix_provider(config, row_fields, plan):
-    _ensure_env()
+    env_values = _ensure_env()
+    dataset_id = env_values[DATASET_ENV_KEY]
+    workspace_id = os.getenv(WORKSPACE_ENV_KEY)
+    if not workspace_id:
+        pytest.skip(f"Missing Power BI environment variable: {WORKSPACE_ENV_KEY}")
     return asyncio.run(
         powerbi_matrix_data(
             config,
             row_fields,
             plan,
-            dataset_id=DATASET_ID,
-            group_id=GROUP_ID,
+            dataset_id=dataset_id,
+            group_id=workspace_id,
         )
     )
 
@@ -140,4 +146,3 @@ def test_powerbi_matrix_snapshot(snapshot, case_root: Path, yaml_path: Path) -> 
         sort_rows=True,
         visual_path=yaml_path,
     )
-
