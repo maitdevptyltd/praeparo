@@ -7,15 +7,16 @@ This guide keeps Codex/agents aligned while evolving the Praeparo proof of conce
 ## Agent Responsibilities
 
 - Maintain the YAML -> Pydantic -> DAX -> Plotly pipeline plan and surface gaps early.
-- Keep documentation current (`docs/mvp/index.md`, dated timelines, and README excerpts).
-- Note assumptions and unresolved questions in timeline entries or code comments for the next agent.
+- Keep developer-facing documentation current by adding or updating feature files that describe the front-facing API, runnable examples, and operational notes.
+- Note assumptions and unresolved questions in the relevant docs section (Progress/Next Steps/Blockers & Risks) or code comments for the next agent.
 
 ## Workflow
 
-1. Review the latest timeline entry (`docs/mvp/YYYY-MM-DD.md`) before making changes.
-2. Update the plan with new findings; append or create a new dated timeline file after significant progress.
-3. Coordinate schema changes with generated JSON schema updates so IDE IntelliSense stays accurate.
-4. Use mock data providers and clear TODOs when live integrations are deferred.
+1. Review the existing documentation for the feature area you are touching before making changes.
+2. Before planning new feature work, draft or update the corresponding documentation file with the desired developer-facing API, detailed examples, and a summary of the intended behaviour.
+3. Maintain Progress, Next Steps, and Blockers & Risks sections inside that documentation so the latest status lives alongside the feature notes.
+4. Coordinate schema changes with generated JSON schema updates so IDE IntelliSense stays accurate.
+5. Use mock data providers and clear TODOs when live integrations are deferred.
 
 ## Testing & Tooling
 
@@ -30,7 +31,7 @@ This guide keeps Codex/agents aligned while evolving the Praeparo proof of conce
 
 ## Handoff Checklist
 
-- Ensure open tasks are captured in "Next Steps" of the latest timeline entry.
+- Ensure open tasks are captured in the "Next Steps" section of the relevant documentation file.
 - Mention pending approvals or environment constraints.
 - Highlight any tests or commands that future agents should rerun.
 - After closing out work, propose a Conventional Commit-style message summarizing the changes.
@@ -45,5 +46,5 @@ This guide keeps Codex/agents aligned while evolving the Praeparo proof of conce
 ## Communication Norms
 
 - Prefer concise, actionable notes in docs rather than long chat transcripts.
-- Flag blockers early in the timeline so stakeholders can intervene.
-- When deviating from the plan, explain the reasoning in the dated entry before concluding the session.
+- Flag blockers early in the relevant documentation so stakeholders can intervene.
+- When deviating from the plan, explain the reasoning in the documentation entry before concluding the session.

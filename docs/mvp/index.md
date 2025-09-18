@@ -10,13 +10,13 @@ Praeparo turns YAML-defined visuals into automated, Plotly-powered presentations
 
 ## Quick Links
 
-- [Visual model architecture](./visual_model_architecture.md)
-- [Latest timeline](./2025-09-18.md)
+- [Visual model architecture](../visual_model_architecture.md)
 - [Agent guidelines](../../AGENTS.md)
 
 ## How to Update
 
-1. Add a new dated file in this folder using the format `YYYY-MM-DD.md` whenever plans or status change.
-2. Update the "Latest timeline" link above to point at the newest entry.
-3. Capture objectives, progress, blockers, and next steps in each dated file to keep continuity between agents.
+1. Before planning changes, update the relevant feature documentation with the intended developer-facing API, examples, and operational notes.
+2. Record Progress, Next Steps, and Blockers & Risks inside that feature document so status travels with the implementation details.
+3. Add new feature docs under `docs/` as needed and link to them from this index to keep discovery simple.
+4. Use the archived dated timelines for historical context only; do not create new entries.
 
