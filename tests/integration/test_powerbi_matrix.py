@@ -1,4 +1,4 @@
-﻿import asyncio
+import asyncio
 import os
 from pathlib import Path
 from typing import Iterable
@@ -138,4 +138,6 @@ def test_powerbi_matrix_snapshot(snapshot, case_root: Path, yaml_path: Path) -> 
         ensure_values_present=True,
         validate_define=True,
         sort_rows=True,
+        visual_path=yaml_path,
     )
+

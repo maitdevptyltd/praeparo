@@ -1,18 +1,21 @@
 from __future__ import annotations
 
-import asyncio
-import inspect
-from pathlib import Path
 from dataclasses import dataclass, field
 from importlib import util
-from typing import Awaitable, Callable, Mapping, Sequence
+from pathlib import Path
+from typing import Any, Mapping, Sequence, cast
 
-from plotly.graph_objects import Figure
+from plotly.graph_objects import Figure, Table
 
 from praeparo.data import MatrixResultSet
-from praeparo.dax import DaxQueryPlan
 from praeparo.models import FrameConfig, MatrixConfig
-from praeparo.rendering import matrix_figure
+from praeparo.pipeline import (
+    DefaultQueryPlannerProvider,
+    ExecutionContext,
+    PipelineOptions,
+    VisualPipeline,
+)
+from praeparo.pipeline.providers.matrix import MatrixDataProvider, FunctionMatrixPlanner
 from praeparo.rendering._shared import estimate_table_height
 from praeparo.rendering.frame import (
     AUTO_FRAME_VERTICAL_SPACING,
@@ -21,7 +24,7 @@ from praeparo.rendering.frame import (
     SUBPLOT_TITLE_MARGIN,
 )
 from praeparo.rendering.matrix import MATRIX_TITLE_MARGIN
-from praeparo.templating import FieldReference, label_from_template
+from praeparo.templating import label_from_template
 from tests.snapshot_extensions import (
     DaxSnapshotExtension,
     PlotlyHtmlSnapshotExtension,
@@ -30,23 +33,16 @@ from tests.snapshot_extensions import (
 from tests.utils.visual_cases import FrameChildArtifacts, MatrixArtifacts
 
 MatrixArtifactLike = MatrixArtifacts | FrameChildArtifacts
-MatrixDataProvider = Callable[
-    [MatrixConfig, Sequence[FieldReference], DaxQueryPlan],
-    MatrixResultSet | Awaitable[MatrixResultSet],
-]
-
 
 @dataclass(frozen=True)
 class MatrixDataProviderRegistry:
     default: MatrixDataProvider
     overrides: Mapping[str, MatrixDataProvider] = field(default_factory=dict)
 
-    def resolve(self, case: str) -> MatrixDataProvider:
-        override = self.overrides.get(case)
-        if override is not None:
-            return override
+    def resolve(self, case: str | None) -> MatrixDataProvider:
+        if case and case in self.overrides:
+            return self.overrides[case]
         return self.default
-
 
 @dataclass(frozen=True)
 class MatrixCaseResult:
@@ -112,25 +108,6 @@ def assert_matrix_headers(
         assert expected not in row_header_values
 
 
-def _resolve_dataset(
-    provider: MatrixDataProvider,
-    config: MatrixConfig,
-    row_fields: Sequence[FieldReference],
-    plan: DaxQueryPlan,
-) -> MatrixResultSet:
-    result = provider(config, row_fields, plan)
-    if inspect.isawaitable(result):
-        try:
-            return asyncio.run(result)
-        except RuntimeError as exc:
-            msg = (
-                "Matrix data provider returned an awaitable while an event loop is already running. "
-                "Wrap the provider in a synchronous adapter before passing it to run_matrix_case."
-            )
-            raise RuntimeError(msg) from exc
-    return result
-
-
 SNAPSHOT_BASENAME = "test_snapshot"
 
 
@@ -159,26 +136,43 @@ def run_matrix_case(
     html_div_id: str | None = None,
     png_scale: float = 2.0,
     sort_rows: bool = False,
+    visual_path: Path | None = None,
+    pipeline: VisualPipeline | None = None,
 ) -> MatrixCaseResult:
     config = artifacts.config
-    row_fields = artifacts.row_fields
-    plan = artifacts.plan
 
-    if validate_define:
-        if config.define:
-            assert plan.define == config.define.strip()
-        else:
-            assert plan.define is None
+    planner = FunctionMatrixPlanner(data_provider)
+    planner_provider = DefaultQueryPlannerProvider(planners={"matrix": planner})
+    engine = pipeline or VisualPipeline(planner_provider=planner_provider)
+    options = PipelineOptions(
+        ensure_non_empty_rows=ensure_non_empty_rows,
+        ensure_values_present=ensure_values_present,
+        validate_define=validate_define,
+        sort_rows=sort_rows,
+    )
+    context = ExecutionContext(
+        config_path=visual_path,
+        case_key=case,
+        options=options,
+    )
 
-    dataset = _resolve_dataset(data_provider, config, row_fields, plan)
-    if sort_rows and dataset.rows:
-        sorted_rows = sorted(
-            dataset.rows,
-            key=lambda row: tuple(str(row.get(field.placeholder)) for field in dataset.row_fields),
-        )
-        dataset = MatrixResultSet(rows=sorted_rows, row_fields=dataset.row_fields)
-    if ensure_non_empty_rows:
-        assert dataset.rows, f"Matrix data provider for {case} returned no rows"
+    result = engine.execute(config, context)
+    if not result.plans:
+        raise AssertionError("Matrix execution did not produce a query plan.")
+    plan = result.plans[0]
+    if hasattr(artifacts, "plan"):
+        assert plan.statement == artifacts.plan.statement
+
+    if not result.datasets:
+        raise AssertionError("Matrix execution did not yield a dataset.")
+    dataset_obj = result.datasets[0]
+    if not isinstance(dataset_obj, MatrixResultSet):
+        raise TypeError("Matrix execution must yield a MatrixResultSet dataset.")
+    dataset = dataset_obj
+
+    figure = result.figure
+    if figure is None:
+        raise AssertionError("Matrix execution did not produce a figure.")
 
     snapshot_stem = snapshot_file_stem(case, snapshot_path)
     dax_extension = type(
@@ -188,10 +182,10 @@ def run_matrix_case(
     )
     snapshot.use_extension(dax_extension).assert_match(plan.statement)
 
-    figure = matrix_figure(config, dataset)
-    assert figure.data
-
-    header_values = list(figure.data[0].header["values"])
+    table_trace = cast(Table, figure.data[0])
+    table_header = cast(Any, table_trace).header
+    values = getattr(table_header, "values", []) or []
+    header_values = list(values)
     assert_matrix_headers(config, dataset, header_values)
 
     if config.auto_height:
@@ -200,12 +194,6 @@ def run_matrix_case(
         assert figure.layout.autosize is False
     else:
         assert figure.layout.height in {None, 0}
-
-    if ensure_values_present and dataset.rows:
-        first_row = dataset.rows[0]
-        for value in config.values:
-            alias = value.label or value.id
-            assert first_row.get(alias) is not None, f"Value '{alias}' missing from dataset row"
 
     if capture_html:
         html_extension = type(

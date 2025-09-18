@@ -1,24 +1,28 @@
-﻿"""Command line interface for Praeparo proof-of-concept pipelines."""
+"""Command line interface for Praeparo proof-of-concept pipelines."""
 
 from __future__ import annotations
 
 import argparse
-import asyncio
 from pathlib import Path
 from typing import Sequence
 
-from .data import MatrixResultSet, mock_matrix_data, powerbi_matrix_data
-from .datasources import DataSourceConfigError, ResolvedDataSource, resolve_datasource
-from .dax import build_matrix_query
+from .datasources import DataSourceConfigError
 from .io.yaml_loader import ConfigLoadError, load_visual_config
-from .models import FrameConfig, MatrixConfig
+from .models import BaseVisualConfig, FrameConfig, MatrixConfig
+from .pipeline import (
+    ExecutionContext,
+    OutputTarget,
+    PipelineDataOptions,
+    PipelineOptions,
+    VisualExecutionResult,
+    VisualPipeline,
+    build_default_query_planner_provider,
+)
 from .powerbi import (
     PowerBIAuthenticationError,
     PowerBIConfigurationError,
     PowerBIQueryError,
 )
-from .rendering import frame_html, frame_png, matrix_html, matrix_png
-from .templating import extract_field_references
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -40,6 +44,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--data-source",
+        dest="data_source",
         type=str,
         default=None,
         help="Name or path of the data source definition to use (overrides visual configuration).",
@@ -84,198 +89,63 @@ def _default_output_path(
     return build_dir / f"{config_path.stem}.{extension}"
 
 
-def _ensure_directory(path: Path) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
+def _collect_output_targets(args: argparse.Namespace, project_root: Path | None) -> list[OutputTarget]:
+    html_path = args.out or _default_output_path(args.config, project_root, "html")
+    targets = [OutputTarget.html(html_path)]
+    if args.png_out is not None:
+        targets.append(OutputTarget.png(args.png_out))
+    return targets
 
 
-def _resolve_datasource(
-    config: MatrixConfig,
-    args: argparse.Namespace,
-    *,
-    visual_path: Path,
-) -> ResolvedDataSource:
-    reference = args.datasource if args.datasource is not None else config.datasource
-    return resolve_datasource(reference, visual_path=visual_path)
+def _print_dax(result: VisualExecutionResult) -> None:
+    visual = result.config
+    if isinstance(visual, MatrixConfig):
+        for plan in result.plans:
+            print(plan.statement)
+        return
+
+    if isinstance(visual, FrameConfig):
+        segments: list[str] = []
+        for index, child in enumerate(result.children, start=1):
+            if not child.plans:
+                continue
+            title = getattr(child.config, "title", None) or f"Child {index}"
+            segments.append(f"-- {title}\n{child.plans[0].statement}")
+        if segments:
+            print("\n\n".join(segments))
+        return
+
+    if result.plans:
+        print(result.plans[0].statement)
 
 
-def _load_dataset(
-    config: MatrixConfig,
-    row_fields,
-    query,
-    args: argparse.Namespace,
-    parser: argparse.ArgumentParser,
-    *,
-    visual_path: Path,
-) -> MatrixResultSet | None:
-    if args.dataset_id:
-        try:
-            return asyncio.run(
-                powerbi_matrix_data(
-                    config,
-                    row_fields,
-                    query,
-                    dataset_id=args.dataset_id,
-                    group_id=args.workspace_id,
-                )
-            )
-        except (
-            PowerBIConfigurationError,
-            PowerBIAuthenticationError,
-            PowerBIQueryError,
-        ) as exc:
-            parser.error(str(exc))
-            return None
-
-    try:
-        datasource = _resolve_datasource(config, args, visual_path=visual_path)
-    except DataSourceConfigError as exc:
-        parser.error(str(exc))
+def _summarize_outputs(result: VisualExecutionResult) -> str | None:
+    if not result.outputs:
         return None
-
-    if datasource.type == "mock":
-        return mock_matrix_data(config, row_fields)
-
-    dataset_id = datasource.dataset_id
-    if not dataset_id:
-        parser.error(
-            f"Data source '{datasource.name}' does not define a dataset_id and no --dataset-id override was provided."
-        )
-        return None
-
-    workspace_id = args.workspace_id or datasource.workspace_id
-    settings = datasource.settings
-
-    try:
-        return asyncio.run(
-            powerbi_matrix_data(
-                config,
-                row_fields,
-                query,
-                dataset_id=dataset_id,
-                group_id=workspace_id,
-                settings=settings,
-            )
-        )
-    except (
-        PowerBIConfigurationError,
-        PowerBIAuthenticationError,
-        PowerBIQueryError,
-    ) as exc:
-        parser.error(str(exc))
-        return None
+    rendered = ", ".join(str(artifact.path) for artifact in result.outputs)
+    return f"Wrote {result.config.type} visualization to {rendered}"
 
 
-def _matrix_png(
-    config: MatrixConfig,
-    dataset: MatrixResultSet,
-    path: Path,
-    parser: argparse.ArgumentParser,
-) -> bool:
-    try:
-        _ensure_directory(path)
-        matrix_png(config, dataset, str(path))
-        return True
-    except RuntimeError as exc:
-        parser.error(str(exc))
-        return False
-
-
-def _frame_png(
-    frame: FrameConfig,
-    datasets: list[tuple[MatrixConfig, MatrixResultSet]],
-    path: Path,
-    parser: argparse.ArgumentParser,
-) -> bool:
-    try:
-        _ensure_directory(path)
-        frame_png(frame, datasets, str(path))
-        return True
-    except RuntimeError as exc:
-        parser.error(str(exc))
-        return False
-
-
-def _render_matrix(
-    config: MatrixConfig,
+def _build_context(
     args: argparse.Namespace,
-    parser: argparse.ArgumentParser,
-    *,
-    config_path: Path,
     project_root: Path | None,
-) -> int:
-    row_fields = extract_field_references([row.template for row in config.rows])
-    query = build_matrix_query(config, row_fields)
-
-    dataset = _load_dataset(
-        config, row_fields, query, args, parser, visual_path=config_path
+    targets: list[OutputTarget],
+) -> ExecutionContext:
+    options = PipelineOptions(
+        data=PipelineDataOptions(
+            datasource_override=args.data_source,
+            dataset_id=args.dataset_id,
+            workspace_id=args.workspace_id,
+        ),
+        outputs=targets,
+        print_dax=args.print_dax,
     )
-    if dataset is None:
-        return 2
-
-    outputs: list[Path] = []
-
-    out_path = args.out or _default_output_path(config_path, project_root, "html")
-    _ensure_directory(out_path)
-    matrix_html(config, dataset, str(out_path))
-    outputs.append(out_path)
-
-    png_path = args.png_out
-    if png_path is not None:
-        if not _matrix_png(config, dataset, png_path, parser):
-            return 2
-        outputs.append(png_path)
-
-    if args.print_dax:
-        print(query.statement)
-
-    if outputs:
-        rendered = ", ".join(str(path) for path in outputs)
-        print(f"Wrote matrix visualization to {rendered}")
-    return 0
-
-
-def _render_frame(
-    frame: FrameConfig,
-    args: argparse.Namespace,
-    parser: argparse.ArgumentParser,
-    *,
-    config_path: Path,
-    project_root: Path | None,
-) -> int:
-    child_outputs: list[tuple[MatrixConfig, MatrixResultSet]] = []
-    printed_dax: list[str] = []
-
-    for child in frame.children:
-        config = child.config
-        row_fields = extract_field_references([row.template for row in config.rows])
-        query = build_matrix_query(config, row_fields)
-
-        dataset = _load_dataset(
-            config, row_fields, query, args, parser, visual_path=child.source
-        )
-        if dataset is None:
-            return 2
-
-        child_outputs.append((config, dataset))
-        printed_dax.append(f"-- {config.title or child.source.name}\n{query.statement}")
-
-    out_path = args.out or _default_output_path(config_path, project_root, "html")
-    _ensure_directory(out_path)
-    frame_html(frame, child_outputs, str(out_path))
-
-    outputs = [out_path]
-    png_path = args.png_out
-    if png_path is not None:
-        if not _frame_png(frame, child_outputs, png_path, parser):
-            return 2
-        outputs.append(png_path)
-
-    if args.print_dax:
-        print("\n\n".join(printed_dax))
-
-    rendered = ", ".join(str(path) for path in outputs)
-    print(f"Wrote frame visualization to {rendered}")
-    return 0
+    return ExecutionContext(
+        config_path=args.config,
+        project_root=project_root,
+        case_key=args.config.stem,
+        options=options,
+    )
 
 
 def run(argv: Sequence[str] | None = None) -> int:
@@ -289,19 +159,32 @@ def run(argv: Sequence[str] | None = None) -> int:
         return 2
 
     project_root = _project_root_for(args.config)
+    targets = _collect_output_targets(args, project_root)
+    context = _build_context(args, project_root, targets)
 
-    if isinstance(visual, MatrixConfig):
-        return _render_matrix(
-            visual, args, parser, config_path=args.config, project_root=project_root
-        )
+    planner_provider = build_default_query_planner_provider()
+    pipeline = VisualPipeline(planner_provider=planner_provider)
 
-    if isinstance(visual, FrameConfig):
-        return _render_frame(
-            visual, args, parser, config_path=args.config, project_root=project_root
-        )
+    try:
+        result = pipeline.execute(visual, context)
+    except (
+        DataSourceConfigError,
+        PowerBIConfigurationError,
+        PowerBIAuthenticationError,
+        PowerBIQueryError,
+        RuntimeError,
+    ) as exc:
+        parser.error(str(exc))
+        return 2
 
-    parser.error(f"Unsupported visual type in {args.config}")
-    return 2
+    if args.print_dax:
+        _print_dax(result)
+
+    message = _summarize_outputs(result)
+    if message:
+        print(message)
+
+    return 0
 
 
 def main() -> None:
