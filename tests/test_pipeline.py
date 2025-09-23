@@ -28,7 +28,6 @@ from tests.utils.visual_cases import (
     FrameArtifacts,
     MatrixArtifacts,
     case_name,
-    case_snapshot_path,
     discover_yaml_files,
     load_visual_artifacts,
 )
@@ -52,8 +51,6 @@ DATA_PROVIDERS = MatrixDataProviderRegistry(default=_mock_matrix_provider)
 def test_visual_snapshots(snapshot, yaml_path: Path) -> None:
     artifacts = load_visual_artifacts(yaml_path)
     case = case_name(yaml_path, VISUAL_ROOT)
-    snapshot_path = case_snapshot_path(yaml_path, VISUAL_ROOT)
-
     provider = DATA_PROVIDERS.resolve(case)
 
     if isinstance(artifacts, MatrixArtifacts):
@@ -62,7 +59,6 @@ def test_visual_snapshots(snapshot, yaml_path: Path) -> None:
             case,
             artifacts,
             data_provider=provider,
-            snapshot_path=snapshot_path,
         )
         return
 
@@ -73,13 +69,11 @@ def test_visual_snapshots(snapshot, yaml_path: Path) -> None:
         child_slug = slugify(child.config.title or f"child_{index}")
         child_case = f"{case}__{child_slug}"
         child_provider = DATA_PROVIDERS.resolve(child_case)
-        child_snapshot_path = snapshot_path / child_slug
         child_result = run_matrix_case(
             snapshot,
             child_case,
             child,
             data_provider=child_provider,
-            snapshot_path=child_snapshot_path,
             capture_html=False,
             capture_png=False,
         )
@@ -91,7 +85,7 @@ def test_visual_snapshots(snapshot, yaml_path: Path) -> None:
     assert figure.layout.height == expected_height
     assert figure.layout.autosize is False
 
-    frame_snapshot_stem = snapshot_file_stem(case, snapshot_path)
+    frame_snapshot_stem = snapshot_file_stem(case)
     html_extension = type(
         f"PlotlyHtmlSnapshotExtension_{case}",
         (PlotlyHtmlSnapshotExtension,),
