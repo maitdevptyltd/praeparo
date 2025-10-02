@@ -89,3 +89,18 @@ def test_build_matrix_query_with_define(snapshot) -> None:
     assert plan.statement == snapshot
     assert plan.define == "MEASURE Sales[Total Sales] = SUM(Sales[Amount])"
 
+
+def test_build_matrix_query_appends_calculate(snapshot) -> None:
+    config = MatrixConfig(
+        type="matrix",
+        rows=["{{dim.City}}"],
+        values=[MatrixValueConfig(id="Total Sales", label="Sales")],
+        calculate="dim.Date[Month] = \"2025-10\"",
+    )
+
+    row_fields = [FieldReference(expression="dim.City", table="dim", column="City")]
+
+    plan = build_matrix_query(config, row_fields)
+
+    assert plan.statement == snapshot
+    assert plan.define is None

@@ -187,6 +187,19 @@
       "description": "Optional helper text for authors.",
       "title": "Description"
     },
+    "dataSource": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Named data source reference or relative path to a data source definition.",
+      "title": "Datasource"
+    },
     "define": {
       "anyOf": [
         {
@@ -199,6 +212,19 @@
       "default": null,
       "description": "Optional DAX DEFINE statements prefixed to generated queries.",
       "title": "Define"
+    },
+    "calculate": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Optional DAX predicate injected into CALCULATETABLE before other filters.",
+      "title": "Calculate"
     },
     "rows": {
       "description": "Row templates expressed using Jinja-style placeholders.",

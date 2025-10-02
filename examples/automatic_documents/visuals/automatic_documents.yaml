@@ -1,6 +1,10 @@
 ﻿type: matrix
 title: "Automatic Documents"
 datasource: default
+parameters:
+  ReportingWindowStart: "EOMONTH(TODAY(), -12) + 1"
+  ReportingWindowEnd: "EOMONTH(TODAY(), 0)"
+
 define: |
   COLUMN dim_funding_channel_type[Channel] =
     VAR channel_id = [FundingChannelTypeId]
@@ -14,6 +18,10 @@ define: |
         REMOVEFILTERS(dim_matter[IsDigiDocs])
       )
     )
+
+calculate: |
+  dim_calendar[Date] >= {{ReportingWindowStart}} &&
+  dim_calendar[Date] <= {{ReportingWindowEnd}}
 
 rows:
   - template: "{{dim_matter.IsDigiDocs}}"

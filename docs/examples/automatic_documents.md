@@ -45,9 +45,18 @@ workspaceId: "${env:PRAEPARO_PBI_WORKSPACE_ID}"
 type: matrix
 title: "Automatic Documents"
 datasource: default
+calculate: |
+  dim_calendar[Date] >= {{ReportingWindowStart}} &&
+  dim_calendar[Date] <= {{ReportingWindowEnd}}
+parameters:
+  ReportingWindowStart: "STARTOFMONTH(EOMONTH(TODAY(), -11))"
+  ReportingWindowEnd: "EOMONTH(TODAY(), 0)"
 ```
 
 Override the datasource per visual, or omit the field to render against the mock provider.
+- `calculate:` introduces a default 12-month reporting window that downstream
+  visuals inherit; override `ReportingWindowStart`/`ReportingWindowEnd` via
+  CLI parameters when running alternative date ranges.
 
 ### Running the example
 
@@ -74,6 +83,7 @@ poetry run praeparo examples/automatic_documents/visuals/automatic_documents.yam
 - Converted the former integration visual into an example project with a single `default` Power BI descriptor.
 - CLI discovers project roots, defaults HTML output paths, and honours per-visual datasource references.
 - VS Code launch profile wires the CLI into the example workflow.
+- Example visual demonstrates the `calculate:` block with a default trailing 12-month reporting window.
 
 ## Next steps
 

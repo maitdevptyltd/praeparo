@@ -123,6 +123,11 @@ def _build_context(data: Mapping[str, Any], parameters: Mapping[str, Any]) -> di
 def _apply_parameter_templates(data: dict[str, Any], *, context: Mapping[str, str]) -> None:
     """Inject parameter defaults into templated labels and filters."""
 
+    def _render_field(key: str, *, location: str) -> None:
+        value = data.get(key)
+        if isinstance(value, str) and "{{" in value:
+            data[key] = _render_with_context(value, context, location=location)
+
     rows = data.get("rows")
     if isinstance(rows, list):
         for item in rows:
@@ -138,6 +143,9 @@ def _apply_parameter_templates(data: dict[str, Any], *, context: Mapping[str, st
                 expression = item.get("expression")
                 if isinstance(expression, str) and "{{" in expression:
                     item["expression"] = _render_with_context(expression, context, location="filter expression")
+
+    _render_field("define", location="define block")
+    _render_field("calculate", location="calculate block")
 
 
 def _prepare_payload(

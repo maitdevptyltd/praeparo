@@ -103,8 +103,13 @@ def _wrap_with_filters(body: str, filter_lines: Sequence[str]) -> str:
         return body
 
     indented_body = _indent_block(body)
-    filter_block = ",\n".join("    " + line for line in filter_lines)
+    filter_block = ",\n".join(_indent_filter_line(line) for line in filter_lines)
     return "CALCULATETABLE(\n" + indented_body + ",\n" + filter_block + "\n)"
+
+
+def _indent_filter_line(line: str) -> str:
+    indented = line.replace("\n", "\n    ")
+    return "    " + indented
 
 
 def build_matrix_query(config: MatrixConfig, row_fields: Sequence[FieldReference]) -> DaxQueryPlan:
@@ -123,6 +128,10 @@ def build_matrix_query(config: MatrixConfig, row_fields: Sequence[FieldReference
         value_lines.append(f'"{alias}", {expression}')
 
     filter_lines = [_format_filter_clause(filter_config) for filter_config in config.filters]
+
+    calculate_block = config.calculate
+    if calculate_block:
+        filter_lines.append(calculate_block)
 
     summarize = _summarize_columns(row_lines, value_lines)
     body = summarize if not filter_lines else _wrap_with_filters(summarize, filter_lines)
@@ -148,4 +157,3 @@ def build_matrix_query(config: MatrixConfig, row_fields: Sequence[FieldReference
 
 
 __all__ = ["DaxQueryPlan", "build_matrix_query"]
-

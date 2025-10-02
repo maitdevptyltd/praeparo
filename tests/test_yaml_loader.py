@@ -49,6 +49,7 @@ def test_load_matrix_config_supports_composition_and_parameters(tmp_path: Path) 
           - id: "Total"
         filters:
           - expression: "Flag = {{Flag}}"
+        calculate: "Metric = {{Flag}}"
         parameters:
           Flag: "DEFAULT"
         """,
@@ -72,6 +73,31 @@ def test_load_matrix_config_supports_composition_and_parameters(tmp_path: Path) 
     assert config.title == "Child Title"
     assert config.rows[0].label == "Child Title"
     assert config.filters[0].expression == "Flag = TRUE()"
+    assert config.calculate == "Metric = TRUE()"
+
+
+def test_load_matrix_config_renders_calculate_with_parameters(tmp_path: Path) -> None:
+    path = tmp_path / "matrix.yaml"
+    path.write_text(
+        """
+        type: matrix
+        rows:
+          - "{{dim.City}}"
+        values:
+          - id: "Total"
+        calculate: |
+          dim_calendar[Date] >= {{Start}} && dim_calendar[Date] <= {{End}}
+        parameters:
+          Start: "DATE(2025, 1, 1)"
+          End: "EOMONTH(TODAY(), 0)"
+        """,
+        encoding="utf-8",
+    )
+
+    config = load_matrix_config(path)
+
+    expected = "dim_calendar[Date] >= DATE(2025, 1, 1) && dim_calendar[Date] <= EOMONTH(TODAY(), 0)"
+    assert config.calculate == expected
 
 
 def test_load_visual_config_frame_resolves_parameters_and_overrides(tmp_path: Path) -> None:

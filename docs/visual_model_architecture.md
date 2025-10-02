@@ -69,6 +69,12 @@ mechanisms control the child payload:
   or `parameters`. Overrides are deep-merged into the child YAML before
   validation and stored on `FrameChildConfig.overrides` for traceability.
 
+Matrix visuals expose both `define:` and `calculate:` blocks at the root level.
+`define:` behaves like a standard DAX `DEFINE` section for staging measures,
+while `calculate:` lets authors declare slicer-style predicates that Praeparo
+injects into the generated `CALCULATETABLE`. Both blocks support template
+placeholders powered by the merged parameter context.
+
 Use parameters for contextual values (e.g. labels, filter expressions) and
 overrides for structural tweaks (e.g. swapping the child title or adding an extra
 filter block).

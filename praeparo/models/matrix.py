@@ -207,6 +207,12 @@ class MatrixConfig(BaseVisualConfig):
         default=None,
         description="Optional DAX DEFINE statements prefixed to generated queries.",
     )
+    calculate: str | None = Field(
+        default=None,
+        description=(
+            "Optional DAX predicate injected into CALCULATETABLE before other filters."
+        ),
+    )
     rows: list[RowTemplate] = Field(
         ...,
         description="Row templates expressed using Jinja-style placeholders.",
@@ -243,6 +249,14 @@ class MatrixConfig(BaseVisualConfig):
     @field_validator("define")
     @classmethod
     def _normalize_define(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        normalized = value.strip()
+        return normalized or None
+
+    @field_validator("calculate")
+    @classmethod
+    def _normalize_calculate(cls, value: str | None) -> str | None:
         if value is None:
             return value
         normalized = value.strip()

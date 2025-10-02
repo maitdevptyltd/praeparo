@@ -1,4 +1,16 @@
 # serializer version: 1
+# name: test_build_matrix_query_appends_calculate
+  '''
+  EVALUATE
+  CALCULATETABLE(
+      SUMMARIZECOLUMNS(
+          dim[City],
+          "Sales", [Total Sales]
+      ),
+      dim.Date[Month] = "2025-10"
+  )
+  '''
+# ---
 # name: test_build_matrix_query_constructs_summarizecolumns
   '''
   EVALUATE
@@ -20,6 +32,16 @@
   )
   '''
 # ---
+# name: test_build_matrix_query_includes_hidden_rows_in_dax
+  '''
+  EVALUATE
+  SUMMARIZECOLUMNS(
+      dim[City],
+      dim[State],
+      "Sales", [Total Sales]
+  )
+  '''
+# ---
 # name: test_build_matrix_query_supports_expression_filter
   '''
   EVALUATE
@@ -32,17 +54,6 @@
   )
   '''
 # ---
-# name: test_build_matrix_query_includes_hidden_rows_in_dax
-  '''
-  EVALUATE
-  SUMMARIZECOLUMNS(
-      dim[City],
-      dim[State],
-      "Sales", [Total Sales]
-  )
-  '''
-# ---
-
 # name: test_build_matrix_query_with_define
   '''
   DEFINE
