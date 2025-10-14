@@ -187,6 +187,19 @@
       "description": "Narrative summary for business stakeholders",
       "title": "Description"
     },
+    "define": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Optional base expression (e.g., DAX) describing how the metric is calculated",
+      "title": "Define"
+    },
     "notes": {
       "anyOf": [
         {

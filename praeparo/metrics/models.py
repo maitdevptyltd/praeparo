@@ -109,6 +109,10 @@ class MetricDefinition(BaseModel):
         default=None,
         description="Narrative summary for business stakeholders",
     )
+    define: str | None = Field(
+        default=None,
+        description="Optional base expression (e.g., DAX) describing how the metric is calculated",
+    )
     notes: str | None = Field(
         default=None, description="Additional implementation or commentary notes"
     )
