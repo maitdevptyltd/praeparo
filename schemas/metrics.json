@@ -118,6 +118,19 @@
           },
           "title": "Calculate",
           "type": "array"
+        },
+        "notes": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional implementation or sourcing notes for the variant",
+          "title": "Notes"
         }
       },
       "required": [

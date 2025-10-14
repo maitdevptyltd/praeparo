@@ -36,6 +36,9 @@ class MetricVariant(BaseModel):
         default_factory=list,
         description="Additional DAX-style predicates applied on top of the base metric",
     )
+    notes: str | None = Field(
+        default=None, description="Optional implementation or sourcing notes for the variant"
+    )
 
     _coerce_calculate = field_validator("calculate", mode="before")(_ensure_string_list)
 
