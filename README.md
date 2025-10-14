@@ -133,4 +133,6 @@ poetry run praeparo-metrics schema --out schemas/metrics.json
 poetry run praeparo-metrics validate path/to/metrics
 ```
 
+- Use `extends` in a metric YAML when a definition builds on another metric (e.g. discharge metrics inherit the base instructions filters). Inheritance is validated by the CLI and reflected in the generated JSON schema.
+- Use YAML `compose` when you need to merge multiple files before validation (e.g. sharing large configuration scaffolds). Compose is a loader-level feature and complements logical inheritance.
 

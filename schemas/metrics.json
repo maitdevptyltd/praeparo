@@ -143,6 +143,19 @@
       "description": "Optional schema version identifier for the metric document",
       "title": "Schema"
     },
+    "extends": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Optional parent metric key to inherit base definitions from",
+      "title": "Extends"
+    },
     "key": {
       "description": "Stable identifier for referencing the metric",
       "examples": [

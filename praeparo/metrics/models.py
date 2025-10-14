@@ -96,6 +96,10 @@ class MetricDefinition(BaseModel):
         alias="schema",
         description="Optional schema version identifier for the metric document",
     )
+    extends: str | None = Field(
+        default=None,
+        description="Optional parent metric key to inherit base definitions from",
+    )
     key: str = Field(
         ..., description="Stable identifier for referencing the metric", examples=["documents_sent"]
     )
@@ -143,6 +147,17 @@ class MetricDefinition(BaseModel):
                 raise ValueError(
                     "variant identifiers must be snake_case (lowercase letters, digits, underscore)"
                 )
+        return value
+
+    @field_validator("extends")
+    @classmethod
+    def _validate_extends(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        if not _SLUG_PATTERN.match(value):
+            raise ValueError(
+                "extends must reference a snake_case metric key (lowercase letters, digits, underscore)"
+            )
         return value
 
     @field_validator("tags", mode="before")

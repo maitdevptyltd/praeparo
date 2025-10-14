@@ -18,6 +18,7 @@ This guide keeps agents aligned while evolving Praeparo. It explains responsibil
 - Push business logic into reusable engines/modules. Keep CLIs and thin wrappers focused on orchestration, argument parsing, and wiring.
 - Resolve Pyright (basic mode) diagnostics in the files you modify. Note pre-existing issues that cannot be addressed during your task.
 - Honour downstream consumers (e.g. MSANational.Metrics). Coordinate schema changes with regenerated JSON schema artefacts so IntelliSense stays accurate.
+- Reuse the shared inheritance helper when adding new `extends` features, and choose between model-level inheritance (`extends`) and YAML-level `compose` depending on the scenario (compose merges files; extends links model definitions).
 
 ## Workflow
 

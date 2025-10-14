@@ -9,6 +9,7 @@ from typing import Sequence
 
 import yaml
 
+from ..inheritance import validate_extends_graph
 from .models import MetricDefinition
 from ..schema import write_metric_schema
 
@@ -44,13 +45,31 @@ def _command_validate(args: argparse.Namespace) -> int:
         return 0
 
     errors: list[str] = []
+    registry: dict[str, MetricDefinition] = {}
+    source_map: dict[str, Path] = {}
     for file_path in files:
         try:
             data = yaml.safe_load(file_path.read_text(encoding="utf-8"))
-            MetricDefinition.model_validate(data)
+            metric = MetricDefinition.model_validate(data)
+            if metric.key in registry:
+                errors.append(
+                    f"{file_path}: duplicate metric key '{metric.key}' also defined in {source_map[metric.key]}"
+                )
+                continue
+            registry[metric.key] = metric
+            source_map[metric.key] = file_path
             print(f"[OK] {file_path}")
         except Exception as exc:  # noqa: BLE001
             errors.append(f"{file_path}: {exc}")
+
+    # Validate extends relationships
+    errors.extend(
+        validate_extends_graph(
+            registry,
+            source_map,
+            get_parent=lambda metric: metric.extends,
+        )
+    )
 
     if errors:
         print("Validation failed:")
