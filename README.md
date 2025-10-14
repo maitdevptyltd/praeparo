@@ -124,5 +124,13 @@ When `--dataset-id` is omitted the mock provider remains available for offline d
 
 Run `python -m praeparo.schema` to regenerate `schemas/matrix.json`. Import this schema into your editor to unlock auto-complete and validation for matrix YAML files.
 
+### Metric definitions (preview)
+
+The metrics Pydantic models live in `praeparo.metrics`. Export their JSON schema or validate a registry via:
+
+```
+poetry run praeparo-metrics schema --out schemas/metrics.json
+poetry run praeparo-metrics validate path/to/metrics
+```
 
 

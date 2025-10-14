@@ -1,0 +1,234 @@
+{
+  "$defs": {
+    "MetricRatioDefinition": {
+      "additionalProperties": false,
+      "description": "Explicit ratio derived from variants or other metrics.",
+      "properties": {
+        "display_name": {
+          "description": "Human-friendly ratio label",
+          "title": "Display Name",
+          "type": "string"
+        },
+        "numerator": {
+          "description": "Variant key or metric id used as numerator",
+          "title": "Numerator",
+          "type": "string"
+        },
+        "denominator": {
+          "description": "Variant key or metric id used as denominator",
+          "title": "Denominator",
+          "type": "string"
+        },
+        "format": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Display format token (e.g. percent, ratio:0.0)",
+          "title": "Format"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional notes clarifying the ratio logic",
+          "title": "Description"
+        }
+      },
+      "required": [
+        "display_name",
+        "numerator",
+        "denominator"
+      ],
+      "title": "MetricRatioDefinition",
+      "type": "object"
+    },
+    "MetricRatiosConfig": {
+      "additionalProperties": false,
+      "description": "Configuration for derived ratio metrics.",
+      "properties": {
+        "auto_percent_of_base": {
+          "default": false,
+          "description": "Automatically publish percent-of-base values for each variant",
+          "title": "Auto Percent Of Base",
+          "type": "boolean"
+        },
+        "format": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Formatting token applied to automatically generated percent ratios",
+          "title": "Format"
+        },
+        "definitions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/MetricRatioDefinition"
+          },
+          "description": "Explicitly defined ratio entries keyed by identifier",
+          "title": "Definitions",
+          "type": "object"
+        }
+      },
+      "title": "MetricRatiosConfig",
+      "type": "object"
+    },
+    "MetricVariant": {
+      "additionalProperties": false,
+      "description": "Variant of a base metric (e.g. automated, manual).",
+      "properties": {
+        "display_name": {
+          "description": "Human-readable variant name",
+          "title": "Display Name",
+          "type": "string"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional explanation for stakeholders",
+          "title": "Description"
+        },
+        "calculate": {
+          "description": "Additional DAX-style predicates applied on top of the base metric",
+          "items": {
+            "type": "string"
+          },
+          "title": "Calculate",
+          "type": "array"
+        }
+      },
+      "required": [
+        "display_name"
+      ],
+      "title": "MetricVariant",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Business-centric definition of an MSA metric.",
+  "properties": {
+    "schema": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Optional schema version identifier for the metric document",
+      "title": "Schema"
+    },
+    "key": {
+      "description": "Stable identifier for referencing the metric",
+      "examples": [
+        "documents_sent"
+      ],
+      "title": "Key",
+      "type": "string"
+    },
+    "display_name": {
+      "description": "Human-friendly metric title",
+      "title": "Display Name",
+      "type": "string"
+    },
+    "section": {
+      "description": "Grouping or dashboard section the metric belongs to",
+      "title": "Section",
+      "type": "string"
+    },
+    "description": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Narrative summary for business stakeholders",
+      "title": "Description"
+    },
+    "notes": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Additional implementation or commentary notes",
+      "title": "Notes"
+    },
+    "tags": {
+      "description": "Optional free-form taxonomy tags (e.g. timeliness, automation)",
+      "items": {
+        "type": "string"
+      },
+      "title": "Tags",
+      "type": "array"
+    },
+    "calculate": {
+      "description": "Base DAX-style predicates describing the metric scope",
+      "items": {
+        "type": "string"
+      },
+      "title": "Calculate",
+      "type": "array"
+    },
+    "variants": {
+      "additionalProperties": {
+        "$ref": "#/$defs/MetricVariant"
+      },
+      "description": "Named variants that apply additional predicates or business logic",
+      "title": "Variants",
+      "type": "object"
+    },
+    "ratios": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/MetricRatiosConfig"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Automatic or explicit ratios derived from this metric"
+    }
+  },
+  "required": [
+    "key",
+    "display_name",
+    "section"
+  ],
+  "title": "MetricDefinition",
+  "type": "object"
+}

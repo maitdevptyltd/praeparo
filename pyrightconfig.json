@@ -1,0 +1,5 @@
+{
+  "typeCheckingMode": "basic",
+  "include": ["praeparo", "tests"],
+  "reportUnusedVariable": "error"
+}
