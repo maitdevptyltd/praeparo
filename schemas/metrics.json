@@ -131,6 +131,14 @@
           "default": null,
           "description": "Optional implementation or sourcing notes for the variant",
           "title": "Notes"
+        },
+        "variants": {
+          "additionalProperties": {
+            "$ref": "#/$defs/MetricVariant"
+          },
+          "description": "Optional nested variants that inherit this variant's filters",
+          "title": "Variants",
+          "type": "object"
         }
       },
       "required": [

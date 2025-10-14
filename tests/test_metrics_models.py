@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import pytest
 
+from typing import Any
+
 from praeparo.metrics import MetricDefinition
 
 
-def _sample_metric_payload() -> dict[str, object]:
+def _sample_metric_payload() -> dict[str, Any]:
     return {
         "schema": "draft-1",
         "key": "documents_sent",
@@ -58,3 +60,25 @@ def test_metric_definition_enforces_slug_variant_keys() -> None:
 
     with pytest.raises(ValueError):
         MetricDefinition.model_validate(payload)
+
+
+def test_metric_definition_supports_nested_variants() -> None:
+    payload = _sample_metric_payload()
+    payload["variants"]["full"] = {
+        "display_name": "Full discharges",
+        "calculate": ['dim_discharge_type.DischargeTypeName = "Full"'],
+        "variants": {
+            "refinance": {
+                "display_name": "Full discharges – refinance",
+                "calculate": ['dim_discharge_reason_type.DischargeReasonTypeName = "Refinance"'],
+            }
+        },
+    }
+
+    metric = MetricDefinition.model_validate(payload)
+
+    assert "full" in metric.variants
+    assert "refinance" in metric.variants["full"].variants
+    flat = metric.flattened_variants()
+    assert "full" in flat
+    assert "full.refinance" in flat

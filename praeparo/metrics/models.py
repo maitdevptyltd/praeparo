@@ -23,6 +23,17 @@ def _ensure_string_list(value: object) -> List[str]:
     raise TypeError("calculate must be a string or list of strings")
 
 
+def _ensure_variant_keys(
+    value: Dict[str, "MetricVariant"]
+) -> Dict[str, "MetricVariant"]:
+    for key in value:
+        if not _SLUG_PATTERN.match(key):
+            raise ValueError(
+                "variant identifiers must be snake_case (lowercase letters, digits, underscore)"
+            )
+    return value
+
+
 class MetricVariant(BaseModel):
     """Variant of a base metric (e.g. automated, manual)."""
 
@@ -39,8 +50,13 @@ class MetricVariant(BaseModel):
     notes: str | None = Field(
         default=None, description="Optional implementation or sourcing notes for the variant"
     )
+    variants: Dict[str, "MetricVariant"] = Field(
+        default_factory=dict,
+        description="Optional nested variants that inherit this variant's filters",
+    )
 
     _coerce_calculate = field_validator("calculate", mode="before")(_ensure_string_list)
+    _validate_nested_keys = field_validator("variants", mode="after")(_ensure_variant_keys)
 
 
 class MetricRatioDefinition(BaseModel):
@@ -149,12 +165,22 @@ class MetricDefinition(BaseModel):
     def _validate_variant_keys(
         cls, value: Dict[str, MetricVariant]
     ) -> Dict[str, MetricVariant]:
-        for key in value:
-            if not _SLUG_PATTERN.match(key):
-                raise ValueError(
-                    "variant identifiers must be snake_case (lowercase letters, digits, underscore)"
-                )
-        return value
+        return _ensure_variant_keys(value)
+
+    def flattened_variants(self) -> Dict[str, MetricVariant]:
+        """Return a mapping of fully-qualified variant keys (dot notation) to variants."""
+
+        flattened: Dict[str, MetricVariant] = {}
+
+        def _walk(prefix: str, variants: Dict[str, MetricVariant]) -> None:
+            for key, variant in variants.items():
+                fq_key = f"{prefix}.{key}" if prefix else key
+                flattened[fq_key] = variant
+                if variant.variants:
+                    _walk(fq_key, variant.variants)
+
+        _walk("", self.variants)
+        return flattened
 
     @field_validator("extends")
     @classmethod
