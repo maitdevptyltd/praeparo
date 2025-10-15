@@ -1,10 +1,14 @@
 """Praeparo package public interface."""
 
 from .metrics import (
+    MetricCatalog,
+    MetricDiscoveryError,
     MetricDefinition,
     MetricRatioDefinition,
     MetricRatiosConfig,
     MetricVariant,
+    discover_metric_files,
+    load_metric_catalog,
 )
 from .models.matrix import (
     MatrixConfig,
@@ -15,6 +19,8 @@ from .models.matrix import (
 )
 
 __all__ = [
+    "MetricCatalog",
+    "MetricDiscoveryError",
     "MetricDefinition",
     "MetricRatioDefinition",
     "MetricRatiosConfig",
@@ -24,5 +30,6 @@ __all__ = [
     "MatrixTotals",
     "MatrixValueConfig",
     "RowTemplate",
+    "discover_metric_files",
+    "load_metric_catalog",
 ]
-

@@ -133,6 +133,9 @@ poetry run praeparo-metrics schema --out schemas/metrics.json
 poetry run praeparo-metrics validate path/to/metrics
 ```
 
+- Use `load_metric_catalog([...])` to parse a directory of metric YAML into a `MetricCatalog`. It exposes helpers such as `metric_keys()`, `variant_keys()`, and `contains()` so consumer tooling (e.g. customer registry validation) can confirm that a metric or variant exists before publishing dashboards.
+- `load_metric_catalog` raises `MetricDiscoveryError` when duplicate keys, YAML issues, or broken `extends` chains are encountered. The CLI above now uses the same loader, so command-line validation and Python workflows stay consistent.
+- For direct file discovery logic, reuse `discover_metric_files([...])` rather than rolling custom globbing.
 - Use `define` to capture the canonical expression (e.g., DAX `CALCULATE(...)`) for a base metric. Variants and extending metrics can then layer additional `calculate` predicates without duplicating the core definition.
 - Use `extends` in a metric YAML when a definition builds on another metric (e.g. discharge metrics inherit the base instructions filters). Inheritance is validated by the CLI and reflected in the generated JSON schema.
 - Use YAML `compose` when you need to merge multiple files before validation (e.g. sharing large configuration scaffolds). Compose is a loader-level feature and complements logical inheritance.
