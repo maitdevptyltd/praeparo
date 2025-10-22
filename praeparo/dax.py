@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Sequence
 
 from .models import MatrixConfig
 from .templating import FieldReference
+from .utils import normalize_dax_expression
 
 if TYPE_CHECKING:
     from .models import MatrixFilterConfig
@@ -73,7 +74,7 @@ def _escape_filter_value(value: str) -> str:
 
 def _format_filter_clause(filter_config: "MatrixFilterConfig") -> str:
     if filter_config.expression:
-        return filter_config.expression
+        return normalize_dax_expression(filter_config.expression)
     if not filter_config.field or not filter_config.include:
         msg = "Filter configuration must define either an expression or field/include pair."
         raise ValueError(msg)

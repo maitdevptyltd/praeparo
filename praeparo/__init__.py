@@ -20,6 +20,7 @@ from .models.matrix import (
     MatrixValueConfig,
     RowTemplate,
 )
+from .utils import normalize_dax_expression
 
 __all__ = [
     "MetricDaxBuilder",
@@ -36,6 +37,7 @@ __all__ = [
     "MatrixTotals",
     "MatrixValueConfig",
     "RowTemplate",
+    "normalize_dax_expression",
     "discover_metric_files",
     "load_metric_catalog",
 ]

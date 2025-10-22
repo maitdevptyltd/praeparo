@@ -12,6 +12,7 @@ from praeparo.metrics import (
     MetricDefinition,
     MetricVariant,
 )
+from praeparo.utils import normalize_dax_expression
 
 
 def _metric_catalog(*metrics: MetricDefinition) -> MetricCatalog:
@@ -26,7 +27,7 @@ def test_compile_metric_with_base_filters_and_variants() -> None:
             "key": "documents_sent",
             "display_name": "Documents sent",
             "section": "Document Preparation",
-            "define": "SUM('fact_events'[DocumentsSent])",
+            "define": normalize_dax_expression("SUM('fact_events'[DocumentsSent])"),
             "calculate": ["dim_status.IsComplete = TRUE()"],
             "variants": {
                 "automated": {
@@ -44,7 +45,7 @@ def test_compile_metric_with_base_filters_and_variants() -> None:
     expected_base = (
         "CALCULATE(\n"
         "    SUM('fact_events'[DocumentsSent]),\n"
-        "    dim_status.IsComplete = TRUE()\n"
+        "    'dim_status'[IsComplete] = TRUE()\n"
         ")"
     )
     assert plan.base.expression == expected_base
@@ -53,8 +54,8 @@ def test_compile_metric_with_base_filters_and_variants() -> None:
     expected_variant = (
         "CALCULATE(\n"
         "    SUM('fact_events'[DocumentsSent]),\n"
-        "    dim_status.IsComplete = TRUE(),\n"
-        "    fact_events.IsAutomated = TRUE()\n"
+        "    'dim_status'[IsComplete] = TRUE(),\n"
+        "    'fact_events'[IsAutomated] = TRUE()\n"
         ")"
     )
     assert automated.expression == expected_variant
@@ -63,14 +64,14 @@ def test_compile_metric_with_base_filters_and_variants() -> None:
 
 def test_compile_metric_inherits_define_and_filters_from_parent() -> None:
     parent = MetricDefinition.model_validate(
-        {
-            "key": "documents_sent",
-            "display_name": "Documents sent",
-            "section": "Document Preparation",
-            "define": "SUM('fact_events'[DocumentsSent])",
-            "calculate": ["dim_status.IsComplete = TRUE()"],
-        }
-    )
+            {
+                "key": "documents_sent",
+                "display_name": "Documents sent",
+                "section": "Document Preparation",
+                "define": normalize_dax_expression("SUM('fact_events'[DocumentsSent])"),
+                "calculate": ["dim_status.IsComplete = TRUE()"],
+            }
+        )
     child = MetricDefinition.model_validate(
         {
             "key": "documents_sent_business",
@@ -87,8 +88,8 @@ def test_compile_metric_inherits_define_and_filters_from_parent() -> None:
     expected = (
         "CALCULATE(\n"
         "    SUM('fact_events'[DocumentsSent]),\n"
-        "    dim_status.IsComplete = TRUE(),\n"
-        "    dim_matter.Segment = \"Business\"\n"
+        "    'dim_status'[IsComplete] = TRUE(),\n"
+        "    'dim_matter'[Segment] = \"Business\"\n"
         ")"
     )
     assert plan.base.expression == expected
@@ -112,7 +113,7 @@ def test_compile_metric_handles_nested_variants() -> None:
         key="documents_sent",
         display_name="Documents sent",
         section="Document Preparation",
-        define="SUM('fact_events'[DocumentsSent])",
+        define=normalize_dax_expression("SUM('fact_events'[DocumentsSent])"),
         variants={"manual": variant},
     )
 
@@ -123,7 +124,7 @@ def test_compile_metric_handles_nested_variants() -> None:
         manual.expression
         == "CALCULATE(\n"
         "    SUM('fact_events'[DocumentsSent]),\n"
-        "    fact_events.IsAutomated = FALSE()\n"
+        "    'fact_events'[IsAutomated] = FALSE()\n"
         ")"
     )
 
@@ -132,8 +133,8 @@ def test_compile_metric_handles_nested_variants() -> None:
         manual_nested.expression
         == "CALCULATE(\n"
         "    SUM('fact_events'[DocumentsSent]),\n"
-        "    fact_events.IsAutomated = FALSE(),\n"
-        "    fact_events.BusinessHours <= 4\n"
+        "    'fact_events'[IsAutomated] = FALSE(),\n"
+        "    'fact_events'[BusinessHours] <= 4\n"
         ")"
     )
 

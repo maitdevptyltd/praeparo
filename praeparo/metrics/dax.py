@@ -7,6 +7,7 @@ from typing import Iterable
 
 from .catalog import MetricCatalog
 from .models import MetricDefinition, MetricVariant
+from ..utils import normalize_dax_expression
 
 
 @dataclass(frozen=True)
@@ -58,7 +59,7 @@ class MetricDaxBuilder:
         define = _resolve_define(chain)
         base_filters = _collect_metric_filters(chain)
 
-        base_expression = _compose_calculate(define, base_filters)
+        base_expression = normalize_dax_expression(_compose_calculate(define, base_filters))
         base_measure = MetricMeasureDefinition(
             key=metric_key,
             label=metric.display_name,
@@ -74,7 +75,7 @@ class MetricDaxBuilder:
             for path, variant in flattened_variants.items():
                 variant_filters = _collect_variant_filters(metric, path)
                 combined_filters = tuple(base_filters + variant_filters)
-                variant_expression = _compose_calculate(define, combined_filters)
+                variant_expression = normalize_dax_expression(_compose_calculate(define, combined_filters))
                 variant_key = f"{metric_key}.{path}"
                 variant_definitions[path] = MetricMeasureDefinition(
                     key=variant_key,
