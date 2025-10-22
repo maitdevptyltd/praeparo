@@ -6,6 +6,7 @@ from .catalog import (
     discover_metric_files,
     load_metric_catalog,
 )
+from .dax import MetricDaxBuilder, MetricDaxPlan, MetricMeasureDefinition
 from .models import (
     MetricDefinition,
     MetricRatioDefinition,
@@ -16,7 +17,10 @@ from .models import (
 __all__ = [
     "MetricCatalog",
     "MetricDiscoveryError",
+    "MetricDaxBuilder",
+    "MetricDaxPlan",
     "MetricDefinition",
+    "MetricMeasureDefinition",
     "MetricRatioDefinition",
     "MetricRatiosConfig",
     "MetricVariant",

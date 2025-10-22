@@ -11,6 +11,7 @@ Praeparo turns YAML-defined visuals into automated, Plotly-powered presentations
 ## Quick Links
 
 - [Visual model architecture](../visual_model_architecture.md)
+- [Metric → DAX builder](metric_dax_builder.md)
 - [Agent guidelines](../../AGENTS.md)
 
 ## How to Update
@@ -19,4 +20,3 @@ Praeparo turns YAML-defined visuals into automated, Plotly-powered presentations
 2. Record Progress, Next Steps, and Blockers & Risks inside that feature document so status travels with the implementation details.
 3. Add new feature docs under `docs/` as needed and link to them from this index to keep discovery simple.
 4. Use the archived dated timelines for historical context only; do not create new entries.
-

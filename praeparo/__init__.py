@@ -1,9 +1,12 @@
 """Praeparo package public interface."""
 
 from .metrics import (
+    MetricDaxBuilder,
+    MetricDaxPlan,
     MetricCatalog,
     MetricDiscoveryError,
     MetricDefinition,
+    MetricMeasureDefinition,
     MetricRatioDefinition,
     MetricRatiosConfig,
     MetricVariant,
@@ -19,9 +22,12 @@ from .models.matrix import (
 )
 
 __all__ = [
+    "MetricDaxBuilder",
+    "MetricDaxPlan",
     "MetricCatalog",
     "MetricDiscoveryError",
     "MetricDefinition",
+    "MetricMeasureDefinition",
     "MetricRatioDefinition",
     "MetricRatiosConfig",
     "MetricVariant",
