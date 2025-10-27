@@ -144,7 +144,7 @@ class PowerBIClient:
         except (KeyError, IndexError, TypeError) as exc:
             raise PowerBIQueryError("Unexpected response shape from Power BI executeQueries.") from exc
 
-        return rows
+        return [_normalise_row_keys(row) for row in rows]
 
 
 __all__ = [
@@ -154,3 +154,24 @@ __all__ = [
     "PowerBIConfigurationError",
     "PowerBIQueryError",
 ]
+
+
+def _normalise_row_keys(row: dict[str, object]) -> dict[str, object]:
+    normalised: dict[str, object] = {}
+    for key, value in row.items():
+        normalised[key] = value
+        stripped = _strip_bracket_wrappers(key)
+        if stripped and stripped not in normalised:
+            normalised[stripped] = value
+    return normalised
+
+
+def _strip_bracket_wrappers(label: str) -> str | None:
+    start = label.rfind("[")
+    end = label.rfind("]")
+    if start == -1 or end == -1 or end <= start + 1:
+        return None
+    candidate = label[start + 1 : end].strip()
+    if not candidate or candidate == label:
+        return None
+    return candidate
