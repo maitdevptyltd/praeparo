@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 _SLUG_PATTERN = re.compile(r"^[a-z0-9_]+$")
+_VALUE_TYPES = {"number", "percent", "currency"}
 
 
 def _ensure_string_list(value: object) -> List[str]:
@@ -54,9 +55,23 @@ class MetricVariant(BaseModel):
         default_factory=dict,
         description="Optional nested variants that inherit this variant's filters",
     )
+    value_type: str | None = Field(
+        default=None,
+        description="Override the display value type for this variant (number, percent, currency).",
+    )
 
     _coerce_calculate = field_validator("calculate", mode="before")(_ensure_string_list)
     _validate_nested_keys = field_validator("variants", mode="after")(_ensure_variant_keys)
+
+    @field_validator("value_type", mode="before")
+    @classmethod
+    def _validate_value_type(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        candidate = value.strip().lower()
+        if candidate not in _VALUE_TYPES:
+            raise ValueError(f"value_type must be one of {sorted(_VALUE_TYPES)}")
+        return candidate
 
 
 class MetricRatioDefinition(BaseModel):
@@ -150,8 +165,22 @@ class MetricDefinition(BaseModel):
     ratios: MetricRatiosConfig | None = Field(
         default=None, description="Automatic or explicit ratios derived from this metric"
     )
+    value_type: str = Field(
+        default="number",
+        description="Display value type for the metric (number, percent, currency).",
+    )
 
     _coerce_calculate = field_validator("calculate", mode="before")(_ensure_string_list)
+
+    @field_validator("value_type", mode="before")
+    @classmethod
+    def _validate_value_type(cls, value: str | None) -> str:
+        if value is None:
+            return "number"
+        candidate = str(value).strip().lower()
+        if candidate not in _VALUE_TYPES:
+            raise ValueError(f"value_type must be one of {sorted(_VALUE_TYPES)}")
+        return candidate
 
     @field_validator("key")
     @classmethod

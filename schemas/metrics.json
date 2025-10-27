@@ -139,6 +139,19 @@
           "description": "Optional nested variants that inherit this variant's filters",
           "title": "Variants",
           "type": "object"
+        },
+        "value_type": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Override the display value type for this variant (number, percent, currency).",
+          "title": "Value Type"
         }
       },
       "required": [
@@ -269,6 +282,12 @@
       ],
       "default": null,
       "description": "Automatic or explicit ratios derived from this metric"
+    },
+    "value_type": {
+      "default": "number",
+      "description": "Display value type for the metric (number, percent, currency).",
+      "title": "Value Type",
+      "type": "string"
     }
   },
   "required": [

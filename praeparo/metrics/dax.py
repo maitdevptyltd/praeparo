@@ -32,6 +32,9 @@ class MetricMeasureDefinition:
     variant_path: str | None = None
     """Variant path relative to the metric (None for the base metric)."""
 
+    value_type: str = "number"
+    """Declared value type for presentation (number, percent, currency)."""
+
 
 @dataclass(frozen=True)
 class MetricDaxPlan:
@@ -67,6 +70,7 @@ class MetricDaxBuilder:
             filters=tuple(base_filters),
             description=metric.description,
             variant_path=None,
+            value_type=metric.value_type,
         )
 
         variant_definitions: dict[str, MetricMeasureDefinition] = {}
@@ -77,6 +81,7 @@ class MetricDaxBuilder:
                 combined_filters = tuple(base_filters + variant_filters)
                 variant_expression = normalize_dax_expression(_compose_calculate(define, combined_filters))
                 variant_key = f"{metric_key}.{path}"
+                variant_value_type = variant.value_type or metric.value_type
                 variant_definitions[path] = MetricMeasureDefinition(
                     key=variant_key,
                     label=variant.display_name,
@@ -84,6 +89,7 @@ class MetricDaxBuilder:
                     filters=combined_filters,
                     description=variant.description,
                     variant_path=path,
+                    value_type=variant_value_type,
                 )
 
         return MetricDaxPlan(metric_key=metric_key, base=base_measure, variants=variant_definitions)
