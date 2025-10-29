@@ -11,6 +11,7 @@ This guide keeps agents aligned while evolving Praeparo. It explains responsibil
   - Lead with front-facing code examples that show how a developer is expected to use each feature (matrix visuals, metrics, CLI commands, etc.).
   - Ensure runnable examples and operational notes are updated alongside code changes.
   - Capture assumptions, open questions, and blockers directly in the relevant doc sections or inline comments for the next agent.
+- Ensure CLIs keep loading project-level secrets automatically: Praeparo now calls `load_dotenv()` on startup, so avoid re-implementing env bootstrapping in downstream repos unless absolutely necessary.
 - Ensure all tests pass before handoff; treat tests and documentation as first-class deliverables for every code change.
 - Add or extend focused unit tests for each feature you touch. Tests must isolate the unit under change, avoid exercising unrelated external systems, and demonstrate expected behaviour (happy paths, failure modes, dry runs).
 - Prefer Pydantic models for request/response payloads and configuration (metrics, visuals, datasources) instead of raw dictionaries to gain validation, auto-complete, and richer type checking.

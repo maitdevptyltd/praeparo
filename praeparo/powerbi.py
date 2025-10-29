@@ -10,6 +10,7 @@ from typing import Any, Mapping
 
 import httpx
 
+from .env import ensure_env_loaded
 
 class PowerBIConfigurationError(RuntimeError):
     """Raised when required Power BI configuration is missing."""
@@ -35,6 +36,8 @@ class PowerBISettings:
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> "PowerBISettings":
+        if env is None:
+            ensure_env_loaded()
         env = env or os.environ
         try:
             tenant_id = env["PRAEPARO_PBI_TENANT_ID"]

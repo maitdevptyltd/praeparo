@@ -111,6 +111,8 @@ Set the following environment variables (see `.env`) to enable live DAX queries:
 - `PRAEPARO_PBI_REFRESH_TOKEN`
 - Optional: `PRAEPARO_PBI_SCOPE` (defaults to Power BI API scope)
 
+The CLI automatically calls `load_dotenv()` before inspecting the environment, so a `.env` file anywhere in the current working tree (or its parents) will be discovered and loaded once per process. Explicitly exported variables still take precedence because `override=False` is used.
+
 Render a YAML visual against a real dataset:
 
 ```

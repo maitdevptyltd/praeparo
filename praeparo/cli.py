@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Sequence
 
 from .datasources import DataSourceConfigError
+from .env import ensure_env_loaded
 from .io.yaml_loader import ConfigLoadError, load_visual_config
 from .models import BaseVisualConfig, FrameConfig, MatrixConfig
 from .pipeline import (
@@ -149,6 +150,7 @@ def _build_context(
 
 
 def run(argv: Sequence[str] | None = None) -> int:
+    ensure_env_loaded()
     parser = build_parser()
     args = parser.parse_args(argv)
 

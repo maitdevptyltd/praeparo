@@ -12,6 +12,7 @@ import yaml
 from pydantic import TypeAdapter, ValidationError
 
 from .models import PowerBIDataSourceConfig
+from .env import ensure_env_loaded
 from .powerbi import PowerBISettings
 
 
@@ -188,6 +189,7 @@ def _resolve_powerbi_settings(
         env_key=TENANT_ID_ENV_KEY,
         required=True,
     )
+    assert tenant_id is not None
     client_id = _resolve_field(
         config.client_id,
         field="client_id",
@@ -196,6 +198,7 @@ def _resolve_powerbi_settings(
         env_key=CLIENT_ID_ENV_KEY,
         required=True,
     )
+    assert client_id is not None
     client_secret = _resolve_field(
         config.client_secret,
         field="client_secret",
@@ -204,6 +207,7 @@ def _resolve_powerbi_settings(
         env_key=CLIENT_SECRET_ENV_KEY,
         required=True,
     )
+    assert client_secret is not None
     refresh_token = _resolve_field(
         config.refresh_token,
         field="refresh_token",
@@ -212,6 +216,7 @@ def _resolve_powerbi_settings(
         env_key=REFRESH_TOKEN_ENV_KEY,
         required=True,
     )
+    assert refresh_token is not None
     scope = (
         _resolve_field(
             config.scope,
@@ -239,6 +244,7 @@ def resolve_datasource(
     *,
     visual_path: Path,
 ) -> ResolvedDataSource:
+    ensure_env_loaded()
     if reference is None:
         return ResolvedDataSource(name="mock", type="mock")
 

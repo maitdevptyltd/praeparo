@@ -6,6 +6,7 @@ import argparse
 import sys
 from typing import Sequence
 
+from ..env import ensure_env_loaded
 from ..schema import write_metric_schema
 from .catalog import MetricDiscoveryError, load_metric_catalog
 
@@ -55,6 +56,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def run(argv: Sequence[str] | None = None) -> int:
+    ensure_env_loaded()
     parser = _build_parser()
     args = parser.parse_args(list(argv) if argv is not None else None)
     return args.func(args)
