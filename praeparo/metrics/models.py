@@ -211,24 +211,54 @@ class MetricDefinition(BaseModel):
         _walk("", self.variants)
         return flattened
 
-    @field_validator("extends")
+
+class MetricGroupConfig(BaseModel):
+    """Logical grouping of metrics with shared filters."""
+
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    key: str | None = Field(
+        default=None,
+        description="Optional identifier for referencing the group.",
+    )
+    label: str | None = Field(default=None, description="Optional display label for the group.")
+    description: str | None = Field(
+        default=None,
+        description="Narrative notes describing the group purpose.",
+    )
+    calculate: List[str] = Field(
+        default_factory=list,
+        description="Filters applied to every metric within this group.",
+    )
+    metrics: List[object] = Field(
+        default_factory=list,
+        description="Metric keys (or nested groups) included in the group.",
+    )
+
+    _coerce_calculate = field_validator("calculate", mode="before")(_ensure_string_list)
+
+    @field_validator("key")
     @classmethod
-    def _validate_extends(cls, value: str | None) -> str | None:
+    def _validate_key(cls, value: str | None) -> str | None:
         if value is None:
             return None
         if not _SLUG_PATTERN.match(value):
-            raise ValueError(
-                "extends must reference a snake_case metric key (lowercase letters, digits, underscore)"
-            )
+            raise ValueError("group key must be snake_case (lowercase letters, digits, underscore)")
         return value
 
-    @field_validator("tags", mode="before")
+    @field_validator("metrics", mode="after")
     @classmethod
-    def _coerce_tags(cls, value: object) -> List[str]:
-        if value is None:
-            return []
-        if isinstance(value, list):
-            if not all(isinstance(item, str) for item in value):
-                raise TypeError("tags entries must be strings")
-            return value
-        raise TypeError("tags must be a list of strings")
+    def _validate_metrics(cls, value: List[object]) -> List[object]:
+        cleaned: List[object] = []
+        for item in value:
+            if isinstance(item, str):
+                candidate = item.strip()
+                if candidate:
+                    cleaned.append(candidate)
+            elif isinstance(item, MetricGroupConfig):
+                cleaned.append(item)
+            else:
+                raise TypeError("metrics entries must be strings or MetricGroupConfig instances")
+        return cleaned
+
+MetricGroupConfig.model_rebuild()

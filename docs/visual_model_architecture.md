@@ -9,6 +9,10 @@ loader functions.
 - All visuals inherit from `BaseVisualConfig` (`praeparo.models.visual_base`) which
   defines shared metadata (`type`, `title`, `description`) and a `resolve()` hook
   for deferred loading.
+- `praeparo.visuals` provides registration utilities (`register_visual_type`,
+  `load_visual_definition`) and reusable config primitives (`VisualMetricConfig`,
+  `VisualGroupConfig`, mock helpers) so projects can add custom visuals without
+  writing bespoke loader code.
 - Concrete visuals such as `MatrixConfig` or `FrameConfig` subclass
   `BaseVisualConfig`, declare `type: Literal["..."]`, and add their visual-specific
   fields.

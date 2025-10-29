@@ -9,6 +9,7 @@ from .catalog import (
 from .dax import MetricDaxBuilder, MetricDaxPlan, MetricMeasureDefinition
 from .models import (
     MetricDefinition,
+    MetricGroupConfig,
     MetricRatioDefinition,
     MetricRatiosConfig,
     MetricVariant,
@@ -20,6 +21,7 @@ __all__ = [
     "MetricDaxBuilder",
     "MetricDaxPlan",
     "MetricDefinition",
+    "MetricGroupConfig",
     "MetricMeasureDefinition",
     "MetricRatioDefinition",
     "MetricRatiosConfig",
