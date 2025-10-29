@@ -69,3 +69,25 @@ variants in the catalog.
 
 Future visuals (combo charts, scorecards, etc.) should import these shared
 helpers instead of duplicating calculate/mocking semantics in each repository.
+
+## DAX Planning Helpers
+
+When a visual needs to emit DAX, reuse the helpers under
+`praeparo.visuals.dax`:
+
+- `MetricCompilationCache` caches compiled metric plans so multiple visuals can
+  reuse the same `MetricDaxBuilder` without redundant work.
+- `resolve_metric_reference` resolves a metric key (and optional variant path)
+  to a `MetricMeasureDefinition`.
+- `normalise_filter_group`, `combine_filter_groups`, and
+  `wrap_expression_with_filters` handle common filter scenarios prior to
+  rendering.
+- `parse_metric_expression` parses inline expressions and returns a
+  `ParsedExpression` struct with referenced metrics so planners can substitute
+  compiled DAX fragments safely.
+
+These utilities intentionally avoid imposing naming or ratio rules—the calling
+visual is responsible for assigning measure names, ratio handling, and other
+presentation-specific behaviour. Downstream projects can compose these helpers
+with their own planners to build custom visuals while sharing the heavy lifting
+performed by Praeparo.
