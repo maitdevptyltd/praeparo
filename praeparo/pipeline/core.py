@@ -5,7 +5,7 @@ from __future__ import annotations
 import inspect
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Awaitable, Callable, Dict, List, Mapping, Protocol, Sequence, cast
+from typing import Awaitable, Callable, Dict, List, Mapping, Protocol, Sequence
 
 import plotly.graph_objects as go
 
@@ -26,7 +26,14 @@ from .providers import (
     QueryPlannerProvider,
     build_default_query_planner_provider,
 )
-from .providers.matrix import MatrixQueryPlanner
+from .registry import (
+    DatasetArtifact,
+    RenderOutcome,
+    SchemaArtifact,
+    VisualPipelineDefinition,
+    default_json_writer,
+    get_visual_pipeline_definition,
+)
 
 
 @dataclass
@@ -46,6 +53,8 @@ class PipelineOptions:
 
     data: PipelineDataOptions = field(default_factory=PipelineDataOptions)
     outputs: List[OutputTarget] = field(default_factory=list)
+    artefact_dir: Path | None = None
+    metadata: Dict[str, object] = field(default_factory=dict)
     print_dax: bool = False
     ensure_non_empty_rows: bool = False
     ensure_values_present: bool = False
@@ -73,10 +82,14 @@ class VisualExecutionResult:
     """Outcome of executing a single visual."""
 
     config: BaseVisualConfig
-    figure: go.Figure | None
-    plans: List[DaxQueryPlan]
-    datasets: List[object]
-    outputs: List[PipelineOutputArtifact]
+    schema: object | None = None
+    dataset: object | None = None
+    figure: go.Figure | None = None
+    plans: List[DaxQueryPlan] = field(default_factory=list)
+    schema_path: Path | None = None
+    dataset_path: Path | None = None
+    datasets: List[object] = field(default_factory=list)
+    outputs: List[PipelineOutputArtifact] = field(default_factory=list)
     children: List["VisualExecutionResult"] = field(default_factory=list)
 
 
@@ -98,7 +111,6 @@ class VisualPipeline:
     ) -> None:
         self._planner_provider = planner_provider or build_default_query_planner_provider()
         self._strategies: Dict[str, VisualPipelineStrategy] = {}
-        self.register_strategy("matrix", _MatrixStrategy(self, self._planner_provider))
         self.register_strategy("frame", _FrameStrategy(self))
 
     def resolve_planner(self, visual: BaseVisualConfig, context: ExecutionContext):
@@ -109,10 +121,70 @@ class VisualPipeline:
         self._strategies[visual_type] = strategy
 
     def execute(self, config: BaseVisualConfig, context: ExecutionContext) -> VisualExecutionResult:
+        definition = get_visual_pipeline_definition(config.type)
+        if definition is not None:
+            return self._execute_definition(definition, config, context)
+
         strategy = self._strategies.get(config.type)
         if strategy is None:
             raise ValueError(f"No pipeline strategy registered for visual type '{config.type}'.")
         return strategy.execute(config, context)
+
+    def _execute_definition(
+        self,
+        definition: VisualPipelineDefinition[object, object],
+        config: BaseVisualConfig,
+        context: ExecutionContext,
+    ) -> VisualExecutionResult:
+        schema_artifact = definition.schema_builder(self, config, context)
+        dataset_artifact = definition.dataset_builder(self, config, schema_artifact, context)
+
+        artefact_dir = context.options.artefact_dir
+        schema_path: Path | None = None
+        dataset_path: Path | None = None
+        metadata_outputs: List[PipelineOutputArtifact] = []
+
+        if artefact_dir is not None:
+            schema_writer = schema_artifact.writer or default_json_writer
+            dataset_writer = dataset_artifact.writer or default_json_writer
+            schema_path = schema_writer(schema_artifact.value, artefact_dir, schema_artifact.filename)
+            dataset_path = dataset_writer(dataset_artifact.value, artefact_dir, dataset_artifact.filename)
+            metadata_outputs.extend(
+                [
+                    PipelineOutputArtifact(kind=OutputKind.SCHEMA, path=schema_path),
+                    PipelineOutputArtifact(kind=OutputKind.DATA, path=dataset_path),
+                ]
+            )
+
+        render_outcome = definition.renderer(
+            self,
+            config,
+            schema_artifact,
+            dataset_artifact,
+            context,
+            context.options.outputs,
+        )
+
+        plans: List[DaxQueryPlan] = []
+        for plan in dataset_artifact.plans:
+            if isinstance(plan, DaxQueryPlan):
+                plans.append(plan)
+        outputs = metadata_outputs + list(render_outcome.outputs)
+
+        dataset_value = dataset_artifact.value
+
+        return VisualExecutionResult(
+            config=config,
+            schema=schema_artifact.value,
+            dataset=dataset_value,
+            figure=render_outcome.figure,
+            plans=plans,
+            schema_path=schema_path,
+            dataset_path=dataset_path,
+            datasets=[dataset_value],
+            outputs=outputs,
+            children=list(render_outcome.children),
+        )
 
     def _emit_outputs(
         self,
@@ -142,70 +214,6 @@ class VisualPipeline:
                     frame_png(visual, dataset_payload, str(path), scale=scale)  # type: ignore[arg-type]
                 artifacts.append(PipelineOutputArtifact(kind=OutputKind.PNG, path=path))
         return artifacts
-
-
-class _MatrixStrategy:
-    """Executes matrix visuals end-to-end."""
-
-    def __init__(self, pipeline: VisualPipeline, planner_provider: QueryPlannerProvider) -> None:
-        self._pipeline = pipeline
-        self._planner_provider = planner_provider
-
-    def execute(self, config: BaseVisualConfig, context: ExecutionContext) -> VisualExecutionResult:
-        if not isinstance(config, MatrixConfig):
-            raise TypeError("Matrix strategy requires a MatrixConfig instance.")
-
-        matrix_config = config
-        planner = self._planner_provider.resolve(matrix_config, context)
-        if not isinstance(planner, MatrixQueryPlanner):
-            raise TypeError("Resolved planner is not a MatrixQueryPlanner.")
-
-        planner_result = planner.plan(matrix_config, context=context)
-        plan = planner_result.plan
-        dataset = planner_result.dataset
-
-        options = context.options
-        if options.sort_rows and dataset.rows:
-            sorted_rows = sorted(
-                dataset.rows,
-                key=lambda row: tuple(str(row.get(field.placeholder)) for field in dataset.row_fields),
-            )
-            dataset = MatrixResultSet(rows=sorted_rows, row_fields=dataset.row_fields)
-
-        if options.ensure_non_empty_rows and not dataset.rows:
-            raise AssertionError("Matrix data provider returned no rows.")
-
-        if options.ensure_values_present and dataset.rows:
-            first_row = dataset.rows[0]
-            for value in matrix_config.values:
-                alias = value.label or value.id
-                if first_row.get(alias) is None:
-                    raise AssertionError(f"Value '{alias}' missing from dataset row")
-
-        if options.validate_define:
-            config_define = (matrix_config.define or "").strip() or None
-            if config_define:
-                assert plan.define == config_define
-            else:
-                assert plan.define is None
-
-        figure = matrix_figure(matrix_config, dataset)
-
-        outputs = self._pipeline._emit_outputs(
-            visual=matrix_config,
-            dataset_payload=dataset,
-            figure=figure,
-            targets=options.outputs,
-            png_scale=options.png_scale,
-        )
-
-        return VisualExecutionResult(
-            config=matrix_config,
-            figure=figure,
-            plans=[plan],
-            datasets=[dataset],
-            outputs=outputs,
-        )
 
 
 class _FrameStrategy:
@@ -258,6 +266,8 @@ class _FrameStrategy:
 
         return VisualExecutionResult(
             config=frame_config,
+            schema=None,
+            dataset=child_pairs,
             figure=figure,
             plans=[],
             datasets=[child_pairs],

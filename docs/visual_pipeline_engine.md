@@ -6,7 +6,8 @@ Praeparo needs a single, reusable execution engine that transforms visual config
 
 ## Developer API Overview
 
-- `praeparo.pipeline.core.VisualPipeline` is the entry point. Callers provide a resolved visual config plus an `ExecutionContext`. The pipeline depends on a `QueryPlannerProvider` to resolve the appropriate planner for the visual and returns a `VisualExecutionResult` containing generated DAX plans, rendered Plotly figures, dataset objects, and emitted files.
+- `praeparo.pipeline.core.VisualPipeline` is the entry point. Callers provide a resolved visual config plus an `ExecutionContext`. The pipeline depends on a `QueryPlannerProvider` to resolve the appropriate planner for the visual and returns a `VisualExecutionResult` containing generated DAX plans, emitted schema & dataset artifacts, rendered figures, and the list of output files.
+- Visuals register themselves through `praeparo.pipeline.register_visual_pipeline`. A registration supplies a **schema builder**, **dataset builder**, and **renderer** so downstream packages can plug in end-to-end behaviour without modifying Praeparo core code.
 - `QueryPlannerProvider` is the high-level injector that maps a visual configuration to the correct query planner (e.g. `MatrixQueryPlanner`, `ColumnQueryPlanner`). Injecting this provider keeps the engine agnostic of specific visual types and makes new visuals additive rather than invasive.
 - Visual-specific behaviour lives in strategy classes registered against `VisualPipeline`. Strategies orchestrate query planning, dataset acquisition, and rendering without duplicating plumbing logic.
 - Runtime switches live in `PipelineOptions`. This includes desired outputs, validation flags, and `PipelineDataOptions`, which stores datasource overrides and hints for planner selection.
@@ -78,9 +79,9 @@ Tests can swap in `DefaultQueryPlannerProvider` with `MockMatrixPlanner` while l
 1. Load and validate the visual config through the YAML loader.
 2. The strategy asks the injected `QueryPlannerProvider` for the appropriate planner.
 3. The planner (e.g. `MatrixQueryPlanner`) builds the `DaxQueryPlan`, invokes its configured `DaxExecutionClient` (or mock), and normalises the response into the correct dataset shape.
-4. The strategy renders the Plotly figure(s) and hands them back to `VisualPipeline`.
-5. Requested `OutputTarget` adapters serialise the figure into HTML, PNG, JSON, or other artefacts.
-6. The pipeline returns a `VisualExecutionResult` suitable for CLI logging, snapshot assertions, or further post-processing.
+4. The pipeline writes the schema and dataset builders' outputs to the configured artefact directory (JSON by default) before invoking the renderer.
+5. The renderer receives the schema value, dataset value, and requested `OutputTarget`s; it is responsible for producing HTML/PNG snapshots (or other custom artefacts) and returns a `RenderOutcome` that includes the primary figure plus any emitted files.
+6. The pipeline returns a `VisualExecutionResult` that captures the schema value, dataset value, persisted paths, generated plans, and renderer outputs for further processing.
 
 ## Provider Architecture
 
