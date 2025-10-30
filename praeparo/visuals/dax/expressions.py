@@ -6,6 +6,12 @@ import ast
 from dataclasses import dataclass
 from typing import Dict, List, Mapping
 
+from praeparo import normalize_dax_expression
+from praeparo.metrics import MetricDaxBuilder, MetricMeasureDefinition
+
+from .cache import MetricCompilationCache, resolve_metric_reference
+from .utils import split_metric_identifier
+
 _BINOP_SYMBOLS = {
     ast.Add: "+",
     ast.Sub: "-",
@@ -83,6 +89,45 @@ def parse_metric_expression(expression: str) -> ParsedExpression:
     return ParsedExpression(root=tree.body, references=parser.references)
 
 
+def resolve_expression_metric(
+    *,
+    metric_key: str,
+    expression: str,
+    builder: MetricDaxBuilder,
+    cache: MetricCompilationCache,
+    label: str | None = None,
+    value_type: str = "number",
+) -> MetricMeasureDefinition:
+    """Compile an inline expression metric into a measure definition."""
+
+    parsed = parse_metric_expression(expression)
+    substitutions: dict[str, str] = {}
+
+    for reference in parsed.references:
+        if reference.identifier == metric_key:
+            raise ValueError(f"Expression metric '{metric_key}' cannot reference itself.")
+        base_key, variant_path = split_metric_identifier(reference.identifier)
+        _, definition = resolve_metric_reference(
+            builder=builder,
+            cache=cache,
+            metric_key=base_key,
+            variant_path=variant_path,
+        )
+        substitutions[reference.identifier] = definition.expression
+
+    dax_expression = parsed.to_dax(substitutions)
+    expression_text = normalize_dax_expression(dax_expression)
+    return MetricMeasureDefinition(
+        key=metric_key,
+        label=label or metric_key,
+        expression=expression_text,
+        filters=tuple(),
+        description=None,
+        variant_path=None,
+        value_type=value_type,
+    )
+
+
 class _ExpressionVisitor(ast.NodeVisitor):
     """Validate nodes and capture metric references in encounter order."""
 
@@ -142,4 +187,4 @@ def _flatten_attribute(node: ast.Attribute) -> str:
     return ".".join(reversed(parts))
 
 
-__all__ = ["MetricReference", "ParsedExpression", "parse_metric_expression"]
+__all__ = ["MetricReference", "ParsedExpression", "parse_metric_expression", "resolve_expression_metric"]

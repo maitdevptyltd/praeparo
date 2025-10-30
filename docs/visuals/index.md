@@ -85,11 +85,22 @@ When a visual needs to emit DAX, reuse the helpers under
 - `parse_metric_expression` parses inline expressions and returns a
   `ParsedExpression` struct with referenced metrics so planners can substitute
   compiled DAX fragments safely.
+- `resolve_expression_metric` compiles inline expression rows into
+  `MetricMeasureDefinition` instances using the same builder/cache workflow as
+  catalogue metrics.
 - `render_visual_plan` turns a `VisualPlan` into a `SUMMARIZECOLUMNS` query,
   generating `DEFINE` stubs, declaring measures, and applying optional global or
   ad-hoc filters. The renderer expects callers to pass the grain columns
   (defaults to `VisualPlan.grain_columns`) and keeps measure table configuration
   configurable via `measure_table`.
+- `generate_measure_names` applies a configurable `NameStrategy` while ensuring
+  measure names remain unique. Downstream projects can inject prefixes (for
+  example, `msa_`) without duplicating slug logic.
+- `iter_group_metrics` flattens `VisualGroupConfig` hierarchies into
+  `(group, metric)` pairs so planners can inherit filters before calling the
+  renderer.
+- `normalise_define_blocks` cleans registry `DEFINE` fragments into a tuple that
+  can be passed directly to `render_visual_plan`.
 
 `MeasurePlan.group_filters` carries presentation-time filters derived from
 `VisualGroupConfig` (or other grouping constructs) so visuals can model
