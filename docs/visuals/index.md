@@ -85,6 +85,17 @@ When a visual needs to emit DAX, reuse the helpers under
 - `parse_metric_expression` parses inline expressions and returns a
   `ParsedExpression` struct with referenced metrics so planners can substitute
   compiled DAX fragments safely.
+- `render_visual_plan` turns a `VisualPlan` into a `SUMMARIZECOLUMNS` query,
+  generating `DEFINE` stubs, declaring measures, and applying optional global or
+  ad-hoc filters. The renderer expects callers to pass the grain columns
+  (defaults to `VisualPlan.grain_columns`) and keeps measure table configuration
+  configurable via `measure_table`.
+
+`MeasurePlan.group_filters` carries presentation-time filters derived from
+`VisualGroupConfig` (or other grouping constructs) so visuals can model
+hierarchies without Praeparo knowing about governance-specific “sections”. Keep
+group concepts inside visual definitions and let the shared planner surface the
+resulting filters to the renderer.
 
 These utilities intentionally avoid imposing naming or ratio rules—the calling
 visual is responsible for assigning measure names, ratio handling, and other

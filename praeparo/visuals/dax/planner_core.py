@@ -20,7 +20,7 @@ class MeasurePlan:
     expression: str
     display_name: str
     metric_filters: tuple[str, ...] = field(default_factory=tuple)
-    section_filters: tuple[str, ...] = field(default_factory=tuple)
+    group_filters: tuple[str, ...] = field(default_factory=tuple)
 
 
 @dataclass(frozen=True)
@@ -56,4 +56,14 @@ def default_name_strategy(reference: str, visual_slug: str) -> str:
     return slugify(base_slug)
 
 
-__all__ = ["MeasurePlan", "VisualPlan", "NameStrategy", "slugify", "default_name_strategy"]
+VisualDaxPlan = VisualPlan
+
+
+__all__ = [
+    "MeasurePlan",
+    "VisualPlan",
+    "VisualDaxPlan",
+    "NameStrategy",
+    "slugify",
+    "default_name_strategy",
+]
