@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import argparse
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Dict, Mapping, Tuple
+from typing import Callable, Dict, Iterable, Mapping, Sequence, Tuple
 
 import yaml
 
@@ -11,21 +13,73 @@ from praeparo.models.visual_base import BaseVisualConfig
 
 VisualLoader = Callable[[Path, Mapping[str, object], Tuple[Path, ...]], BaseVisualConfig]
 
-_VISUAL_REGISTRY: Dict[str, VisualLoader] = {}
+
+@dataclass(frozen=True)
+class VisualCLIArgument:
+    """Definition for an additional CLI flag exposed by a visual type."""
+
+    flag: str
+    help: str
+    type: type | None = str
+    default: object = None
+    metavar: str | None = None
+    required: bool = False
+    choices: Sequence[object] | None = None
+    action: str | None = None
+    multiple: bool = False
+    dest: str | None = None
+    metadata_key: str | None = None
 
 
-def register_visual_type(type_name: str, loader: VisualLoader, *, overwrite: bool = False) -> None:
-    """Register a loader for a visual type."""
+@dataclass(frozen=True)
+class VisualCLIHooks:
+    """Optional lifecycle hooks triggered by the CLI."""
+
+    post_execute: Callable[["VisualExecutionResult", argparse.Namespace], None] | None = None
+
+
+@dataclass(frozen=True)
+class VisualCLIOptions:
+    """CLI metadata registered for a visual type."""
+
+    arguments: Sequence[VisualCLIArgument] = field(default_factory=tuple)
+    hooks: VisualCLIHooks = field(default_factory=VisualCLIHooks)
+
+
+@dataclass(frozen=True)
+class VisualTypeRegistration:
+    """Internal container holding loader & CLI metadata for a visual type."""
+
+    loader: VisualLoader
+    cli: VisualCLIOptions | None = None
+
+
+_VISUAL_REGISTRY: Dict[str, VisualTypeRegistration] = {}
+
+
+def register_visual_type(
+    type_name: str,
+    loader: VisualLoader,
+    *,
+    overwrite: bool = False,
+    cli: VisualCLIOptions | None = None,
+) -> None:
+    """Register a loader (and optional CLI metadata) for a visual type."""
 
     if not isinstance(type_name, str) or not type_name.strip():
         raise ValueError("type_name must be a non-empty string")
     key = type_name.strip().lower()
     if not overwrite and key in _VISUAL_REGISTRY:
         raise ValueError(f"Visual type '{key}' is already registered")
-    _VISUAL_REGISTRY[key] = loader
+    _VISUAL_REGISTRY[key] = VisualTypeRegistration(loader=loader, cli=cli)
 
 
-def load_visual_definition(path: Path | str, *, base_path: Path | None = None, stack: Tuple[Path, ...] | None = None) -> BaseVisualConfig:
+def load_visual_definition(
+    path: Path | str,
+    *,
+    base_path: Path | None = None,
+    stack: Tuple[Path, ...] | None = None,
+) -> BaseVisualConfig:
     """Load and validate a visual definition from disk."""
 
     target = Path(path)
@@ -56,11 +110,32 @@ def load_visual_definition(path: Path | str, *, base_path: Path | None = None, s
     if not isinstance(visual_type, str) or not visual_type.strip():
         raise ValueError(f"Visual YAML at {target} must define a non-empty 'type' field")
     key = visual_type.strip().lower()
-    loader = _VISUAL_REGISTRY.get(key)
-    if loader is None:
+    registration = _VISUAL_REGISTRY.get(key)
+    if registration is None:
         raise ValueError(f"Visual type '{visual_type}' is not registered")
 
-    return loader(target, payload, visit_stack + (target,))
+    return registration.loader(target, payload, visit_stack + (target,))
 
 
-__all__ = ["VisualLoader", "load_visual_definition", "register_visual_type"]
+def get_visual_cli_options(type_name: str) -> VisualCLIOptions | None:
+    registration = _VISUAL_REGISTRY.get(type_name.strip().lower())
+    if registration is None:
+        return None
+    return registration.cli
+
+
+def iter_visual_registrations() -> Iterable[tuple[str, VisualTypeRegistration]]:
+    return tuple(_VISUAL_REGISTRY.items())
+
+
+__all__ = [
+    "VisualCLIArgument",
+    "VisualCLIOptions",
+    "VisualCLIHooks",
+    "VisualLoader",
+    "VisualTypeRegistration",
+    "get_visual_cli_options",
+    "iter_visual_registrations",
+    "load_visual_definition",
+    "register_visual_type",
+]
