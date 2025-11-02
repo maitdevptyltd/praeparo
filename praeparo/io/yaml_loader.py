@@ -12,6 +12,7 @@ import yaml
 from pydantic import Field, TypeAdapter, ValidationError
 
 from ..models import BaseVisualConfig, FrameConfig, MatrixConfig
+from ..visuals.registry import get_visual_registration
 from ..templating import render_template
 
 
@@ -192,12 +193,33 @@ def _finalize_visual(
 
     # Default to matrix for legacy documents that omit the visual discriminator.
     payload.setdefault("type", "matrix")
+    visual_type = str(payload.get("type") or "").strip().lower()
 
-    try:
-        visual = VISUAL_ADAPTER.validate_python(payload)
-    except ValidationError as exc:
-        msg = f"Configuration validation failed for {path}"
-        raise ConfigLoadError(msg) from exc
+    if visual_type in {"matrix", "frame"}:
+        try:
+            visual = VISUAL_ADAPTER.validate_python(payload)
+        except ValidationError as exc:
+            msg = f"Configuration validation failed for {path}"
+            raise ConfigLoadError(msg) from exc
+    else:
+        try:
+            registration = get_visual_registration(visual_type)
+        except (TypeError, ValueError) as exc:
+            msg = f"Invalid visual type discriminator in {path}"
+            raise ConfigLoadError(msg) from exc
+        if registration is None:
+            msg = f"Visual type '{payload.get('type')}' is not registered"
+            raise ConfigLoadError(msg)
+        try:
+            visual = registration.loader(path, payload, stack + (path,))
+        except ConfigLoadError:
+            raise
+        except ValidationError as exc:
+            msg = f"Configuration validation failed for {path}"
+            raise ConfigLoadError(msg) from exc
+        except Exception as exc:
+            msg = f"Failed to load visual type '{payload.get('type')}' from {path}"
+            raise ConfigLoadError(msg) from exc
 
     def _load_child(
         target_path: Path,

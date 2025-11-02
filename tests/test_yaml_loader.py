@@ -2,8 +2,11 @@
 
 import pytest
 
+from typing import Literal
+
 from praeparo.io.yaml_loader import ConfigLoadError, load_matrix_config, load_visual_config
-from praeparo.models import MatrixConfig
+from praeparo.models import BaseVisualConfig, MatrixConfig
+from praeparo.visuals import register_visual_type
 
 
 def test_load_matrix_config_success(tmp_path: Path) -> None:
@@ -176,3 +179,31 @@ def test_load_visual_config_applies_runtime_overrides(tmp_path: Path) -> None:
     assert isinstance(visual, MatrixConfig)
     assert visual.title == "Runtime Title"
     assert visual.filters[0].expression == "Flag = FALSE()"
+
+
+class _DummyVisualConfig(BaseVisualConfig):
+    type: Literal["dummy"] = "dummy"
+    value: str
+
+
+def _dummy_loader(path: Path, payload, stack) -> _DummyVisualConfig:
+    return _DummyVisualConfig.model_validate(payload)
+
+
+def test_load_visual_config_supports_registered_visuals(tmp_path: Path) -> None:
+    register_visual_type("dummy", _dummy_loader, overwrite=True)
+
+    custom = tmp_path / "custom.yaml"
+    custom.write_text(
+        """
+        type: dummy
+        value: example
+        """,
+        encoding="utf-8",
+    )
+
+    visual = load_visual_config(custom)
+
+    assert isinstance(visual, _DummyVisualConfig)
+    assert visual.type == "dummy"
+    assert visual.value == "example"

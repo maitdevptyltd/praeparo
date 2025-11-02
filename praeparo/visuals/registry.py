@@ -124,6 +124,17 @@ def get_visual_cli_options(type_name: str) -> VisualCLIOptions | None:
     return registration.cli
 
 
+def get_visual_registration(type_name: str) -> VisualTypeRegistration | None:
+    """Return the registered loader metadata for the supplied visual type."""
+
+    if not isinstance(type_name, str):
+        raise TypeError("type_name must be a string")
+    key = type_name.strip().lower()
+    if not key:
+        raise ValueError("type_name must be a non-empty string")
+    return _VISUAL_REGISTRY.get(key)
+
+
 def iter_visual_registrations() -> Iterable[tuple[str, VisualTypeRegistration]]:
     return tuple(_VISUAL_REGISTRY.items())
 
@@ -135,6 +146,7 @@ __all__ = [
     "VisualLoader",
     "VisualTypeRegistration",
     "get_visual_cli_options",
+    "get_visual_registration",
     "iter_visual_registrations",
     "load_visual_definition",
     "register_visual_type",
