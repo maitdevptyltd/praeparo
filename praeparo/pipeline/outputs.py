@@ -14,6 +14,7 @@ class OutputKind(str, Enum):
     PNG = "png"
     SCHEMA = "schema"
     DATA = "data"
+    DAX = "dax"
 
 
 @dataclass(frozen=True)

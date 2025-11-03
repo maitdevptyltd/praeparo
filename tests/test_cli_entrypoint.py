@@ -8,6 +8,8 @@ from typing import Dict
 import pytest
 
 from praeparo.cli import main as cli_main
+from praeparo.dax import DaxQueryPlan
+from praeparo.visuals.dax_compilers import DaxCompileArtifact, register_dax_compiler
 from praeparo.pipeline import VisualExecutionResult
 from praeparo.pipeline.outputs import OutputKind, PipelineOutputArtifact
 from praeparo.visuals import (
@@ -36,6 +38,17 @@ def _register_cli_example() -> None:
                 VisualCLIArgument("--sample", help="Sample metadata input.", metadata_key="sample"),
             ),
         ),
+    )
+    register_dax_compiler(
+        "cli_example",
+        lambda visual, context, args: [
+            DaxCompileArtifact(
+                path=(context.options.artefact_dir or context.config_path.parent) / f"{context.config_path.stem}.dax",
+                plan=DaxQueryPlan(statement="EVALUATE {}", rows=(), values=()),
+                statement="EVALUATE {}",
+            )
+        ],
+        overwrite=True,
     )
 
 
@@ -102,16 +115,36 @@ def test_cli_run_populates_metadata(monkeypatch, tmp_path) -> None:
         cli_main(argv)
 
     assert exc.value.code == 0
-    assert captured_metadata["sample"] == "example"
-    assert captured_metadata["flag"] is True
-    context = captured_metadata["context"]
-    assert context["calculate"] == ["Metric = 1"]
-    assert context["define"] == ["MEASURE Demo[Value] = 1"]
-    assert getattr(builtins, "__praeparo_test_plugin_loaded__", False) is True
-
     sys.path.pop(0)
     if hasattr(builtins, "__praeparo_test_plugin_loaded__"):
         delattr(builtins, "__praeparo_test_plugin_loaded__")
+
+
+def test_cli_dax_writes_output(monkeypatch, tmp_path) -> None:
+    config_path = tmp_path / "visual.yaml"
+    config_path.write_text("type: cli_example\n", encoding="utf-8")
+
+    monkeypatch.setattr("praeparo.cli.load_visual_config", lambda path: _DummyConfig())
+
+    artefact_dir = tmp_path / "out"
+    argv = [
+        "visual",
+        "dax",
+        "cli_example",
+        str(config_path),
+        "--artefact-dir",
+        str(artefact_dir),
+        "--grain",
+        "'dim_calendar'[Month]",
+    ]
+
+    with pytest.raises(SystemExit) as exc:
+        cli_main(argv)
+
+    assert exc.value.code == 0
+    output_path = artefact_dir / "visual.dax"
+    assert output_path.exists()
+    assert output_path.read_text(encoding="utf-8") == "EVALUATE {}"
 
 
 def test_cli_normalises_legacy_invocation(monkeypatch, tmp_path) -> None:

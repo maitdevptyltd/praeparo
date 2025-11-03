@@ -20,6 +20,11 @@ from praeparo.pipeline import (
     VisualPipeline,
     build_default_query_planner_provider,
 )
+from praeparo.visuals.dax_compilers import (
+    DaxCompilerRegistration,
+    get_dax_compiler_registration,
+    iter_dax_compiler_registrations,
+)
 from praeparo.powerbi import (
     PowerBIAuthenticationError,
     PowerBIConfigurationError,
@@ -179,6 +184,21 @@ def _build_common_parser() -> argparse.ArgumentParser:
         type=int,
         help="Optional viewport height override supplied to renderers.",
     )
+    parser.add_argument(
+        "--grain",
+        dest="grain",
+        action="append",
+        default=[],
+        metavar="COLUMN",
+        help="Optional SUMMARIZECOLUMNS grain override (repeatable).",
+    )
+    parser.add_argument(
+        "--measure-table",
+        "--table",
+        dest="measure_table",
+        default="'adhoc'",
+        help="Measure table used when emitting DEFINE statements (defaults to 'adhoc').",
+    )
     return parser
 
 
@@ -261,7 +281,52 @@ def _attach_visual_arguments(parser: argparse.ArgumentParser, cli: VisualCLIOpti
         parser.add_argument(*names, **kwargs)
 
 
-def _build_parser(registrations: Iterable[tuple[str, VisualTypeRegistration]]) -> argparse.ArgumentParser:
+def _register_dax_type_parsers(
+    parent: argparse.ArgumentParser,
+    *,
+    registrations: Iterable[tuple[str, DaxCompilerRegistration]],
+) -> argparse._SubParsersAction[argparse.ArgumentParser]:
+    common = _build_common_parser()
+    extras = argparse.ArgumentParser(add_help=False)
+    extras.add_argument(
+        "--quiet",
+        dest="quiet",
+        action="store_true",
+        help="Suppress per-plan status output.",
+    )
+
+    type_subparsers = parent.add_subparsers(dest="_dax_type", metavar="TYPE")
+    type_subparsers.required = True
+
+    def _add_subparser(name: str, registration: DaxCompilerRegistration | None) -> None:
+        parents = [common, extras]
+        help_text = (
+            registration.description
+            if registration and registration.description
+            else f"Compile DAX for the '{name}' visual" if registration else "Infer the visual type from the configuration file."
+        )
+        subparser = type_subparsers.add_parser(
+            name,
+            parents=parents,
+            add_help=True,
+            help=help_text,
+        )
+        cli = registration.cli if registration else None
+        subparser.set_defaults(_cli_options=cli)
+        if cli:
+            _attach_visual_arguments(subparser, cli)
+
+    _add_subparser("auto", None)
+    for type_name, registration in registrations:
+        _add_subparser(type_name, registration)
+
+    return type_subparsers
+
+
+def _build_parser(
+    visual_registrations: Iterable[tuple[str, VisualTypeRegistration]],
+    dax_registrations: Iterable[tuple[str, DaxCompilerRegistration]],
+) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="praeparo", description="Praeparo visual execution tooling.")
     parser.add_argument(
         "--plugin",
@@ -280,12 +345,16 @@ def _build_parser(registrations: Iterable[tuple[str, VisualTypeRegistration]]) -
     visual_subparsers.required = True
 
     run_parser = visual_subparsers.add_parser("run", help="Execute a visual and render outputs.")
-    _register_visual_type_parsers(run_parser, include_outputs=True, registrations=registrations)
+    _register_visual_type_parsers(run_parser, include_outputs=True, registrations=visual_registrations)
     run_parser.set_defaults(_handler=_handle_visual_run)
 
     artifacts_parser = visual_subparsers.add_parser("artifacts", help="Generate visual schema/data artefacts without rendering.")
-    _register_visual_type_parsers(artifacts_parser, include_outputs=False, registrations=registrations)
+    _register_visual_type_parsers(artifacts_parser, include_outputs=False, registrations=visual_registrations)
     artifacts_parser.set_defaults(_handler=_handle_visual_artifacts)
+
+    dax_parser = visual_subparsers.add_parser("dax", help="Compile DAX statements for a visual.")
+    _register_dax_type_parsers(dax_parser, registrations=dax_registrations)
+    dax_parser.set_defaults(_handler=_handle_visual_dax)
 
     return parser
 
@@ -353,10 +422,13 @@ def _prepare_metadata(args: argparse.Namespace, cli: VisualCLIOptions | None) ->
     context_payload = _prepare_context_payload(args)
     if context_payload:
         metadata["context"] = context_payload
-    for field in ("seed", "scenario", "data_mode", "width", "height", "ignore_placeholders", "metrics_root"):
+    for field in ("seed", "scenario", "data_mode", "width", "height", "ignore_placeholders", "metrics_root", "measure_table"):
         value = getattr(args, field, None)
         if value is not None:
             metadata[field] = value
+    grain_override = getattr(args, "grain", None)
+    if grain_override:
+        metadata["grain"] = tuple(grain_override)
     if hasattr(args, "output_png") and args.output_png is not None:
         metadata.setdefault("png_output", args.output_png)
     return metadata
@@ -521,6 +593,79 @@ def _handle_visual_artifacts(args: argparse.Namespace) -> int:
     return 0
 
 
+def _handle_visual_dax(args: argparse.Namespace) -> int:
+    cli_options: VisualCLIOptions | None = getattr(args, "_cli_options", None)
+    config_path = Path(args.config)
+    type_name = args._dax_type
+    registration: DaxCompilerRegistration | None = None
+    visual: object | None = None
+
+    if type_name == "auto":
+        candidate = _load_visual(config_path)
+        candidate_type = getattr(candidate, "type", None)
+        if not isinstance(candidate_type, str) or not candidate_type.strip():
+            raise ValueError("Unable to infer visual type; specify it explicitly when using 'auto'.")
+        type_name = candidate_type.strip().lower()
+        args._dax_type = type_name
+        registration = get_dax_compiler_registration(type_name)
+        if registration is None:
+            raise ValueError(f"No DAX compiler registered for visual type '{type_name}'.")
+        if registration.loader is not None:
+            visual = registration.loader(config_path)
+        else:
+            visual = candidate
+    else:
+        registration = get_dax_compiler_registration(type_name)
+
+    if registration is None:
+        raise ValueError(f"No DAX compiler registered for visual type '{type_name}'.")
+
+    loader = registration.loader or _load_visual
+    if visual is None:
+        visual = loader(config_path)
+
+    metadata = _prepare_metadata(args, cli_options)
+    options = _build_pipeline_options(args, metadata, include_outputs=False)
+
+    project_root = _project_root_for(args.config)
+    context = ExecutionContext(
+        config_path=args.config,
+        project_root=project_root,
+        case_key=args.config.stem,
+        options=options,
+    )
+
+    artifacts = registration.compiler(visual, context, args)
+    if not artifacts:
+        if not args.quiet:
+            print("[warn] No DAX plans were generated.")
+        return 0
+
+    printed = []
+    for artifact in artifacts:
+        output_path = artifact.path
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(artifact.statement, encoding="utf-8")
+        if not args.quiet:
+            print(f"[ok] Wrote {output_path}")
+        if (
+            artifact.placeholders
+            and getattr(args, "ignore_placeholders", False)
+            and not args.quiet
+        ):
+            placeholders = ", ".join(sorted(set(artifact.placeholders)))
+            print(f"[warn] {output_path.name} – omitted placeholders: {placeholders}")
+        if args.print_dax:
+            printed.append((output_path, artifact.statement))
+
+    if args.print_dax:
+        for path, statement in printed:
+            header = f"-- {path}"
+            print(f"{header}\n{statement}")
+
+    return 0
+
+
 # ---------------------------------------------------------------------------
 # Entrypoint
 # ---------------------------------------------------------------------------
@@ -530,17 +675,28 @@ def _iter_registrations() -> Sequence[tuple[str, VisualTypeRegistration]]:
     return tuple(iter_visual_registrations())
 
 
-def _normalise_argv(argv: Sequence[str], registrations: Sequence[tuple[str, VisualTypeRegistration]]) -> list[str]:
+def _iter_dax_registrations() -> Sequence[tuple[str, DaxCompilerRegistration]]:
+    return tuple(iter_dax_compiler_registrations())
+
+
+def _normalise_argv(
+    argv: Sequence[str],
+    visual_registrations: Sequence[tuple[str, VisualTypeRegistration]],
+    dax_registrations: Sequence[tuple[str, DaxCompilerRegistration]],
+) -> list[str]:
     if not argv:
         return list(argv)
     commands = {"visual"}
     if argv[0] not in commands and not argv[0].startswith("-"):
         return ["visual", "run", "auto", *argv]
-    if len(argv) >= 3 and argv[0] == "visual" and argv[1] in {"run", "artifacts"}:
+    if len(argv) >= 3 and argv[0] == "visual" and argv[1] in {"run", "artifacts", "dax"}:
         candidate = argv[2]
         if candidate.startswith("-"):
             return list(argv)
-        registered = {name for name, _ in registrations}
+        if argv[1] == "dax":
+            registered = {name for name, _ in dax_registrations}
+        else:
+            registered = {name for name, _ in visual_registrations}
         if candidate not in registered | {"auto"}:
             return [argv[0], argv[1], "auto", *argv[2:]]
     return list(argv)
@@ -562,10 +718,11 @@ def main(argv: Sequence[str] | None = None) -> None:
         if module_name:
             __import__(module_name)
 
-    registrations = _iter_registrations()
-    args_list = _normalise_argv(args_list, registrations)
+    visual_registrations = _iter_registrations()
+    dax_registrations = _iter_dax_registrations()
+    args_list = _normalise_argv(args_list, visual_registrations, dax_registrations)
 
-    parser = _build_parser(registrations)
+    parser = _build_parser(visual_registrations, dax_registrations)
     try:
         args = parser.parse_args(args_list)
         handler = getattr(args, "_handler", None)

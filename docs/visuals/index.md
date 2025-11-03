@@ -113,3 +113,8 @@ visual is responsible for assigning measure names, ratio handling, and other
 presentation-specific behaviour. Downstream projects can compose these helpers
 with their own planners to build custom visuals while sharing the heavy lifting
 performed by Praeparo.
+
+Need to surface the compiled statements? Register a compiler via
+`praeparo.visuals.dax_compilers.register_dax_compiler` so the shared CLI exposes
+`praeparo visual dax <type>` alongside the existing `run` / `artifacts`
+subcommands.
