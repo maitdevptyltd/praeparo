@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from .metrics import MetricDefinition
-from .models import MatrixConfig
+from .models import CartesianChartConfig, MatrixConfig
 
 
 def matrix_json_schema() -> dict[str, Any]:
@@ -63,6 +63,41 @@ def write_metric_schema(path: Path) -> None:
     _write_schema(path, metric_json_schema())
 
 
+def cartesian_json_schema() -> dict[str, Any]:
+    """Return the JSON schema for cartesian chart configurations."""
+
+    schema = CartesianChartConfig.model_json_schema()
+    properties = schema.setdefault("properties", {})
+    properties.setdefault(
+        "parameters",
+        {
+            "type": "object",
+            "title": "Parameters",
+            "description": "Template values injected into the configuration before validation.",
+            "additionalProperties": {"type": "string"},
+            "default": {},
+        },
+    )
+    properties.setdefault(
+        "compose",
+        {
+            "title": "Compose",
+            "description": "List of additional YAML files to merge before validation.",
+            "anyOf": [
+                {"type": "string"},
+                {"type": "array", "items": {"type": "string"}},
+            ],
+        },
+    )
+    return schema
+
+
+def write_cartesian_schema(path: Path) -> None:
+    """Write the cartesian chart configuration schema to *path*."""
+
+    _write_schema(path, cartesian_json_schema())
+
+
 def run(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Export Praeparo JSON schemas.")
     parser.add_argument(
@@ -70,6 +105,12 @@ def run(argv: list[str] | None = None) -> int:
         type=Path,
         default=Path("schemas/matrix.json"),
         help="Destination for the matrix schema JSON file.",
+    )
+    parser.add_argument(
+        "--charts",
+        type=Path,
+        default=None,
+        help="Destination for the cartesian chart schema JSON file (omit to skip).",
     )
     parser.add_argument(
         "--metrics",
@@ -81,6 +122,10 @@ def run(argv: list[str] | None = None) -> int:
 
     write_matrix_schema(args.matrix)
     print(f"Wrote matrix schema to {args.matrix}")
+
+    if args.charts is not None:
+        write_cartesian_schema(args.charts)
+        print(f"Wrote cartesian schema to {args.charts}")
 
     if args.metrics is not None:
         write_metric_schema(args.metrics)
@@ -95,8 +140,10 @@ def main() -> None:
 
 __all__ = [
     "matrix_json_schema",
+    "cartesian_json_schema",
     "metric_json_schema",
     "write_matrix_schema",
+    "write_cartesian_schema",
     "write_metric_schema",
     "run",
     "main",
@@ -105,4 +152,3 @@ __all__ = [
 
 if __name__ == "__main__":
     main()
-

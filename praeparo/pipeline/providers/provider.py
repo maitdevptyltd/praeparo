@@ -40,10 +40,18 @@ def build_default_query_planner_provider() -> QueryPlannerProvider:
     """Construct the default planner provider used by the CLI and tests."""
 
     from .dax.clients.powerbi import PowerBIDaxClient
+    from .cartesian.dax import DaxBackedChartPlanner
     from .matrix.planners.dax import DaxBackedMatrixPlanner
 
     matrix_planner = DaxBackedMatrixPlanner(dax_client=PowerBIDaxClient.from_env())
-    return DefaultQueryPlannerProvider(planners={"matrix": matrix_planner})
+    chart_planner = DaxBackedChartPlanner()
+    return DefaultQueryPlannerProvider(
+        planners={
+            "matrix": matrix_planner,
+            "column": chart_planner,
+            "bar": chart_planner,
+        }
+    )
 
 
 __all__ = [

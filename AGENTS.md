@@ -43,6 +43,7 @@ This guide keeps agents aligned while evolving Praeparo. It explains responsibil
   - Metrics models: `poetry run pytest tests/test_metrics_models.py`
   - Power BI integration tests (optional): set `PRAEPARO_RUN_POWERBI_TESTS=1` and run `poetry run pytest -m integration`
 - Snapshot artefacts (`tests/__snapshots__/`) rely on Kaleido. Ensure Chrome dependencies exist before updating snapshots; otherwise flag the blocker in documentation.
+  - Run `poetry run choreo_get_chrome` (or `poetry run plotly_get_chrome`) once per environment to download the Chrome-for-Testing build that Kaleido launches. Skip only when `BROWSER_PATH` already points to a managed Chrome/Chromium.
 - Re-export JSON schemas when models change:
   ```bash
   poetry run python -m praeparo.schema --matrix schemas/matrix.json --metrics schemas/metrics.json

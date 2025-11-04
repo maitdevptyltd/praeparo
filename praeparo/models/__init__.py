@@ -2,6 +2,26 @@
 
 from .datasource import PowerBIDataSourceConfig
 from .frame import FrameChildConfig, FrameConfig
+from .cartesian import (
+    AxisConfig as CartesianAxisConfig,
+    CartesianChartConfig,
+    CartesianSeriesConfig,
+    CategoryConfig as CartesianCategoryConfig,
+    CategoryDataType,
+    CategoryOrder,
+    CategorySortConfig,
+    CategorySortMode,
+    DataLabelConfig as CartesianDataLabelConfig,
+    LayoutConfig as CartesianLayoutConfig,
+    LegendConfig as CartesianLegendConfig,
+    LegendPosition,
+    SeriesMarkerConfig as CartesianSeriesMarkerConfig,
+    SeriesStackingConfig,
+    SeriesStackingMode,
+    SeriesTransformConfig,
+    SeriesTransformMode,
+    ValueAxesConfig,
+)
 from .matrix import MatrixConfig, MatrixFilterConfig, MatrixTotals, MatrixValueConfig, RowTemplate
 from .visual_base import BaseVisualConfig
 
@@ -15,4 +35,22 @@ __all__ = [
     "MatrixValueConfig",
     "PowerBIDataSourceConfig",
     "RowTemplate",
+    "CartesianChartConfig",
+    "CartesianSeriesConfig",
+    "CartesianCategoryConfig",
+    "CartesianAxisConfig",
+    "CartesianLayoutConfig",
+    "CartesianLegendConfig",
+    "CartesianSeriesMarkerConfig",
+    "CartesianDataLabelConfig",
+    "CategoryDataType",
+    "CategoryOrder",
+    "CategorySortConfig",
+    "CategorySortMode",
+    "SeriesStackingConfig",
+    "SeriesStackingMode",
+    "SeriesTransformConfig",
+    "SeriesTransformMode",
+    "ValueAxesConfig",
+    "LegendPosition",
 ]

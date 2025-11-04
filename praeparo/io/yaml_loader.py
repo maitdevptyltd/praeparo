@@ -11,7 +11,7 @@ from typing import Annotated, Any, Mapping
 import yaml
 from pydantic import Field, TypeAdapter, ValidationError
 
-from ..models import BaseVisualConfig, FrameConfig, MatrixConfig
+from ..models import BaseVisualConfig, CartesianChartConfig, FrameConfig, MatrixConfig
 from ..visuals.registry import get_visual_registration
 from ..templating import render_template
 
@@ -23,7 +23,7 @@ class ConfigLoadError(RuntimeError):
 PLACEHOLDER_RE = re.compile(r"\{\{\s*(?P<expr>[^}]+?)\s*\}}")
 
 ComposeStack = tuple[Path, ...]  # Tracks nested compose references to prevent cycles.
-VisualConfigUnion = Annotated[MatrixConfig | FrameConfig, Field(discriminator="type")]
+VisualConfigUnion = Annotated[MatrixConfig | FrameConfig | CartesianChartConfig, Field(discriminator="type")]
 VISUAL_ADAPTER = TypeAdapter(VisualConfigUnion)
 
 

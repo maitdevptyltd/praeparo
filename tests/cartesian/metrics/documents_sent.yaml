@@ -1,0 +1,12 @@
+schema: draft-1
+key: documents_sent
+display_name: Documents sent
+section: Document Preparation
+description: Synthetic metric used for cartesian visual tests.
+define: |
+  COUNTROWS ( 'fact_documents' )
+variants:
+  manual:
+    display_name: Documents sent (manual)
+    calculate:
+      - "'fact_documents'[IsManual] = TRUE()"

@@ -19,7 +19,6 @@ from .registry import (
     register_visual_type,
 )
 from .context import ContextLoadError, load_context_file, merge_context_payload
-
 __all__ = [
     "CalculateInput",
     "VisualGroupConfig",

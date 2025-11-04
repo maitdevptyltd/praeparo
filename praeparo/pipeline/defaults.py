@@ -2,16 +2,25 @@
 
 from __future__ import annotations
 
+import math
 from pathlib import Path
 from typing import Sequence
 
-from praeparo.data import MatrixResultSet
+from praeparo.data import ChartResultSet, MatrixResultSet
 from praeparo.dax import DaxQueryPlan
-from praeparo.models import BaseVisualConfig, MatrixConfig
-from praeparo.rendering import matrix_figure, matrix_html, matrix_png
+from praeparo.models import BaseVisualConfig, CartesianChartConfig, MatrixConfig
+from praeparo.rendering import (
+    cartesian_figure,
+    cartesian_html,
+    cartesian_png,
+    matrix_figure,
+    matrix_html,
+    matrix_png,
+)
 
 from .core import ExecutionContext, VisualPipeline, _ensure_parent_directory
 from .outputs import OutputKind, OutputTarget, PipelineOutputArtifact
+from .providers.cartesian import ChartQueryPlanner
 from .providers.matrix import MatrixQueryPlanner
 from .registry import (
     DatasetArtifact,
@@ -122,13 +131,117 @@ def _matrix_renderer(
     return RenderOutcome(figure=figure, outputs=emitted)
 
 
+def _write_chart_schema(config: CartesianChartConfig, directory: Path, filename: str) -> Path:
+    payload = config.model_dump(mode="json")
+    return default_json_writer(payload, directory, filename)
+
+
+def _normalise_series_values(values: Sequence[object]) -> list[object]:
+    cleaned: list[object] = []
+    for value in values:
+        if isinstance(value, float) and math.isnan(value):
+            cleaned.append(None)
+        else:
+            cleaned.append(value)
+    return cleaned
+
+
+def _write_chart_dataset(dataset: ChartResultSet, directory: Path, filename: str) -> Path:
+    payload = {
+        "categories": [{"label": category.label, "value": category.value} for category in dataset.categories],
+        "series": [
+            {
+                "id": series.id,
+                "measure": series.measure_name,
+                "values": _normalise_series_values(series.values),
+            }
+            for series in dataset.series
+        ],
+    }
+    return default_json_writer(payload, directory, filename)
+
+
+def _chart_schema_builder(
+    pipeline: VisualPipeline,
+    config: BaseVisualConfig,
+    context: ExecutionContext,
+) -> SchemaArtifact[CartesianChartConfig]:
+    if not isinstance(config, CartesianChartConfig):
+        raise TypeError("Chart pipeline expects a CartesianChartConfig instance.")
+    return SchemaArtifact(value=config, filename="chart.schema.json", writer=_write_chart_schema)
+
+
+def _chart_dataset_builder(
+    pipeline: VisualPipeline,
+    config: BaseVisualConfig,
+    schema: SchemaArtifact[CartesianChartConfig],
+    context: ExecutionContext,
+) -> DatasetArtifact[ChartResultSet]:
+    if not isinstance(config, CartesianChartConfig):
+        raise TypeError("Chart pipeline expects a CartesianChartConfig instance.")
+
+    planner = pipeline.resolve_planner(config, context)
+    if not isinstance(planner, ChartQueryPlanner):
+        raise TypeError("Resolved planner is not a ChartQueryPlanner.")
+
+    planner_result = planner.plan(config, context=context)
+    dataset = planner_result.dataset
+    plan = planner_result.plan
+
+    options = context.options
+    if options.ensure_non_empty_rows and not dataset.categories:
+        raise AssertionError("Chart data provider returned no categories.")
+
+    return DatasetArtifact(
+        value=dataset,
+        filename="chart.data.json",
+        writer=_write_chart_dataset,
+        plans=[plan],
+    )
+
+
+def _chart_renderer(
+    pipeline: VisualPipeline,
+    config: BaseVisualConfig,
+    schema: SchemaArtifact[CartesianChartConfig],
+    dataset: DatasetArtifact[ChartResultSet],
+    context: ExecutionContext,
+    outputs: Sequence[OutputTarget],
+) -> RenderOutcome:
+    chart_config = schema.value
+    chart_dataset = dataset.value
+    figure = cartesian_figure(chart_config, chart_dataset)
+
+    emitted: list[PipelineOutputArtifact] = []
+    for target in outputs:
+        path = target.path
+        _ensure_parent_directory(path)
+        if target.kind is OutputKind.HTML:
+            cartesian_html(chart_config, chart_dataset, str(path))
+            emitted.append(PipelineOutputArtifact(kind=OutputKind.HTML, path=path))
+        elif target.kind is OutputKind.PNG:
+            scale = target.scale if target.scale is not None else context.options.png_scale
+            cartesian_png(chart_config, chart_dataset, str(path), scale=scale)
+            emitted.append(PipelineOutputArtifact(kind=OutputKind.PNG, path=path))
+
+    return RenderOutcome(figure=figure, outputs=emitted)
+
+
 def register_default_pipelines() -> None:
-    definition = VisualPipelineDefinition(
+    matrix_definition = VisualPipelineDefinition(
         schema_builder=_matrix_schema_builder,
         dataset_builder=_matrix_dataset_builder,
         renderer=_matrix_renderer,
     )
-    register_visual_pipeline("matrix", definition, overwrite=True)
+    register_visual_pipeline("matrix", matrix_definition, overwrite=True)
+
+    chart_definition = VisualPipelineDefinition(
+        schema_builder=_chart_schema_builder,
+        dataset_builder=_chart_dataset_builder,
+        renderer=_chart_renderer,
+    )
+    register_visual_pipeline("column", chart_definition, overwrite=True)
+    register_visual_pipeline("bar", chart_definition, overwrite=True)
 
 
 __all__ = ["register_default_pipelines"]

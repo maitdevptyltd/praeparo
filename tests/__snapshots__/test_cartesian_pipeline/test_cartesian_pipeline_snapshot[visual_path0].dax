@@ -1,0 +1,22 @@
+DEFINE
+  TABLE 'adhoc' = { { BLANK() } }
+  MEASURE 'adhoc'[documents_sent_automation_share_documents_sent_manual] =
+    CALCULATE(
+        COUNTROWS ( 'fact_documents' ),
+        'fact_documents'[IsManual] = TRUE()
+    )
+  MEASURE 'adhoc'[documents_sent_automation_share_documents_sent] =
+    COUNTROWS ( 'fact_documents' )
+  MEASURE 'adhoc'[documents_sent_automation_share_automation_share] =
+    ((COUNTROWS ( 'fact_documents' )) / ((COUNTROWS ( 'fact_documents' )) + (CALCULATE(
+        COUNTROWS ( 'fact_documents' ),
+        'fact_documents'[IsManual] = TRUE()
+    ))))
+
+EVALUATE
+SUMMARIZECOLUMNS(
+    'dim_calendar'[Month],
+    "documents_sent_automation_share_documents_sent_manual", 'adhoc'[documents_sent_automation_share_documents_sent_manual],
+    "documents_sent_automation_share_documents_sent", 'adhoc'[documents_sent_automation_share_documents_sent],
+    "documents_sent_automation_share_automation_share", 'adhoc'[documents_sent_automation_share_automation_share]
+)

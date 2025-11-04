@@ -1,0 +1,62 @@
+schema: draft-1
+type: column
+title: Documents Sent - Automation Share
+description: Mock column + line chart to exercise cartesian pipeline.
+category:
+  field: "'dim_calendar'[Month]"
+  label: Month
+  data_type: date
+  format: MMM-yy
+  mock_values:
+    - Jan-25
+    - Feb-25
+    - Mar-25
+value_axes:
+  primary:
+    label: Files
+    format: number:0
+  secondary:
+    label: Automation %
+    format: percent:0
+series:
+  - id: documents_manual
+    label: Manual
+    type: column
+    stacking:
+      key: delivery_mode
+      mode: normal
+    metric:
+      key: documents_sent.manual
+      mock:
+        factory: count
+        mean: 480
+        trend: -40
+  - id: documents_automated
+    label: Automated
+    type: column
+    stacking:
+      key: delivery_mode
+      mode: normal
+    metric:
+      key: documents_sent
+      mock:
+        factory: count
+        mean: 520
+        trend: 35
+  - id: automation_share
+    label: Automation %
+    type: line
+    axis: secondary
+    format: percent:0
+    marker:
+      show: true
+    data_labels:
+      position: above
+      format: percent:0
+    metric:
+      key: automation_share
+      expression: documents_sent / (documents_sent + documents_sent.manual)
+mock:
+  scenarios:
+    baseline:
+      label: Baseline

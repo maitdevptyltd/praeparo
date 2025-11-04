@@ -1,0 +1,235 @@
+"""Rendering utilities for cartesian (column/bar) visuals."""
+
+from __future__ import annotations
+
+from importlib import util as importlib_util
+from pathlib import Path
+from typing import Iterable
+
+import plotly.graph_objects as go
+
+from praeparo.data import ChartResultSet
+from praeparo.models import (
+    CartesianChartConfig,
+    SeriesStackingMode,
+)
+
+
+def cartesian_figure(config: CartesianChartConfig, dataset: ChartResultSet) -> go.Figure:
+    """Render a Plotly figure representing the cartesian chart visual."""
+
+    categories = [category.label for category in dataset.categories]
+    orientation = "h" if config.type == "bar" else "v"
+    figure = go.Figure()
+
+    stack_modes = {
+        series.id: (series.stacking.mode if series.stacking else SeriesStackingMode.NONE)
+        for series in config.series
+        if series.type == "column"
+    }
+    active_stack_modes = {mode for mode in stack_modes.values() if mode is not SeriesStackingMode.NONE}
+    is_stacked = bool(active_stack_modes)
+
+    for series_config in config.series:
+        data = _series_values(dataset, series_config.id)
+        axis = "y2" if series_config.axis == "secondary" and orientation == "v" else None
+        if orientation == "h" and series_config.axis == "secondary":
+            axis = "x2"
+
+        if series_config.type == "line":
+            trace = go.Scatter(
+                x=categories if orientation == "v" else data,
+                y=data if orientation == "v" else categories,
+                mode="lines+markers" if series_config.marker and series_config.marker.show else "lines",
+                name=series_config.label or series_config.metric.label or series_config.metric.key,
+            )
+        else:
+            trace = go.Bar(
+                x=categories if orientation == "v" else data,
+                y=data if orientation == "v" else categories,
+                name=series_config.label or series_config.metric.label or series_config.metric.key,
+                orientation=orientation,
+            )
+            if series_config.stacking and series_config.stacking.key:
+                trace.offsetgroup = series_config.stacking.key
+                trace.legendgroup = series_config.stacking.key
+
+        if axis:
+            if orientation == "v":
+                trace.yaxis = axis
+            else:
+                trace.xaxis = axis
+
+        if series_config.data_labels:
+            label_position = _resolve_label_position(series_config.data_labels.position, orientation)
+            if series_config.type == "line" and label_position in {"outside", "inside"}:
+                label_position = "top center" if label_position == "outside" else "middle center"
+            trace.text = data
+            trace.textposition = label_position
+            if series_config.data_labels.format:
+                trace.texttemplate = _format_template(series_config.data_labels.format)
+
+        figure.add_trace(trace)
+
+    _configure_layout(figure, config, categories, is_stacked, orientation)
+
+    return figure
+
+
+def cartesian_html(config: CartesianChartConfig, dataset: ChartResultSet, output_path: str) -> None:
+    """Write the rendered cartesian chart to an HTML file."""
+
+    figure = cartesian_figure(config, dataset)
+    div_id = Path(output_path).stem.replace(" ", "_") or "chart"
+    fragment = figure.to_html(full_html=False, include_plotlyjs="cdn", div_id=div_id)
+    html = (
+        "<!DOCTYPE html>\n"
+        "<html lang=\"en\"><head><meta charset=\"utf-8\" />"
+        "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />"
+        "<style>body{margin:0;padding:0;}</style></head><body>"
+        f"{fragment}"
+        "</body></html>"
+    )
+    Path(output_path).write_text(html, encoding="utf-8")
+
+
+def cartesian_png(
+    config: CartesianChartConfig,
+    dataset: ChartResultSet,
+    output_path: str,
+    *,
+    scale: float = 2.0,
+) -> None:
+    """Export the rendered cartesian chart to a static PNG."""
+
+    if importlib_util.find_spec("kaleido") is None:
+        msg = "PNG export requires the 'kaleido' package. Install it to enable static image output."
+        raise RuntimeError(msg)
+
+    figure = cartesian_figure(config, dataset)
+    figure.write_image(output_path, format="png", scale=scale)
+
+
+def _series_values(dataset: ChartResultSet, series_id: str) -> list[object]:
+    for series in dataset.series:
+        if series.id == series_id:
+            return series.values
+    return [0 for _ in dataset.categories]
+
+
+def _resolve_label_position(position: str | None, orientation: str) -> str:
+    if not position:
+        return "auto"
+    mapping = {
+        "above": "outside",
+        "outside_end": "outside",
+        "inside": "inside",
+        "center": "inside",
+    }
+    resolved = mapping.get(position.lower(), "auto")
+    if orientation == "h" and resolved == "outside":
+        return "outside"
+    return resolved
+
+
+def _format_template(format_token: str) -> str:
+    token = format_token.strip().lower()
+    if token.startswith("percent"):
+        precision = token.split(":")[1] if ":" in token else "0"
+        return f"{{:.{precision}%}}"
+    if token.startswith("number"):
+        precision = token.split(":")[1] if ":" in token else "0"
+        return f"{{:.{precision}f}}"
+    return "%{text}"
+
+
+def _configure_layout(
+    figure: go.Figure,
+    config: CartesianChartConfig,
+    categories: Iterable[str],
+    is_stacked: bool,
+    orientation: str,
+) -> None:
+    legend_position = (config.layout.legend.position if config.layout and config.layout.legend else "top").lower()
+    legend_kwargs = {}
+    if legend_position == "none":
+        legend_kwargs["legend"] = dict(orientation="h", y=-0.3, x=0.5, xanchor="center", visible=False)
+    elif legend_position in {"top", "bottom"}:
+        legend_kwargs["legend"] = dict(orientation="h", y=1.1 if legend_position == "top" else -0.2, x=0.5, xanchor="center")
+    elif legend_position in {"left", "right"}:
+        legend_kwargs["legend"] = dict(orientation="v", x=0.0 if legend_position == "left" else 1.0)
+
+    barmode = "stack" if is_stacked and orientation == "v" else "group"
+    if orientation == "h" and is_stacked:
+        barmode = "stack"
+
+    layout_kwargs = dict(
+        title=config.title,
+        paper_bgcolor="white",
+        plot_bgcolor="white",
+        barmode=barmode if any(series.type == "column" for series in config.series) else None,
+        xaxis=_axis_options(config, axis="primary_x", orientation=orientation),
+        yaxis=_axis_options(config, axis="primary_y", orientation=orientation),
+    )
+    if legend_kwargs:
+        layout_kwargs.update(legend_kwargs)
+
+    if any(series.axis == "secondary" for series in config.series):
+        if orientation == "v":
+            layout_kwargs["yaxis2"] = _secondary_axis_options(config, orientation)
+        else:
+            layout_kwargs["xaxis2"] = _secondary_axis_options(config, orientation)
+
+    figure.update_layout(**{k: v for k, v in layout_kwargs.items() if v is not None})
+
+
+def _axis_options(config: CartesianChartConfig, *, axis: str, orientation: str) -> dict[str, object]:
+    primary = config.value_axes.primary
+    axis_config = primary
+    options: dict[str, object] = {}
+    if axis == "primary_x":
+        if orientation == "v":
+            options["title"] = config.category.label or ""
+        else:
+            options["title"] = primary.label or ""
+    else:
+        if orientation == "v":
+            options["title"] = primary.label or ""
+        else:
+            options["title"] = config.category.label or ""
+
+    if primary.minimum is not None:
+        options.setdefault("range", [primary.minimum, None])
+    if primary.maximum is not None:
+        if "range" in options:
+            options["range"][1] = primary.maximum
+        else:
+            options["range"] = [None, primary.maximum]
+    if primary.tick_format:
+        options["tickformat"] = primary.tick_format
+    return options
+
+
+def _secondary_axis_options(config: CartesianChartConfig, orientation: str) -> dict[str, object]:
+    secondary = config.value_axes.secondary
+    if not secondary:
+        return {}
+    options: dict[str, object] = {
+        "title": secondary.label or "",
+        "overlaying": "y" if orientation == "v" else "x",
+        "side": "right" if orientation == "v" else "top",
+        "showgrid": False,
+    }
+    if secondary.minimum is not None:
+        options.setdefault("range", [secondary.minimum, None])
+    if secondary.maximum is not None:
+        if "range" in options:
+            options["range"][1] = secondary.maximum
+        else:
+            options["range"] = [None, secondary.maximum]
+    if secondary.tick_format:
+        options["tickformat"] = secondary.tick_format
+    return options
+
+
+__all__ = ["cartesian_figure", "cartesian_html", "cartesian_png"]
