@@ -32,6 +32,26 @@ from .registry import (
 )
 
 
+def _coerce_dimension(value: object) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        candidate = int(value)
+        return candidate if candidate > 0 else None
+    if isinstance(value, str):
+        stripped = value.strip()
+        if not stripped:
+            return None
+        try:
+            candidate = int(float(stripped))
+        except ValueError:
+            return None
+        return candidate if candidate > 0 else None
+    return None
+
+
 def _write_matrix_schema(config: MatrixConfig, directory: Path, filename: str) -> Path:
     payload = config.model_dump(mode="json")
     return default_json_writer(payload, directory, filename)
@@ -210,18 +230,42 @@ def _chart_renderer(
 ) -> RenderOutcome:
     chart_config = schema.value
     chart_dataset = dataset.value
+    metadata = context.options.metadata or {}
+    width = _coerce_dimension(metadata.get("width"))
+    height = _coerce_dimension(metadata.get("height"))
+
     figure = cartesian_figure(chart_config, chart_dataset)
+    if width is not None or height is not None:
+        updates: dict[str, object] = {"autosize": False}
+        if width is not None:
+            updates["width"] = width
+        if height is not None:
+            updates["height"] = height
+        figure.update_layout(**updates)
 
     emitted: list[PipelineOutputArtifact] = []
     for target in outputs:
         path = target.path
         _ensure_parent_directory(path)
         if target.kind is OutputKind.HTML:
-            cartesian_html(chart_config, chart_dataset, str(path))
+            cartesian_html(
+                chart_config,
+                chart_dataset,
+                str(path),
+                width=width,
+                height=height,
+            )
             emitted.append(PipelineOutputArtifact(kind=OutputKind.HTML, path=path))
         elif target.kind is OutputKind.PNG:
             scale = target.scale if target.scale is not None else context.options.png_scale
-            cartesian_png(chart_config, chart_dataset, str(path), scale=scale)
+            cartesian_png(
+                chart_config,
+                chart_dataset,
+                str(path),
+                scale=scale,
+                width=width,
+                height=height,
+            )
             emitted.append(PipelineOutputArtifact(kind=OutputKind.PNG, path=path))
 
     return RenderOutcome(figure=figure, outputs=emitted)

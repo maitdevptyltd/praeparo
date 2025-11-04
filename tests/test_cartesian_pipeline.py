@@ -3,10 +3,12 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+import plotly.graph_objects as go
 
 from praeparo.data import ChartResultSet
 from praeparo.io.yaml_loader import load_visual_config
 from praeparo.pipeline import ExecutionContext, PipelineDataOptions, PipelineOptions, VisualPipeline
+from praeparo.pipeline.outputs import OutputTarget
 from tests.snapshot_extensions import (
     DaxSnapshotExtension,
     PlotlyHtmlSnapshotExtension,
@@ -75,3 +77,41 @@ def test_secondary_percent_axis_uses_percent_tickformat(tmp_path: Path) -> None:
     result = pipeline.execute(visual, context)
     assert result.figure is not None
     assert result.figure.layout.yaxis2.tickformat == ".0%"
+
+
+def test_pipeline_applies_png_dimensions(monkeypatch, tmp_path: Path) -> None:
+    visual = load_visual_config(VISUAL_PATH)
+    pipeline = VisualPipeline()
+
+    options = PipelineOptions()
+    options.metadata["metrics_root"] = METRICS_ROOT
+    options.metadata["measure_table"] = "'adhoc'"
+    options.metadata["width"] = 300
+    options.metadata["height"] = 200
+    options.data = PipelineDataOptions(provider_key="mock")
+    options.outputs = [OutputTarget.png(tmp_path / "dimensioned.png")]
+
+    context = ExecutionContext(
+        config_path=VISUAL_PATH,
+        project_root=VISUAL_PATH.parent.parent,
+        case_key="cartesian_dimensions",
+        options=options,
+    )
+
+    monkeypatch.setattr("praeparo.rendering.cartesian.importlib_util.find_spec", lambda _: object())
+    captured: dict[str, object] = {}
+
+    def fake_write_image(self, output_path, **kwargs):
+        captured["path"] = output_path
+        captured["kwargs"] = kwargs
+
+    monkeypatch.setattr(go.Figure, "write_image", fake_write_image, raising=False)
+
+    result = pipeline.execute(visual, context)
+
+    assert result.figure is not None
+    assert result.figure.layout.width == 300
+    assert result.figure.layout.height == 200
+    assert captured["path"] == str(tmp_path / "dimensioned.png")
+    assert captured["kwargs"]["width"] == 300
+    assert captured["kwargs"]["height"] == 200

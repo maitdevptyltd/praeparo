@@ -16,6 +16,17 @@ from praeparo.models import (
 )
 
 
+def _apply_dimensions(figure: go.Figure, width: int | None, height: int | None) -> None:
+    updates: dict[str, object] = {}
+    if width is not None:
+        updates["width"] = int(width)
+    if height is not None:
+        updates["height"] = int(height)
+    if updates:
+        updates.setdefault("autosize", False)
+        figure.update_layout(**updates)
+
+
 def cartesian_figure(config: CartesianChartConfig, dataset: ChartResultSet) -> go.Figure:
     """Render a Plotly figure representing the cartesian chart visual."""
 
@@ -77,10 +88,18 @@ def cartesian_figure(config: CartesianChartConfig, dataset: ChartResultSet) -> g
     return figure
 
 
-def cartesian_html(config: CartesianChartConfig, dataset: ChartResultSet, output_path: str) -> None:
+def cartesian_html(
+    config: CartesianChartConfig,
+    dataset: ChartResultSet,
+    output_path: str,
+    *,
+    width: int | None = None,
+    height: int | None = None,
+) -> None:
     """Write the rendered cartesian chart to an HTML file."""
 
     figure = cartesian_figure(config, dataset)
+    _apply_dimensions(figure, width, height)
     div_id = Path(output_path).stem.replace(" ", "_") or "chart"
     fragment = figure.to_html(full_html=False, include_plotlyjs="cdn", div_id=div_id)
     html = (
@@ -100,6 +119,8 @@ def cartesian_png(
     output_path: str,
     *,
     scale: float = 2.0,
+    width: int | None = None,
+    height: int | None = None,
 ) -> None:
     """Export the rendered cartesian chart to a static PNG."""
 
@@ -108,7 +129,13 @@ def cartesian_png(
         raise RuntimeError(msg)
 
     figure = cartesian_figure(config, dataset)
-    figure.write_image(output_path, format="png", scale=scale)
+    _apply_dimensions(figure, width, height)
+    write_kwargs: dict[str, object] = {"format": "png", "scale": scale}
+    if width is not None:
+        write_kwargs["width"] = int(width)
+    if height is not None:
+        write_kwargs["height"] = int(height)
+    figure.write_image(output_path, **write_kwargs)
 
 
 def _series_values(dataset: ChartResultSet, series_id: str) -> list[object]:
