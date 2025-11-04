@@ -426,6 +426,7 @@ def _prepare_metadata(args: argparse.Namespace, cli: VisualCLIOptions | None) ->
         value = getattr(args, field, None)
         if value is not None:
             metadata[field] = value
+    metadata["data_mode"] = _normalise_data_mode(getattr(args, "data_mode", None))
     grain_override = getattr(args, "grain", None)
     if grain_override:
         metadata["grain"] = tuple(grain_override)
@@ -439,12 +440,36 @@ def _prepare_metadata(args: argparse.Namespace, cli: VisualCLIOptions | None) ->
 # ---------------------------------------------------------------------------
 
 
+def _normalise_data_mode(value: str | None) -> str:
+    if value is None:
+        return "mock"
+    candidate = value.strip().lower()
+    return candidate or "mock"
+
+
+def _resolve_datasource_override(args: argparse.Namespace, data_mode: str) -> tuple[str | None, str | None]:
+    datasource = args.datasource
+    provider_key: str | None = None
+
+    if data_mode == "live":
+        if not datasource:
+            datasource = "default"
+    else:
+        provider_key = data_mode or "mock"
+
+    return datasource, provider_key
+
+
 def _build_pipeline_options(args: argparse.Namespace, metadata: Mapping[str, object], *, include_outputs: bool) -> PipelineOptions:
+    data_mode = _normalise_data_mode(getattr(args, "data_mode", None))
+    datasource_override, provider_key = _resolve_datasource_override(args, data_mode)
+
     options = PipelineOptions(
         data=PipelineDataOptions(
-            datasource_override=args.datasource,
+            datasource_override=datasource_override,
             dataset_id=args.dataset_id,
             workspace_id=args.workspace_id,
+            provider_key=provider_key,
         ),
         artefact_dir=args.artefact_dir,
         metadata=dict(metadata),

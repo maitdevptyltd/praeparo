@@ -57,6 +57,7 @@ def test_cli_run_populates_metadata(monkeypatch, tmp_path) -> None:
     config_path.write_text("type: cli_example\n", encoding="utf-8")
 
     captured_metadata: Dict[str, object] = {}
+    captured_options: list = []
 
     def fake_load_visual_config(path: Path):
         assert path == config_path
@@ -68,6 +69,7 @@ def test_cli_run_populates_metadata(monkeypatch, tmp_path) -> None:
 
         def execute(self, visual, context):
             captured_metadata.update(context.options.metadata)
+            captured_options.append(context.options)
             result = VisualExecutionResult(
                 config=visual,
                 outputs=[
@@ -116,8 +118,59 @@ def test_cli_run_populates_metadata(monkeypatch, tmp_path) -> None:
 
     assert exc.value.code == 0
     sys.path.pop(0)
+    assert captured_metadata["sample"] == "example"
+    assert captured_metadata["flag"] is True
+    assert captured_metadata["data_mode"] == "mock"
+    assert "context" in captured_metadata
+    assert captured_options
+    options = captured_options[0]
+    assert options.data.datasource_override is None
+    assert options.data.provider_key == "mock"
+    assert options.metadata["data_mode"] == "mock"
     if hasattr(builtins, "__praeparo_test_plugin_loaded__"):
         delattr(builtins, "__praeparo_test_plugin_loaded__")
+
+
+def test_cli_live_mode_defaults_datasource(monkeypatch, tmp_path) -> None:
+    config_path = tmp_path / "visual.yaml"
+    config_path.write_text("type: cli_example\n", encoding="utf-8")
+
+    monkeypatch.setattr("praeparo.cli.load_visual_config", lambda path: _DummyConfig())
+
+    captured_options: list = []
+
+    class FakePipeline:
+        def __init__(self, *_, **__):
+            pass
+
+        def execute(self, visual, context):
+            captured_options.append(context.options)
+            return VisualExecutionResult(
+                config=visual,
+                outputs=[PipelineOutputArtifact(kind=OutputKind.HTML, path=tmp_path / "out.html")],
+            )
+
+    monkeypatch.setattr("praeparo.cli.VisualPipeline", FakePipeline)
+    monkeypatch.setattr("praeparo.cli.build_default_query_planner_provider", lambda: None)
+
+    argv = [
+        "visual",
+        "run",
+        "cli_example",
+        str(config_path),
+        "--data-mode",
+        "live",
+    ]
+
+    with pytest.raises(SystemExit) as exc:
+        cli_main(argv)
+
+    assert exc.value.code == 0
+    assert captured_options
+    options = captured_options[0]
+    assert options.data.datasource_override == "default"
+    assert options.data.provider_key is None
+    assert options.metadata["data_mode"] == "live"
 
 
 def test_cli_dax_writes_output(monkeypatch, tmp_path) -> None:
