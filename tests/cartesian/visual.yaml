@@ -21,6 +21,8 @@ value_axes:
   secondary:
     label: Automation %
     format: percent:0
+    minimum: 0
+    maximum: 1
 series:
   - id: documents_manual
     label: Manual
