@@ -51,5 +51,5 @@ def test_cartesian_pipeline_snapshot(snapshot, tmp_path: Path, visual_path: Path
         snapshot.use_extension(DaxSnapshotExtension).assert_match(result.plans[0].statement)
 
     snapshot.use_extension(PlotlyPngSnapshotExtension).assert_match(
-        result.figure.to_image(format="png", scale=2.0),
+        result.figure.to_image(format="png", scale=1.5, width=800, height=600,),
     )

@@ -174,7 +174,16 @@ def _configure_layout(
         barmode = "stack"
 
     figure.update_layout(
+        # Remove the default outer padding, so exports are trimmed exactly the visual's bounds
+        margin_b=0,
+        margin_l=0,
+        margin_r=0,
+        margin_t=0,
+        
         title=config.title,
+        # Let the title adjust the margin, otherwise the 0 margins above will cut off the title
+        title_automargin=True,
+        
         paper_bgcolor="white",
         plot_bgcolor="white",
         barmode=barmode if any(series.type == "column" for series in config.series) else None,
