@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from importlib import util as importlib_util
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, cast
 
 import plotly.graph_objects as go
+from plotly.graph_objs.layout import Legend, Margin
 
 from praeparo.data import ChartResultSet
 from praeparo.models import (
@@ -151,41 +152,46 @@ def _configure_layout(
     orientation: str,
 ) -> None:
     legend_position = (config.layout.legend.position if config.layout and config.layout.legend else "top").lower()
-    legend_kwargs = {}
+    legend_obj: Legend | None = None
     if legend_position == "none":
-        legend_kwargs["legend"] = dict(orientation="h", y=-0.3, x=0.5, xanchor="center", visible=False)
+        legend_obj = Legend(orientation="h", y=-0.3, x=0.5, xanchor="center", visible=False)
     elif legend_position in {"top", "bottom"}:
-        legend_kwargs["legend"] = dict(orientation="h", y=1.1 if legend_position == "top" else -0.2, x=0.5, xanchor="center")
+        legend_obj = Legend(orientation="h",
+            y=1.2 if legend_position == "top" else -0.2,              # was 1.1 / -0.2
+            yanchor="top" if legend_position == "top" else "bottom",
+            x=0.5, xanchor="center",)
     elif legend_position in {"left", "right"}:
-        legend_kwargs["legend"] = dict(orientation="v", x=0.0 if legend_position == "left" else 1.0)
+        legend_obj = Legend(
+            orientation="v",
+            x=0.0 if legend_position == "left" else 1.0,
+            xanchor="left" if legend_position == "left" else "right",
+            y=1.0,
+            yanchor="top",
+        )
 
     barmode = "stack" if is_stacked and orientation == "v" else "group"
     if orientation == "h" and is_stacked:
         barmode = "stack"
 
-    layout_kwargs = dict(
+    figure.update_layout(
         title=config.title,
         paper_bgcolor="white",
         plot_bgcolor="white",
         barmode=barmode if any(series.type == "column" for series in config.series) else None,
         xaxis=_axis_options(config, axis="primary_x", orientation=orientation),
         yaxis=_axis_options(config, axis="primary_y", orientation=orientation),
+        legend=legend_obj,
     )
-    if legend_kwargs:
-        layout_kwargs.update(legend_kwargs)
 
     if any(series.axis == "secondary" for series in config.series):
         if orientation == "v":
-            layout_kwargs["yaxis2"] = _secondary_axis_options(config, orientation)
+            figure.update_layout(yaxis2=_secondary_axis_options(config, orientation))
         else:
-            layout_kwargs["xaxis2"] = _secondary_axis_options(config, orientation)
-
-    figure.update_layout(**{k: v for k, v in layout_kwargs.items() if v is not None})
+            figure.update_layout(xaxis2=_secondary_axis_options(config, orientation))
 
 
 def _axis_options(config: CartesianChartConfig, *, axis: str, orientation: str) -> dict[str, object]:
     primary = config.value_axes.primary
-    axis_config = primary
     options: dict[str, object] = {}
     if axis == "primary_x":
         if orientation == "v":
@@ -198,13 +204,14 @@ def _axis_options(config: CartesianChartConfig, *, axis: str, orientation: str) 
         else:
             options["title"] = config.category.label or ""
 
-    if primary.minimum is not None:
-        options.setdefault("range", [primary.minimum, None])
-    if primary.maximum is not None:
-        if "range" in options:
-            options["range"][1] = primary.maximum
-        else:
-            options["range"] = [None, primary.maximum]
+    range_values: list[float | None] | None = None
+    if primary.minimum is not None or primary.maximum is not None:
+        range_values = cast(list[float | None], [None, None])
+        if primary.minimum is not None:
+            range_values[0] = primary.minimum
+        if primary.maximum is not None:
+            range_values[1] = primary.maximum
+        options["range"] = range_values
     if primary.tick_format:
         options["tickformat"] = primary.tick_format
     return options
@@ -220,13 +227,13 @@ def _secondary_axis_options(config: CartesianChartConfig, orientation: str) -> d
         "side": "right" if orientation == "v" else "top",
         "showgrid": False,
     }
-    if secondary.minimum is not None:
-        options.setdefault("range", [secondary.minimum, None])
-    if secondary.maximum is not None:
-        if "range" in options:
-            options["range"][1] = secondary.maximum
-        else:
-            options["range"] = [None, secondary.maximum]
+    if secondary.minimum is not None or secondary.maximum is not None:
+        range_values = cast(list[float | None], [None, None])
+        if secondary.minimum is not None:
+            range_values[0] = secondary.minimum
+        if secondary.maximum is not None:
+            range_values[1] = secondary.maximum
+        options["range"] = range_values
     if secondary.tick_format:
         options["tickformat"] = secondary.tick_format
     return options

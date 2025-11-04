@@ -10,6 +10,7 @@ from praeparo.models.cartesian import (
     CategoryConfig,
     DataLabelConfig,
     SeriesStackingConfig,
+    SeriesStackingMode,
     SeriesTransformConfig,
     SeriesTransformMode,
     ValueAxesConfig,
@@ -82,7 +83,7 @@ def test_series_transform_rejects_expression_metrics() -> None:
 def test_series_configuration_accepts_optional_fields() -> None:
     series = _base_series(
         "with_labels",
-        stacking=SeriesStackingConfig(key="group", mode="percent"),
+        stacking=SeriesStackingConfig(key="group", mode=SeriesStackingMode.PERCENT),
         data_labels=DataLabelConfig(position="outside_end", format="percent:0"),
     )
     assert series.stacking and series.stacking.key == "group"

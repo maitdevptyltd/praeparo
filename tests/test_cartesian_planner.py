@@ -35,7 +35,7 @@ def _write_metric(path: Path) -> None:
 
 def _build_config() -> CartesianChartConfig:
     return CartesianChartConfig(
-        schema_version="draft-1",
+        schema="draft-1",
         type="column",
         title="Documents Sent",
         category=CategoryConfig(field="'dim_calendar'[Month]", label="Month"),

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Literal, cast
+
 import pytest
 
 from praeparo.data import ChartResultSet, mock_chart_data
@@ -15,7 +17,7 @@ from praeparo.models.cartesian import (
 from praeparo.visuals.metrics import VisualMetricConfig
 
 
-def _build_chart_config(transform_scope: str | None = None) -> tuple[CartesianChartConfig, dict[str, str]]:
+def _build_chart_config(transform_scope: Literal["category", "visual"] | None = None) -> tuple[CartesianChartConfig, dict[str, str]]:
     if transform_scope is None:
         share_metric = VisualMetricConfig(
             key="metrics.share",
@@ -31,7 +33,7 @@ def _build_chart_config(transform_scope: str | None = None) -> tuple[CartesianCh
         )
 
     config = CartesianChartConfig(
-        schema_version="draft-1",
+        schema="draft-1",
         type="column",
         title="Test Chart",
         category=CategoryConfig(
@@ -93,13 +95,14 @@ def test_percent_of_total_transform_visual_scope() -> None:
     total_series = next(series for series in dataset.series if series.id == "total")
 
     for index, value in enumerate(share_series.values):
-        assert 0.0 <= value <= 1.0
-        manual_value = float(manual_series.values[index])
-        total_value = float(total_series.values[index])
+        value_float = cast(float, value)
+        assert 0.0 <= value_float <= 1.0
+        manual_value = cast(float, manual_series.values[index])
+        total_value = cast(float, total_series.values[index])
         denominator = manual_value + total_value
         if denominator:
             upper_bound = manual_value / denominator
-            assert value <= upper_bound + 1e-6
+            assert value_float <= upper_bound + 1e-6
 
 
 def test_percent_of_total_transform_category_scope() -> None:
@@ -107,5 +110,6 @@ def test_percent_of_total_transform_category_scope() -> None:
     dataset = mock_chart_data(config, measure_map)
 
     share_series = next(series for series in dataset.series if series.id == "share")
-    assert all(0.0 <= value <= 1.0 for value in share_series.values)
-    assert pytest.approx(sum(share_series.values), rel=1e-9) == 1.0
+    numeric_values = [cast(float, value) for value in share_series.values]
+    assert all(0.0 <= value <= 1.0 for value in numeric_values)
+    assert pytest.approx(sum(numeric_values), rel=1e-9) == 1.0

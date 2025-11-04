@@ -6,7 +6,7 @@ import asyncio
 import inspect
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Awaitable, Callable, Mapping
+from typing import Awaitable, Callable, Mapping, Sequence
 
 from praeparo.data import ChartResultSet, mock_chart_data, powerbi_chart_data
 from praeparo.dax import DaxQueryPlan
@@ -66,15 +66,28 @@ class DaxBackedChartPlanner(ChartQueryPlanner):
 
     def plan(self, config: CartesianChartConfig, *, context) -> ChartPlannerResult:  # type: ignore[override]
         metadata = context.options.metadata
-        metrics_root = Path(metadata.get("metrics_root") or "registry/metrics")
+        raw_metrics_root = metadata.get("metrics_root")
+        if isinstance(raw_metrics_root, (str, Path)):
+            metrics_root = Path(raw_metrics_root)
+        else:
+            metrics_root = Path("registry/metrics")
         catalog = load_metric_catalog([metrics_root])
         builder = MetricDaxBuilder(catalog)
         cache = MetricCompilationCache()
 
         ignore_placeholders = bool(metadata.get("ignore_placeholders", False))
         context_payload = metadata.get("context") if isinstance(metadata.get("context"), Mapping) else {}
-        context_filters = context_payload.get("calculate") if isinstance(context_payload, Mapping) else None
-        context_define = context_payload.get("define") if isinstance(context_payload, Mapping) else None
+        if isinstance(context_payload, Mapping):
+            context_filters = context_payload.get("calculate")
+            context_define = context_payload.get("define")
+        else:
+            context_filters = None
+            context_define = None
+
+        if not isinstance(context_filters, (str, Sequence)):
+            context_filters = None
+        if not isinstance(context_define, (str, Sequence)):
+            context_define = None
 
         visual_slug = slugify(config.title or config.description or "cartesian")
 
@@ -159,7 +172,12 @@ class DaxBackedChartPlanner(ChartQueryPlanner):
             measure_map[candidate.series_id] = measure_name
 
         grain_override = metadata.get("grain")
-        grain_columns = tuple(grain_override) if grain_override else (config.category.field,)
+        if isinstance(grain_override, str):
+            grain_columns = (grain_override,)
+        elif isinstance(grain_override, Sequence):
+            grain_columns = tuple(grain_override)
+        else:
+            grain_columns = (config.category.field,)
 
         global_filters = combine_filter_groups(config.calculate, context_filters)
 
@@ -176,9 +194,13 @@ class DaxBackedChartPlanner(ChartQueryPlanner):
             placeholders=tuple(placeholders),
         )
 
+        measure_table = metadata.get("measure_table")
+        if not isinstance(measure_table, str) or not measure_table.strip():
+            measure_table = DEFAULT_MEASURE_TABLE
+
         statement = render_visual_plan(
             visual_plan,
-            measure_table=metadata.get("measure_table") or DEFAULT_MEASURE_TABLE,
+            measure_table=measure_table,
         )
 
         plan = DaxQueryPlan(

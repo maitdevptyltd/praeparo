@@ -377,7 +377,6 @@ class CartesianChartConfig(BaseVisualConfig):
     )
     series: list[CartesianSeriesConfig] = Field(
         ...,
-        min_items=1,
         description="Series rendered in the chart.",
     )
     mock: VisualMockConfig | None = Field(
@@ -412,6 +411,9 @@ class CartesianChartConfig(BaseVisualConfig):
 
     @model_validator(mode="after")
     def _ensure_unique_series(self) -> "CartesianChartConfig":
+        if not self.series:
+            raise ValueError("At least one series must be defined for a cartesian chart.")
+
         identifiers = [entry.id for entry in self.series]
         if len(identifiers) != len(set(identifiers)):
             msg = "Series identifiers must be unique within a visual."

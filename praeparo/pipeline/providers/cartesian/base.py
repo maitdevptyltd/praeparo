@@ -10,7 +10,7 @@ from praeparo.dax import DaxQueryPlan
 from praeparo.models import CartesianChartConfig
 
 if TYPE_CHECKING:  # pragma: no cover
-    from ....core import ExecutionContext
+    from ...core import ExecutionContext
 
 
 @dataclass(frozen=True)
