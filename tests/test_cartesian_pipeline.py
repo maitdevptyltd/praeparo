@@ -53,3 +53,25 @@ def test_cartesian_pipeline_snapshot(snapshot, tmp_path: Path, visual_path: Path
     snapshot.use_extension(PlotlyPngSnapshotExtension).assert_match(
         result.figure.to_image(format="png", scale=1.5, width=800, height=600,),
     )
+
+
+def test_secondary_percent_axis_uses_percent_tickformat(tmp_path: Path) -> None:
+    visual = load_visual_config(VISUAL_PATH)
+    pipeline = VisualPipeline()
+
+    options = PipelineOptions()
+    options.metadata["metrics_root"] = METRICS_ROOT
+    options.metadata["measure_table"] = "'adhoc'"
+    options.data = PipelineDataOptions(provider_key="mock")
+    options.artefact_dir = tmp_path / "artefacts"
+
+    context = ExecutionContext(
+        config_path=VISUAL_PATH,
+        project_root=VISUAL_PATH.parent.parent,
+        case_key="cartesian_percent_tickformat",
+        options=options,
+    )
+
+    result = pipeline.execute(visual, context)
+    assert result.figure is not None
+    assert result.figure.layout.yaxis2.tickformat == ".0%"

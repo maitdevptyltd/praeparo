@@ -144,6 +144,36 @@ def _format_template(format_token: str) -> str:
     return "%{text}"
 
 
+def _derive_tickformat(format_token: str | None) -> str | None:
+    if not format_token:
+        return None
+
+    token = format_token.strip().lower()
+    if not token:
+        return None
+
+    def _precision(spec: str) -> int:
+        try:
+            value = float(spec)
+        except (TypeError, ValueError):
+            return 0
+        return max(0, int(value))
+
+    if token.startswith("percent"):
+        precision = "0"
+        if ":" in token:
+            precision = token.split(":", 1)[1]
+        return f".{_precision(precision)}%"
+
+    if token.startswith("number"):
+        precision = "0"
+        if ":" in token:
+            precision = token.split(":", 1)[1]
+        return f",.{_precision(precision)}f"
+
+    return None
+
+
 def _configure_layout(
     figure: go.Figure,
     config: CartesianChartConfig,
@@ -213,16 +243,20 @@ def _axis_options(config: CartesianChartConfig, *, axis: str, orientation: str) 
         else:
             options["title"] = config.category.label or ""
 
-    range_values: list[float | None] | None = None
-    if primary.minimum is not None or primary.maximum is not None:
-        range_values = cast(list[float | None], [None, None])
-        if primary.minimum is not None:
-            range_values[0] = primary.minimum
-        if primary.maximum is not None:
-            range_values[1] = primary.maximum
-        options["range"] = range_values
-    if primary.tick_format:
-        options["tickformat"] = primary.tick_format
+    is_value_axis = (axis == "primary_y" and orientation == "v") or (axis == "primary_x" and orientation == "h")
+    if is_value_axis:
+        range_values: list[float | None] | None = None
+        if primary.minimum is not None or primary.maximum is not None:
+            range_values = cast(list[float | None], [None, None])
+            if primary.minimum is not None:
+                range_values[0] = primary.minimum
+            if primary.maximum is not None:
+                range_values[1] = primary.maximum
+            options["range"] = range_values
+
+        tick_format = primary.tick_format or _derive_tickformat(primary.format)
+        if tick_format:
+            options["tickformat"] = tick_format
     return options
 
 
@@ -243,8 +277,10 @@ def _secondary_axis_options(config: CartesianChartConfig, orientation: str) -> d
         if secondary.maximum is not None:
             range_values[1] = secondary.maximum
         options["range"] = range_values
-    if secondary.tick_format:
-        options["tickformat"] = secondary.tick_format
+
+    tick_format = secondary.tick_format or _derive_tickformat(secondary.format)
+    if tick_format:
+        options["tickformat"] = tick_format
     return options
 
 
