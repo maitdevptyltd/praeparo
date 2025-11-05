@@ -93,6 +93,69 @@ class VisualExecutionResult:
     children: List["VisualExecutionResult"] = field(default_factory=list)
 
 
+def _emit_dax_artifacts(
+    *,
+    plans: Sequence[DaxQueryPlan],
+    config: BaseVisualConfig,
+    dataset_filename: str,
+    directory: Path,
+) -> List[PipelineOutputArtifact]:
+    emitted: List[PipelineOutputArtifact] = []
+    if not plans:
+        return emitted
+
+    directory.mkdir(parents=True, exist_ok=True)
+    valid_plans = [
+        plan
+        for plan in plans
+        if isinstance(plan, DaxQueryPlan) and isinstance(plan.statement, str) and plan.statement.strip()
+    ]
+    if not valid_plans:
+        return emitted
+
+    total = len(valid_plans)
+
+    for index, plan in enumerate(valid_plans, start=1):
+        filename = _build_dax_filename(config, dataset_filename, index, total)
+        path = directory / filename
+        path.write_text(plan.statement.rstrip() + "\n", encoding="utf-8")
+        emitted.append(PipelineOutputArtifact(kind=OutputKind.DAX, path=path))
+    return emitted
+
+
+def _build_dax_filename(
+    config: BaseVisualConfig,
+    dataset_filename: str,
+    index: int,
+    total: int,
+) -> str:
+    candidates: List[str] = []
+    visual_type = getattr(config, "type", None)
+    if isinstance(visual_type, str):
+        candidates.append(visual_type)
+
+    dataset_stem = Path(dataset_filename).stem
+    if dataset_stem:
+        candidates.append(dataset_stem)
+
+    base = _first_non_empty_candidate(candidates)
+    if total > 1:
+        return f"{base}.plan{index}.dax"
+    return f"{base}.dax"
+
+
+def _first_non_empty_candidate(candidates: Sequence[str]) -> str:
+    for candidate in candidates:
+        cleaned = (candidate or "").strip()
+        if not cleaned:
+            continue
+        if "." in cleaned:
+            cleaned = cleaned.split(".", 1)[0]
+        if cleaned:
+            return cleaned
+    return "visual"
+
+
 class VisualPipelineStrategy(Protocol):
     """Strategy executed for each supported visual type."""
 
@@ -155,6 +218,13 @@ class VisualPipeline:
                     PipelineOutputArtifact(kind=OutputKind.DATA, path=dataset_path),
                 ]
             )
+            dax_outputs = _emit_dax_artifacts(
+                plans=dataset_artifact.plans,
+                config=config,
+                dataset_filename=dataset_artifact.filename,
+                directory=artefact_dir,
+            )
+            metadata_outputs.extend(dax_outputs)
 
         render_outcome = definition.renderer(
             self,
