@@ -5,10 +5,12 @@ from pathlib import Path
 import pytest
 import plotly.graph_objects as go
 
-from praeparo.data import ChartResultSet
+from praeparo.data import ChartCategory, ChartResultSet, ChartSeriesResult
 from praeparo.io.yaml_loader import load_visual_config
 from praeparo.pipeline import ExecutionContext, PipelineDataOptions, PipelineOptions, VisualPipeline
 from praeparo.pipeline.outputs import OutputTarget
+from praeparo.rendering import cartesian_figure
+from praeparo.models import CartesianChartConfig
 from tests.snapshot_extensions import (
     DaxSnapshotExtension,
     PlotlyHtmlSnapshotExtension,
@@ -115,3 +117,50 @@ def test_pipeline_applies_png_dimensions(monkeypatch, tmp_path: Path) -> None:
     assert captured["path"] == str(tmp_path / "dimensioned.png")
     assert captured["kwargs"]["width"] == 300
     assert captured["kwargs"]["height"] == 200
+
+
+def test_data_label_format_templates() -> None:
+    config = CartesianChartConfig.model_validate(
+        {
+            "type": "column",
+            "title": "Formatted labels",
+            "category": {"field": "category", "label": "Category"},
+            "value_axes": {
+                "primary": {"label": "Files", "format": "number:0"},
+                "secondary": {"label": "Share", "format": "percent:0"},
+            },
+            "series": [
+                {
+                    "id": "files",
+                    "label": "Files",
+                    "type": "column",
+                    "metric": {"key": "files"},
+                    "data_labels": {"position": "above", "format": "number:0"},
+                },
+                {
+                    "id": "share",
+                    "label": "Share",
+                    "type": "line",
+                    "axis": "secondary",
+                    "metric": {"key": "share"},
+                    "data_labels": {"position": "above", "format": "percent:1"},
+                },
+            ],
+        }
+    )
+    dataset = ChartResultSet(
+        categories=[ChartCategory(value="A", label="A")],
+        series=[
+            ChartSeriesResult(id="files", measure_name="m_files", values=[1234]),
+            ChartSeriesResult(id="share", measure_name="m_share", values=[0.42]),
+        ],
+    )
+
+    figure = cartesian_figure(config, dataset)
+    files_trace, share_trace = figure.data
+
+    assert files_trace.texttemplate == "%{text:.0f}"
+    assert float(files_trace.text[0]) == 1234
+
+    assert share_trace.texttemplate == "%{text:.1%}"
+    assert pytest.approx(float(share_trace.text[0])) == 0.42

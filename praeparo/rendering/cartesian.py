@@ -160,14 +160,28 @@ def _resolve_label_position(position: str | None, orientation: str) -> str:
     return resolved
 
 
-def _format_template(format_token: str) -> str:
-    token = format_token.strip().lower()
+def _precision_from_token(token: str, default: int = 0) -> int:
+    if ":" not in token:
+        return default
+    candidate = token.split(":", 1)[1].strip()
+    if not candidate:
+        return default
+    try:
+        return max(0, int(float(candidate)))
+    except ValueError:
+        return default
+
+
+def _format_template(format_token: str | None) -> str:
+    token = (format_token or "").strip().lower()
+    if not token:
+        return "%{text}"
     if token.startswith("percent"):
-        precision = token.split(":")[1] if ":" in token else "0"
-        return f"{{:.{precision}%}}"
+        precision = _precision_from_token(token, default=0)
+        return f"%{{text:.{precision}%}}"
     if token.startswith("number"):
-        precision = token.split(":")[1] if ":" in token else "0"
-        return f"{{:.{precision}f}}"
+        precision = _precision_from_token(token, default=0)
+        return f"%{{text:.{precision}f}}"
     return "%{text}"
 
 
