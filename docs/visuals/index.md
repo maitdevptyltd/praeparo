@@ -118,3 +118,11 @@ Need to surface the compiled statements? Register a compiler via
 `praeparo.visuals.dax_compilers.register_dax_compiler` so the shared CLI exposes
 `praeparo visual dax <type>` alongside the existing `run` / `artifacts`
 subcommands.
+
+## Python Metric Dataset Builder (Planned)
+
+Prefer a notebook workflow over YAML when sketching visuals? Review the
+[Python Metric Dataset Builder](python_metric_dataset_builder.md) design notes.
+The builder wraps the metric catalog, DAX planner, and datasource resolution so
+code-first clients can call `dataset.execute()` / `dataset.to_df()` (or `await dataset.ato_df()` in async workflows) while
+staying aligned with the same registry definitions.

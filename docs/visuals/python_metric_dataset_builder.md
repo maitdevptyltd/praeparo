@@ -1,0 +1,126 @@
+# Python Metric Dataset Builder
+
+> **Status:** Planned feature. This document describes the target API/behaviour that will land in Praeparo before downstream repos adopt it.
+
+## Overview
+
+The Metric Dataset Builder is a code-first companion to Praeparo’s YAML visuals. It lets notebook users (or any Python host) compose metric datasets with the same registry catalog, filters, and datasource resolution used by the CLI planners. The builder focuses on productivity:
+
+- Chain `.metric(...)`, `.expression(...)`, `.calculate(...)`, and `.grain(...)` without touching DAX.
+- Auto-detect datasources from the standard `datasources/*.yaml` files, but allow explicit overrides when needed.
+- Fetch records as `list[dict[str, object]]` with `.execute()` or await `.aexecute()` for async contexts.
+- Convert results to pandas via `builder.to_df()` (sync) or `await builder.ato_df()` and feed them straight into Plotly or other libraries.
+- Instantiate `MetricDatasetBuilder()` with no arguments to auto-discover the project layout from the current working directory, or pass an explicit context when you need overrides.
+
+## Quickstart
+
+```python
+from praeparo.datasets import MetricDatasetBuilder, MetricDatasetBuilderContext
+
+context = MetricDatasetBuilderContext.discover(
+    project_root="projects/ing",
+    metrics_root="registry/metrics",
+    datasources_root="projects/ing/datasources",
+)
+
+dataset = (
+    MetricDatasetBuilder(context)
+    .grain("'dim_calendar'[Month]")
+    .metric("documents_sent", label="Documents Sent")
+    .metric("documents_sent.automated", alias="automated_docs", label="Automated")
+    .expression(
+        "automation_share",
+        "documents_sent.automated / documents_sent",
+        label="Automation Share",
+    )
+    .calculate(["'dim_calendar'[IsCurrent] = TRUE()"])
+)
+
+rows = dataset.execute()      # list[dict[str, object]]
+df = dataset.to_df()          # pandas.DataFrame (requires pandas installed)
+# Async notebooks can call: df_async = await dataset.ato_df()
+
+# Shortcut: calling `MetricDatasetBuilder()` without the `context` argument triggers
+# the same discovery logic based on your current working directory.
+```
+
+Feed either `rows` or `df` into Plotly:
+
+```python
+import plotly.express as px
+
+fig = px.bar(df, x="'dim_calendar'[Month]", y="documents_sent", color="automation_share")
+fig.show()
+```
+
+## Builder Lifecycle
+
+1. **Context discovery** — `MetricDatasetBuilderContext.discover(...)` inspects the project root to locate the metric registry and datasource definitions. Instantiating the builder with no context runs the same discovery automatically using the current working directory. It mirrors how YAML visuals resolve datasources via `resolve_datasource`.
+2. **Dataset declaration** — Chain builder methods to add metrics, inline expressions, filters, and grain columns. Each call simply collects metadata; no DAX runs yet.
+3. **Planning** — `builder.plan()` (optional) returns a `MetricDatasetPlan` describing the generated measures, DAX statement, grain columns, measure_map, and placeholder list. YAML planners will reuse this plan under the hood.
+4. **Execution** — `.execute()` (sync) returns `list[dict]`, `.aexecute()` (async) returns a `MetricDatasetResult`, `.to_df()` converts rows to a DataFrame synchronously, and `.ato_df()` offers the awaitable equivalent.
+
+## Key Methods
+
+| Method | Description |
+| --- | --- |
+| `.metric(key, *, alias=None, label=None, calculate=None, allow_placeholder=False)` | Adds a registry metric or variant. Filters are merged with the metric’s own inheritance chain. |
+| `.expression(identifier, expression, *, label=None, value_type="number")` | Declares an inline expression built from existing metrics (`documents_sent.automated / documents_sent`). |
+| `.calculate(filters)` | Appends global filters (string or list) that wrap every measure via `CALCULATE`. |
+| `.define(blocks)` | Adds additional DEFINE blocks rendered before SUMMARIZECOLUMNS (useful for session-level calculations). |
+| `.grain(*columns)` | Overrides the SUMMARIZECOLUMNS grain (defaults to a single column). |
+| `.datasource(name=None)` | Pins the datasource file/key. If omitted, the builder auto-resolves using the same logic as YAML visuals. |
+| `.use_mock()` | Forces execution through the deterministic mock provider (handy offline). |
+| `.plan()` | Returns the reusable `MetricDatasetPlan`. |
+| `.execute()` | Synchronous convenience wrapper around `.aexecute()`. Returns `list[dict[str, object]]`. |
+| `.aexecute()` | Async execution that yields a `MetricDatasetResult` (rows, measure_map, metadata). |
+| `.to_df()` | Synchronous helper that returns a pandas DataFrame (imports pandas lazily). |
+| `.ato_df()` | Awaitable helper returning a pandas DataFrame. |
+
+## Datasource Resolution
+
+- When `datasource(name=...)` is not called, the builder looks for a datasource definition relative to the provided project root, mirroring the current `resolve_datasource` behaviour.
+- The `MetricDatasetBuilderContext.discover()` helper accepts overrides (`metrics_root`, `datasources_root`, `datasource_file`, `default_datasource`) so notebooks can opt into custom layouts.
+- Advanced users can pass a `ResolvedDataSource` instance directly via `.with_datasource(resolved)` to bypass file lookup.
+
+## Execution Modes
+
+- **`.execute()`**: returns the raw row payload (`list[dict]`) and blocks the calling thread. Internally it calls `asyncio.run(self.aexecute())`, matching the behaviour of today’s planners.
+- **`.aexecute()`**: awaitable flavour that fits naturally inside async notebooks or services. Returns a `MetricDatasetResult` (rows, measure map, placeholders, datasource metadata).
+- **`.to_df()`**: synchronous helper that converts the latest rows into a DataFrame. It lazy-imports pandas and raises a descriptive error if pandas is absent.
+- **`.ato_df()`**: awaitable helper that pairs with `.aexecute()` for async workflows.
+
+## Plotly & pandas Integration
+
+```python
+dataset = (
+    MetricDatasetBuilder(context)
+    .grain("'dim_calendar'[Month]")
+    .metric("documents_sent.total", alias="total")
+    .metric("documents_sent.automated")
+    .metric("documents_sent.manual")
+)
+
+df = dataset.to_df()
+fig = px.line(df, x="'dim_calendar'[Month]", y=["documents_sent.automated", "documents_sent.manual"])
+fig.update_layout(title="Documents Sent by Automation Channel")
+```
+
+Because the builder returns standard tabular data, any analytics library that understands sequences of dictionaries (or DataFrames) works out of the box.
+
+## Placeholder Handling
+
+- Use `allow_placeholder=True` inside `.metric(...)` to keep experimental notebooks running when a metric is missing from the catalog. Placeholder metrics resolve to `0` and are listed under `MetricDatasetResult.placeholders`.
+- Globally ignoring placeholders is also possible: `MetricDatasetBuilder(context, ignore_placeholders=True)`.
+- Production notebooks should keep placeholders disabled so missing metrics are surfaced early.
+
+## Relationship to YAML Visuals
+
+- `DaxBackedChartPlanner` and future planners will internally instantiate the builder so a single code path handles DAX generation.
+- Any improvements to the builder (measure naming, context filters, async execution) automatically benefit YAML visuals after the refactor.
+
+## Roadmap
+
+- Finalise API naming (builder class/module path) and land implementation upstream.
+- Add an `examples/notebooks/metric_dataset_builder.ipynb` showing ING automation visuals rebuilt in Plotly.
+- Update CLI docs once the planner refactor ships.

@@ -26,3 +26,7 @@ projects/
 3. Inspect the generated files in `build/` or wire the command into CI.
 
 Planned project-aware features include `praeparo dev <project>` for live reloads, project-level defaults for shared styling, and optional deployment metadata. For a concrete example, see [Automatic Documents](../examples/automatic_documents.md).
+
+## Upcoming: Python Metric Dataset Builder
+
+Notebook-first metric exploration will lean on the planned [Metric Dataset Builder design](python_metric_dataset_builder_plan.md). The document tracks the scope, API surface, and implementation phases before work begins.
