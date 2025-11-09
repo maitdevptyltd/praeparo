@@ -1,6 +1,6 @@
 # Python Metric Dataset Builder
 
-> **Status:** Planned feature. This document describes the target API/behaviour that will land in Praeparo before downstream repos adopt it.
+> **Status:** Core builder implementation is now available via `praeparo.datasets`. Planner integration remains pending while we validate the standalone API.
 
 ## Overview
 
@@ -11,6 +11,8 @@ The Metric Dataset Builder is a code-first companion to Praeparo’s YAML visual
 - Fetch records as `list[dict[str, object]]` with `.execute()` or await `.aexecute()` for async contexts.
 - Convert results to pandas via `builder.to_df()` (sync) or `await builder.ato_df()` and feed them straight into Plotly or other libraries.
 - Instantiate `MetricDatasetBuilder()` with no arguments to auto-discover the project layout from the current working directory, or pass an explicit context when you need overrides.
+- Call `.render()` to inspect the generated `SUMMARIZECOLUMNS` without executing the dataset.
+- Use `.use_mock()` (or context discovery with `use_mock=True`) to keep notebook iterations deterministic without reaching Power BI.
 
 ## Quickstart
 

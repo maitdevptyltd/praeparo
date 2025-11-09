@@ -1,0 +1,130 @@
+"""Builder context discovery helpers."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Mapping, Sequence
+
+from praeparo.visuals.dax import DEFAULT_MEASURE_TABLE, normalise_define_blocks, normalise_filter_group
+
+
+def _ensure_path(value: str | Path | None, *, default: Path) -> Path:
+    """Return *value* as a resolved path, falling back to *default* when missing."""
+
+    if value is None:
+        return default.expanduser().resolve(strict=False)
+    candidate = Path(value)
+    return candidate.expanduser().resolve(strict=False)
+
+
+def _discover_metrics_root(project_root: Path) -> Path:
+    """Find the most likely metrics directory relative to *project_root*."""
+
+    candidates = [project_root / "registry" / "metrics", project_root / "metrics"]
+    for candidate in candidates:
+        if candidate.is_dir():
+            return candidate
+    return project_root
+
+
+def _discover_datasources_root(project_root: Path) -> Path | None:
+    """Return the first datasources folder under *project_root*, if any."""
+
+    candidate = project_root / "datasources"
+    return candidate if candidate.is_dir() else None
+
+
+def _select_datasource_file(datasources_root: Path | None) -> Path | None:
+    """Heuristically choose a datasource YAML file from *datasources_root*."""
+
+    if datasources_root is None or not datasources_root.is_dir():
+        return None
+
+    priority = ("live", "prod", "default")
+    yaml_files = sorted(datasources_root.glob("*.yml")) + sorted(datasources_root.glob("*.yaml"))
+
+    for stem in priority:
+        for candidate in yaml_files:
+            if candidate.stem == stem:
+                return candidate
+
+    return yaml_files[0] if len(yaml_files) == 1 else None
+
+
+def normalise_filters(filters: Sequence[str] | str | None) -> tuple[str, ...]:
+    """Expose filter normalisation so builder code can reuse the same helper."""
+
+    return normalise_filter_group(filters)
+
+
+@dataclass(frozen=True)
+class MetricDatasetBuilderContext:
+    """Resolved environment information used by the metric dataset builder."""
+
+    project_root: Path
+    metrics_root: Path
+    datasources_root: Path | None = None
+    datasource_file: Path | None = None
+    default_datasource: str | None = None
+    case_key: str | None = None
+    measure_table: str = DEFAULT_MEASURE_TABLE
+    ignore_placeholders: bool = False
+    global_filters: tuple[str, ...] = field(default_factory=tuple)
+    define_blocks: tuple[str, ...] = field(default_factory=tuple)
+    metadata: Mapping[str, object] = field(default_factory=dict)
+    use_mock: bool = False
+
+    @classmethod
+    def discover(
+        cls,
+        *,
+        project_root: str | Path | None = None,
+        metrics_root: str | Path | None = None,
+        datasources_root: str | Path | None = None,
+        datasource_file: str | Path | None = None,
+        default_datasource: str | None = None,
+        case_key: str | None = None,
+        measure_table: str | None = None,
+        ignore_placeholders: bool = False,
+        calculate: Sequence[str] | str | None = None,
+        define: Sequence[str] | str | None = None,
+        metadata: Mapping[str, object] | None = None,
+        use_mock: bool = False,
+    ) -> "MetricDatasetBuilderContext":
+        """Resolve the builder context by inspecting the caller's working tree."""
+
+        base = _ensure_path(project_root, default=Path.cwd().resolve())
+        metrics_path = _ensure_path(metrics_root, default=_discover_metrics_root(base))
+
+        if datasources_root is None:
+            datasources_path = _discover_datasources_root(base)
+        else:
+            datasources_path = _ensure_path(datasources_root, default=Path(datasources_root))
+
+        if datasource_file is not None:
+            datasource_path = _ensure_path(datasource_file, default=Path(datasource_file))
+        else:
+            datasource_path = _select_datasource_file(datasources_path)
+
+        default_reference = default_datasource
+        if default_reference is None and datasource_path is not None:
+            default_reference = str(datasource_path)
+
+        return cls(
+            project_root=base,
+            metrics_root=metrics_path,
+            datasources_root=datasources_path,
+            datasource_file=datasource_path,
+            default_datasource=default_reference,
+            case_key=case_key,
+            measure_table=measure_table or DEFAULT_MEASURE_TABLE,
+            ignore_placeholders=ignore_placeholders,
+            global_filters=normalise_filters(calculate),
+            define_blocks=normalise_define_blocks(define),
+            metadata=dict(metadata or {}),
+            use_mock=use_mock,
+        )
+
+
+__all__ = ["MetricDatasetBuilderContext", "normalise_filters"]

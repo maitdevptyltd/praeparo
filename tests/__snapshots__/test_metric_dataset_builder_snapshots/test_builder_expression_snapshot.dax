@@ -1,0 +1,30 @@
+DEFINE
+  TABLE 'adhoc' = { { BLANK() } }
+  DEFINE MEASURE 'dim_calendar'[Dummy] = 1
+  MEASURE 'adhoc'[builder_snapshot_expression_documents_sent_manual] =
+    CALCULATE(
+        COUNTROWS ( 'fact_documents' ),
+        'fact_documents'[IsManual] = TRUE()
+    )
+  MEASURE 'adhoc'[builder_snapshot_expression_documents_sent_automated] =
+    CALCULATE(
+        COUNTROWS ( 'fact_documents' ),
+        'fact_documents'[IsManual] = FALSE()
+    )
+  MEASURE 'adhoc'[builder_snapshot_expression_automation_share] =
+    ((CALCULATE(
+        COUNTROWS ( 'fact_documents' ),
+        'fact_documents'[IsManual] = FALSE()
+    )) / (CALCULATE(
+        COUNTROWS ( 'fact_documents' ),
+        'fact_documents'[IsManual] = TRUE()
+    )))
+
+EVALUATE
+SUMMARIZECOLUMNS(
+    'dim_calendar'[Month],
+    'dim_calendar'[Year],
+    "builder_snapshot_expression_documents_sent_manual", 'adhoc'[builder_snapshot_expression_documents_sent_manual],
+    "builder_snapshot_expression_documents_sent_automated", 'adhoc'[builder_snapshot_expression_documents_sent_automated],
+    "builder_snapshot_expression_automation_share", 'adhoc'[builder_snapshot_expression_automation_share]
+)

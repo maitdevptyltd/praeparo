@@ -109,6 +109,8 @@ Additional notes:
 
 ## Implementation Phases
 
+> **Progress (Nov 7, 2025):** Phases 1–3 are now implemented upstream (`praeparo.datasets`). Planner refactor (phase 4) plus downstream docs/notebooks (phases 5–6) remain in backlog.
+
 1. **Context & Builder Scaffolding**
    - Add `praeparo/datasets/__init__.py` with context + builder classes.
    - Implement fluent API (metrics, expressions, filters, grain, metadata, datasource overrides).

@@ -1,0 +1,25 @@
+DEFINE
+  TABLE 'adhoc' = { { BLANK() } }
+  MEASURE 'adhoc'[builder_snapshot_primary_documents_sent] =
+    COUNTROWS ( 'fact_documents' )
+  MEASURE 'adhoc'[builder_snapshot_primary_documents_sent_manual] =
+    CALCULATE(
+        COUNTROWS ( 'fact_documents' ),
+        'fact_documents'[IsManual] = TRUE()
+    )
+  MEASURE 'adhoc'[builder_snapshot_primary_documents_sent_automated] =
+    CALCULATE(
+        COUNTROWS ( 'fact_documents' ),
+        'fact_documents'[IsManual] = FALSE()
+    )
+
+EVALUATE
+CALCULATETABLE(
+    SUMMARIZECOLUMNS(
+        'dim_calendar'[Month],
+        "builder_snapshot_primary_documents_sent", 'adhoc'[builder_snapshot_primary_documents_sent],
+        "builder_snapshot_primary_documents_sent_manual", 'adhoc'[builder_snapshot_primary_documents_sent_manual],
+        "builder_snapshot_primary_documents_sent_automated", 'adhoc'[builder_snapshot_primary_documents_sent_automated]
+    ),
+    'dim_calendar'[IsCurrent] = TRUE()
+)

@@ -70,6 +70,7 @@ This guide keeps agents aligned while evolving Praeparo. It explains responsibil
 
 - Favour simple, composable designs with clear extension points. Avoid unnecessary abstraction layers.
 - Add docstrings or concise comments when behaviour is non-obvious; focus on the “why” behind decisions rather than restating code.
+- Use short paragraph comments to introduce any non-trivial block (setup vs planning vs execution) so intent is clear before readers dive into the code.
 - Leverage Pydantic models for configuration contracts and keep validators close to the data they enforce.
 - Keep CLI layers minimal and delegate calculations/rendering to reusable modules.
 
