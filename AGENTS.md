@@ -75,26 +75,33 @@ This guide keeps agents aligned while evolving Praeparo. It explains responsibil
 - **Keep comments short.** One or two lines max—otherwise introduce a helper or docstring.
 - **Use paragraph comments for multi-step blocks.** Example:
   ```python
-  # Mock pipeline: seed deterministic base rows before computing expression series.
+  # Seed a predictable baseline so the data shape is obvious before we run anything live.
   rows = iterate_mock_values(...)
   _apply_expression_mocks(rows)
 
-  # Live execution: resolve datasource overrides and run the Power BI client.
+  # Now repeat the same steps against the real datasource for production output.
   datasource = _resolve_datasource(...)
   result = asyncio.run(builder.aexecute())
   ```
   Keep narrative comments at the paragraph level—avoid repeating what each line does.
 - **Docstring + paragraph for multi-phase helpers.** When a helper orchestrates multiple phases (e.g., context discovery → planning → execution), start with a docstring describing the flow, then use paragraph comments for each phase.
 - **Shape code into paragraphs.** Separate related ideas with blank lines so each paragraph handles one concern (validation → planning → execution). This mirrors how we write prose; keep lines tight when they belong together, otherwise add a blank line and a short intent comment before switching topics.
+  ```python
+  # Seed steady values so the structure of the dataset is obvious.
+  rows = iterate_mock_values(...)
+
+  # Recompute expression series so they stay in lockstep with those values.
+  _apply_expression_mocks(rows)
+  ```
 - **Think of code as prose.** Docstring → paragraph comment → implementation:
   ```python
   def _build_mock_rows(...):
-      """Mock pipeline: seed base metrics, then replay expression series."""
+      """Dry-run the dataset with seeded values, then align expression series to match."""
 
-      # Base metrics paragraph.
+      # Populate base metrics with steady values so reviewers can scan the shape.
       rows = iterate_mock_values(...)
 
-      # Expression replay paragraph.
+      # Recompute expression series so ratios remain consistent with that shape.
       _apply_expression_mocks(rows)
   ```
   This keeps intent obvious without drowning the reader in line-by-line commentary.

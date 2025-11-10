@@ -19,7 +19,7 @@ Praeparo needs a single, reusable execution engine that transforms visual config
   - `matrix/planners/`: concrete matrix planners (mock, DAX-backed) that adhere to a generic planner protocol.
   - `column/planners/`, etc.: future planner modules for other visual types.
   - `dax/clients/`: implementations of `DaxExecutionClient` such as `PowerBIDaxClient`, Fabric adapters, or fixtures that replay captured responses.
-  - `registry.py` / `resolvers.py`: helpers used by planners that still need case-based overrides or datasource lookups (wrapping today’s registry/resolver behaviour).
+  - `registry.py` / `resolvers.py`: helpers used by planners that still need case-based overrides or datasource lookups (wrapping todays registry/resolver behaviour).
 - Output creation remains decoupled through `OutputTarget` instances. The core engine renders a Plotly figure once and hands it to whichever output adapters (HTML, PNG, JSON) were requested in `PipelineOptions`.
 
 ## Example Usage
@@ -109,7 +109,7 @@ This layering keeps business logic (plan building, dataset normalisation) separa
 ## Next Steps
 
 1. Implement `QueryPlannerProvider` and refactor `VisualPipeline` to resolve planners through that abstraction rather than the current matrix resolver.
-2. Extract `MatrixQueryPlanner` from today’s resolver/provider code and introduce a thin adapter so behaviour stays identical while the new interface beds in.
+2. Extract `MatrixQueryPlanner` from todays resolver/provider code and introduce a thin adapter so behaviour stays identical while the new interface beds in.
 3. Introduce concrete `DaxExecutionClient` implementations (starting with Power BI) and ensure planners depend on clients rather than direct data calls.
 4. Offer a convenience builder for environment-driven planner overrides (the integration suite still assembles overrides manually).
 5. Introduce planner interfaces for upcoming visuals (e.g. `ColumnQueryPlanner`) and keep them generic so they can return different dataset shapes without touching the pipeline core.

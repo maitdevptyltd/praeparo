@@ -29,6 +29,7 @@ Praeparo bridges this gap. It lets you keep using Power BI as the **data engine*
 - **Composition** — Just like pages in a web framework, you compose components into slides.
 - **Customization** — Plotly rendering gives full control over styling, formatting, and layouts.
 - **Export** — The build process generates **ready-to-share PPTX decks**, fully branded and up to date.
+- **Builder-first execution** — Both YAML planners and inline notebooks feed the same `MetricDatasetBuilder`, so live Power BI runs and deterministic mock previews stay in sync without duplicating DAX logic.
 
 ## Example
 
