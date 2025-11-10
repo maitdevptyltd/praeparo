@@ -72,7 +72,10 @@ fig.show()
 | `.define(blocks)` | Adds additional DEFINE blocks rendered before SUMMARIZECOLUMNS (useful for session-level calculations). |
 | `.grain(*columns)` | Overrides the SUMMARIZECOLUMNS grain (defaults to a single column). |
 | `.datasource(name=None)` | Pins the datasource file/key. If omitted, the builder auto-resolves using the same logic as YAML visuals. |
-| `.use_mock()` | Forces execution through the deterministic mock provider (handy offline). |
+| `.use_mock(flag=True)` | Forces execution through the deterministic mock provider (handy offline). |
+| `.mock_rows(count)` | Overrides the number of mock grain rows emitted when mocks are enabled. |
+| `.mock_column(column, values)` | Registers deterministic mock values for a grain column (e.g., month labels). |
+| `.mock_series(series_id, *, mean=None, trend=None, trend_range=None, factory="count")` | Tunes mock value generation per series (counts, ratios, etc.) so stacked visuals look realistic. |
 | `.plan()` | Returns the reusable `MetricDatasetPlan`. |
 | `.execute()` | Synchronous convenience wrapper around `.aexecute()`. Returns `list[dict[str, object]]`. |
 | `.aexecute()` | Async execution that yields a `MetricDatasetResult` (rows, measure_map, metadata). |
@@ -91,6 +94,31 @@ fig.show()
 - **`.aexecute()`**: awaitable flavour that fits naturally inside async notebooks or services. Returns a `MetricDatasetResult` (rows, measure map, placeholders, datasource metadata).
 - **`.to_df()`**: synchronous helper that converts the latest rows into a DataFrame. It lazy-imports pandas and raises a descriptive error if pandas is absent.
 - **`.ato_df()`**: awaitable helper that pairs with `.aexecute()` for async workflows.
+
+## Mock Controls
+
+Mock datasets are a first-class builder feature, mirroring what Praeparo’s YAML planners rely on when screenshots or Plotly reviews are needed. Combine the helpers below to shape the offline payload:
+
+```python
+dataset = (
+    MetricDatasetBuilder()
+    .grain("'dim_calendar'[Month]")
+    .metric("documents_sent")
+    .metric("documents_sent.manual", alias="manual")
+    .use_mock(True)                    # stay offline
+    .mock_rows(3)                      # emit exactly three grain rows
+    .mock_column("'dim_calendar'[Month]", ["Jan-25", "Feb-25", "Mar-25"])
+    .mock_series("documents_sent", mean=520, trend=35)
+    .mock_series("manual", mean=480, trend=-40)
+)
+rows = dataset.execute()
+```
+
+- `.mock_rows(count)` keeps mock row counts stable (defaults to 4 when omitted).
+- `.mock_column(column, values)` lets you feed real labels (e.g., month names) so downstream charts read naturally.
+- `.mock_series(series_id, mean=..., trend=..., trend_range=(start, end))` tunes per-series value generation.
+
+When YAML visuals define `category.mock_values` or per-series `metric.mock` blocks, the cartesian planner forwards those settings straight into the builder. Notebooks gain the same ergonomics by calling the helper methods directly.
 
 ## Plotly & pandas Integration
 

@@ -26,6 +26,8 @@ class MetricDatasetPlan:
     placeholders: Tuple[str, ...]
     statement: str
     measure_table: str
+    mock_rows: int | None = None
+    mock_values: Mapping[str, Sequence[object]] | None = None
 
     def series_column(self, series_id: str) -> str:
         """Expose the storage column used by *series_id* (alias for now)."""
@@ -99,4 +101,3 @@ def lookup_column(raw: Mapping[str, object], column: str) -> object | None:
 
 
 __all__ = ["MetricDatasetPlan", "MetricDatasetResult", "lookup_column"]
-

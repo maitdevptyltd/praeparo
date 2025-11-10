@@ -6,11 +6,12 @@ import asyncio
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Mapping, Sequence
+from typing import Mapping, MutableMapping, Sequence
 
 from praeparo.datasources import DataSourceConfigError, ResolvedDataSource, resolve_datasource
 from praeparo.metrics import MetricDaxBuilder, load_metric_catalog
 from praeparo.powerbi import PowerBIClient, PowerBISettings
+from praeparo.visuals.dax import expressions as dax_expressions
 from praeparo.visuals.dax import (
     DEFAULT_MEASURE_TABLE,
     MetricCompilationCache,
@@ -25,9 +26,12 @@ from praeparo.visuals.dax import (
     wrap_expression_with_filters,
 )
 from praeparo.visuals.dax.planner_core import MeasurePlan, NameStrategy, VisualPlan, default_name_strategy
+from praeparo.visuals.dax.expressions import ParsedExpression, parse_metric_expression
 
 from .context import MetricDatasetBuilderContext, normalise_filters
+from .expression_eval import evaluate_expression
 from .models import MetricDatasetPlan, MetricDatasetResult, lookup_column
+from .mock import MockSeriesConfig, iterate_mock_values
 
 
 @dataclass
@@ -76,6 +80,11 @@ class MetricDatasetBuilder:
         self._name_strategy = name_strategy or default_name_strategy
         self._plan_cache: MetricDatasetPlan | None = None
         self._last_result: MetricDatasetResult | None = None
+        self._mock_row_count: int | None = None
+        self._mock_column_values: dict[str, Sequence[object]] = {}
+        self._mock_series_profiles: dict[str, MockSeriesConfig] = {}
+        self._expression_cache: dict[str, dax_expressions.ParsedExpression] = {}
+        self._reference_measure: dict[str, str] = {}
 
     # ------------------------------------------------------------------
     # Fluent configuration surface: mutate state without triggering I/O.
@@ -157,6 +166,42 @@ class MetricDatasetBuilder:
         self._use_mock = flag
         return self
 
+    def mock_rows(self, count: int | None) -> "MetricDatasetBuilder":
+        """Override the number of mock rows emitted when `use_mock(True)` is active."""
+
+        if count is not None and count <= 0:
+            raise ValueError("mock rows must be positive when provided")
+        self._mock_row_count = count
+        self._invalidate_plan()
+        return self
+
+    def mock_column(self, column: str, values: Sequence[object]) -> "MetricDatasetBuilder":
+        """Register deterministic mock values for a grain column."""
+
+        self._mock_column_values[column] = tuple(values)
+        self._invalidate_plan()
+        return self
+
+    def mock_series(
+        self,
+        series_id: str,
+        *,
+        mean: float | None = None,
+        trend: float | None = None,
+        trend_range: tuple[float, float] | None = None,
+        factory: str | None = None,
+    ) -> "MetricDatasetBuilder":
+        """Apply a mock profile to a series so pipeline visuals can control trends/means."""
+
+        self._mock_series_profiles[series_id] = MockSeriesConfig(
+            factory=factory or "count",
+            mean=mean,
+            trend=trend,
+            trend_range=trend_range,
+        )
+        self._invalidate_plan()
+        return self
+
     def name_strategy(self, strategy: NameStrategy) -> "MetricDatasetBuilder":
         self._name_strategy = strategy
         self._invalidate_plan()
@@ -231,6 +276,8 @@ class MetricDatasetBuilder:
     def _invalidate_plan(self) -> None:
         self._plan_cache = None
         self._last_result = None
+        self._expression_cache.clear()
+        self._reference_measure.clear()
 
     def _allocate_series_id(self, preferred: str) -> str:
         candidate = preferred or f"series_{len(self._series) + 1}"
@@ -258,6 +305,13 @@ class MetricDatasetBuilder:
 
         for series in self._series:
             resolved_reference, expression = self._resolve_expression(series, builder, cache, placeholders)
+            if series.source == "expression" and series.expression:
+                # Cache the parsed AST so the mock evaluator can reuse it without reparsing.
+                try:
+                    self._expression_cache[series.series_id] = dax_expressions.parse_metric_expression(series.expression)
+                except Exception:  # pragma: no cover - validation handled earlier
+                    # Drop any stale entry so failed parses don't linger between plan rebuilds.
+                    self._expression_cache.pop(series.series_id, None)
             measure_references.append(resolved_reference)
             measure_plans.append(
                 MeasurePlan(
@@ -288,6 +342,7 @@ class MetricDatasetBuilder:
             )
             populated_measures.append(populated)
             measure_map[series.series_id] = measure_name
+            self._reference_measure[series.reference] = measure_name
 
         global_filters = combine_filter_groups(self._context.global_filters, self._global_filters)
         define_blocks = tuple(self._define_blocks) + tuple(self._context.define_blocks)
@@ -305,6 +360,9 @@ class MetricDatasetBuilder:
         )
         statement = render_visual_plan(visual_plan, measure_table=measure_table)
 
+        mock_values = {column: tuple(values) for column, values in self._mock_column_values.items()} or None
+        row_count = self._mock_row_count
+
         return MetricDatasetPlan(
             slug=self._slug,
             measures=visual_plan.measures,
@@ -316,6 +374,8 @@ class MetricDatasetBuilder:
             placeholders=visual_plan.placeholders,
             statement=statement,
             measure_table=measure_table,
+            mock_rows=row_count,
+            mock_values=mock_values,
         )
 
     def _resolve_expression(
@@ -384,16 +444,26 @@ class MetricDatasetBuilder:
             rows = await client.execute_dax(dataset_id, plan.statement, group_id=datasource.workspace_id)
         return list(rows)
 
-    def _build_mock_rows(self, plan: MetricDatasetPlan) -> list[Mapping[str, object]]:
+    def _build_mock_rows(self, plan: MetricDatasetPlan) -> list[dict[str, object]]:
         # Simple deterministic mock payload so notebooks/tests can run without Power BI access.
-        rows: list[Mapping[str, object]] = []
-        for index in range(1, 5):
-            record: dict[str, object] = {}
-            for column in plan.grain_columns or ("__row__",):
-                record[column] = f"{column}:{index}"
-            for measure_name in plan.measure_map.values():
-                record[measure_name] = float(index * 100)
+        mock_count = plan.mock_rows or self._mock_row_count or 4
+        rows: list[dict[str, object]] = []
+        series_profiles: dict[str, MockSeriesConfig] = {}
+        for series_id in plan.series_order:
+            series_profiles[series_id] = self._mock_series_profiles.get(series_id, MockSeriesConfig())
+
+        column_values = plan.mock_values or self._mock_column_values or {}
+
+        # Generate base mock rows using series-level hints, then layer expression values on top.
+        for record in iterate_mock_values(
+            count=mock_count,
+            columns=plan.grain_columns,
+            column_values=column_values,
+            measure_map=plan.measure_map,
+            series_mocks=series_profiles,
+        ):
             rows.append(record)
+        self._apply_expression_mocks(rows, plan)
         return rows
 
     def _normalise_rows(
@@ -411,6 +481,37 @@ class MetricDatasetBuilder:
                 record[series_id] = raw.get(measure_name)
             normalised.append(record)
         return normalised
+
+    def _apply_expression_mocks(
+        self,
+        rows: list[dict[str, object]],
+        plan: MetricDatasetPlan,
+    ) -> None:
+        """Recompute expression-driven series so mock datasets mirror live behaviour.
+
+        Mock generation happens in two stages: (1) emit deterministic values for each base metric
+        via `iterate_mock_values`, and (2) replay every expression using the cached AST so derived
+        series (ratios, shares, etc.) stay consistent with those base values. Skipping this second
+        pass would leave expression series pegged at zero whenever mocks are enabled.
+        """
+
+        if not self._expression_cache:
+            return
+
+        for series in self._series:
+            if series.source != "expression":
+                continue
+            parsed = self._expression_cache.get(series.series_id)
+            measure_name = plan.measure_map.get(series.series_id)
+            if parsed is None or measure_name is None:
+                continue
+            for row in rows:
+                substitutions: dict[str, float] = {}
+                for reference, measure in self._reference_measure.items():
+                    value = row.get(measure)
+                    if isinstance(value, (int, float)):
+                        substitutions[reference] = float(value)
+                row[measure_name] = evaluate_expression(parsed, substitutions)
 
 
 __all__ = ["MetricDatasetBuilder"]
