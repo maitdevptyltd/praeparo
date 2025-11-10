@@ -70,7 +70,7 @@ This guide keeps agents aligned while evolving Praeparo. It explains responsibil
 ## Code Style Preferences
 
 - **Prefer simple designs.** Favor composable helpers with clear extension points; avoid over-engineering.
-- **Avoid monolithic files.** Break features across modules/packages that mirror capabilities so reviews stay focused and diffs stay small.
+- **Avoid monolithic files.** Break features across modules/packages that mirror capabilities so reviews stay focused and diffs stay small. Lean on SOLID-style separation of concerns so each module owns one responsibility and can evolve independently.
 - **Prefer names over comments.** If intent still isn’t obvious, add a short docstring or paragraph comment that explains the *why*.
 - **Comment intent, not syntax.** Explain why a block exists instead of paraphrasing the code.
 - **Comment at the boundary.** Place comments above branches, side-effects, or multi-step helpers.
