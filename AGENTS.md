@@ -68,11 +68,40 @@ This guide keeps agents aligned while evolving Praeparo. It explains responsibil
 
 ## Code Style Preferences
 
-- Favour simple, composable designs with clear extension points. Avoid unnecessary abstraction layers.
-- Add docstrings or concise comments when behaviour is non-obvious; focus on the “why” behind decisions rather than restating code.
-- Use short paragraph comments to introduce any non-trivial block (setup vs planning vs execution) so intent is clear before readers dive into the code.
-- Leverage Pydantic models for configuration contracts and keep validators close to the data they enforce.
-- Keep CLI layers minimal and delegate calculations/rendering to reusable modules.
+- **Prefer simple designs.** Favor composable helpers with clear extension points; avoid over-engineering.
+- **Prefer names over comments.** If intent still isn’t obvious, add a short docstring or paragraph comment that explains the *why*.
+- **Comment intent, not syntax.** Explain why a block exists instead of paraphrasing the code.
+- **Comment at the boundary.** Place comments above branches, side-effects, or multi-step helpers.
+- **Keep comments short.** One or two lines max—otherwise introduce a helper or docstring.
+- **Use paragraph comments for multi-step blocks.** Example:
+  ```python
+  # Mock pipeline: seed deterministic base rows before computing expression series.
+  rows = iterate_mock_values(...)
+  _apply_expression_mocks(rows)
+
+  # Live execution: resolve datasource overrides and run the Power BI client.
+  datasource = _resolve_datasource(...)
+  result = asyncio.run(builder.aexecute())
+  ```
+  Keep narrative comments at the paragraph level—avoid repeating what each line does.
+- **Docstring + paragraph for multi-phase helpers.** When a helper orchestrates multiple phases (e.g., context discovery → planning → execution), start with a docstring describing the flow, then use paragraph comments for each phase.
+- **Shape code into paragraphs.** Separate related ideas with blank lines so each paragraph handles one concern (validation → planning → execution). This mirrors how we write prose; keep lines tight when they belong together, otherwise add a blank line and a short intent comment before switching topics.
+- **Think of code as prose.** Docstring → paragraph comment → implementation:
+  ```python
+  def _build_mock_rows(...):
+      """Mock pipeline: seed base metrics, then replay expression series."""
+
+      # Base metrics paragraph.
+      rows = iterate_mock_values(...)
+
+      # Expression replay paragraph.
+      _apply_expression_mocks(rows)
+  ```
+  This keeps intent obvious without drowning the reader in line-by-line commentary.
+- **Elevate pipeline docs.** Start multi-stage helpers with a short docstring summarising the flow.
+- **Use guard clauses.** Early exits keep the remaining paragraphs flat and easy to scan.
+- **Leverage Pydantic.** Keep validators close to the data they enforce.
+- **Keep CLIs thin.** Delegate calculations/rendering to reusable modules.
 
 ## Communication Norms
 
