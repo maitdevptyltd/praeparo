@@ -6,6 +6,7 @@ import asyncio
 import os
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Mapping
 
 import httpx
@@ -22,6 +23,10 @@ class PowerBIAuthenticationError(RuntimeError):
 
 class PowerBIQueryError(RuntimeError):
     """Raised when a DAX query execution fails."""
+
+
+class PowerBIExportError(RuntimeError):
+    """Raised when Power BI ExportToFile fails."""
 
 
 @dataclass
@@ -149,6 +154,80 @@ class PowerBIClient:
 
         return [_normalise_row_keys(row) for row in rows]
 
+    async def export_to_file(
+        self,
+        *,
+        group_id: str,
+        report_id: str,
+        payload: Mapping[str, Any],
+        dest_path: str | os.PathLike[str],
+        mode: str = "report",
+        poll_interval: float = 2.0,
+        timeout: float = 300.0,
+    ) -> str:
+        """Call ExportToFile for reports or paginated reports and persist the result.
+
+        The request kicks off an export job, polls until completion (or failure),
+        then downloads the file to `dest_path`. Callers choose the export payload
+        (format/pages/filters) so this helper stays transport-focused.
+        """
+
+        token = await self.get_access_token()
+        base_url = _export_base_url(group_id, report_id, mode)
+        headers = {"Authorization": f"Bearer {token}"}
+
+        start = await self._client.post(f"{base_url}/ExportTo", headers=headers, json=payload)
+        if start.status_code not in (200, 202):
+            raise PowerBIExportError(
+                f"ExportToFile failed ({start.status_code}): {start.text}"
+            )
+
+        try:
+            export_id = start.json()["id"]
+        except Exception as exc:
+            raise PowerBIExportError("ExportToFile response missing export id.") from exc
+
+        deadline = time.time() + timeout
+        status = "Running"
+        retry_after: float | None = None
+        while status not in {"Succeeded", "Failed"}:
+            # Pace polling using either Retry-After from the service or the configured interval.
+            if time.time() > deadline:
+                raise PowerBIExportError("ExportToFile polling timed out.")
+
+            wait_for = retry_after if retry_after and retry_after > 0 else poll_interval
+            await asyncio.sleep(wait_for)
+
+            status_resp = await self._client.get(
+                f"{base_url}/exports/{export_id}",
+                headers=headers,
+            )
+            if status_resp.status_code not in (200, 202):
+                raise PowerBIExportError(
+                    f"Failed to poll export status ({status_resp.status_code}): {status_resp.text}"
+                )
+            payload = status_resp.json()
+            status = payload.get("status", "Unknown")
+            retry_after = _parse_retry_after(status_resp)
+
+            if status == "Failed":
+                message = payload.get("error", {}).get("message") if isinstance(payload, dict) else None
+                raise PowerBIExportError(f"Export failed: {message or 'unknown error'}")
+
+        file_resp = await self._client.get(
+            f"{base_url}/exports/{export_id}/file",
+            headers=headers,
+        )
+        if file_resp.status_code != 200:
+            raise PowerBIExportError(
+                f"Failed to download export file ({file_resp.status_code}): {file_resp.text}"
+            )
+
+        dest = os.fspath(dest_path)
+        Path(dest).parent.mkdir(parents=True, exist_ok=True)
+        Path(dest).write_bytes(file_resp.content)
+        return dest
+
 
 __all__ = [
     "PowerBIClient",
@@ -156,6 +235,7 @@ __all__ = [
     "PowerBIAuthenticationError",
     "PowerBIConfigurationError",
     "PowerBIQueryError",
+    "PowerBIExportError",
 ]
 
 
@@ -178,3 +258,18 @@ def _strip_bracket_wrappers(label: str) -> str | None:
     if not candidate or candidate == label:
         return None
     return candidate
+
+
+def _export_base_url(group_id: str, report_id: str, mode: str) -> str:
+    route = "rdlreports" if mode == "paginated" else "reports"
+    return f"https://api.powerbi.com/v1.0/myorg/groups/{group_id}/{route}/{report_id}"
+
+
+def _parse_retry_after(response) -> float | None:
+    try:
+        header = response.headers.get("Retry-After")
+        if header is None:
+            return None
+        return float(header)
+    except Exception:
+        return None

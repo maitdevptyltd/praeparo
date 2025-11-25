@@ -219,6 +219,12 @@ def _build_run_specific_parser() -> argparse.ArgumentParser:
         help="Destination for rendered PNG output.",
     )
     parser.add_argument(
+        "--build-artifacts-dir",
+        dest="build_artifacts_dir",
+        type=Path,
+        help="Directory for build artifacts emitted by visuals (e.g. exported PPTX/PNG). Defaults to .tmp/pbi_exports for Power BI visuals.",
+    )
+    parser.add_argument(
         "--png-scale",
         dest="png_scale",
         type=float,
@@ -427,6 +433,9 @@ def _prepare_metadata(args: argparse.Namespace, cli: VisualCLIOptions | None) ->
         if value is not None:
             metadata[field] = value
     metadata["data_mode"] = _normalise_data_mode(getattr(args, "data_mode", None))
+    build_artifacts_dir = getattr(args, "build_artifacts_dir", None)
+    if build_artifacts_dir is not None:
+        metadata["build_artifacts_dir"] = build_artifacts_dir
     grain_override = getattr(args, "grain", None)
     if grain_override:
         metadata["grain"] = tuple(grain_override)

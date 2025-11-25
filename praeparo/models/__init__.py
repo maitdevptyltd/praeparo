@@ -24,6 +24,16 @@ from .cartesian import (
 )
 from .matrix import MatrixConfig, MatrixFilterConfig, MatrixTotals, MatrixValueConfig, RowTemplate
 from .visual_base import BaseVisualConfig
+from .powerbi import (
+    PowerBIExportFormat,
+    PowerBIFilterMergeStrategy,
+    PowerBIParameter,
+    PowerBIRenderOptions,
+    PowerBISource,
+    PowerBIVisualConfig,
+    PowerBIVisualMode,
+    PowerBIPaginatedArtifact,
+)
 
 __all__ = [
     "BaseVisualConfig",
@@ -53,4 +63,12 @@ __all__ = [
     "SeriesTransformMode",
     "ValueAxesConfig",
     "LegendPosition",
+    "PowerBIExportFormat",
+    "PowerBIFilterMergeStrategy",
+    "PowerBIParameter",
+    "PowerBIRenderOptions",
+    "PowerBISource",
+    "PowerBIVisualConfig",
+    "PowerBIVisualMode",
+    "PowerBIPaginatedArtifact",
 ]

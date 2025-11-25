@@ -23,6 +23,7 @@ from .models.matrix import (
 )
 from .utils import normalize_dax_expression
 from .visuals import cartesian as _visuals_cartesian  # noqa: F401
+from .visuals import powerbi as _visuals_powerbi  # noqa: F401
 
 __all__ = [
     "MetricDaxBuilder",
