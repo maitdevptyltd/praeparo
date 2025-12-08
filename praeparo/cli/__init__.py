@@ -20,6 +20,12 @@ from praeparo.pipeline import (
     VisualPipeline,
     build_default_query_planner_provider,
 )
+from praeparo.pack import (
+    PackConfigError,
+    create_pack_jinja_env,
+    load_pack_config,
+    run_pack,
+)
 from praeparo.visuals.dax_compilers import (
     DaxCompilerRegistration,
     get_dax_compiler_registration,
@@ -234,6 +240,123 @@ def _build_run_specific_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _register_pack_parsers(parent: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+    pack_parser = parent.add_parser("pack", help="Pack pipeline commands.")
+    pack_subparsers = pack_parser.add_subparsers(dest="pack_command", metavar="SUBCOMMAND")
+    pack_subparsers.required = True
+
+    run_parser = pack_subparsers.add_parser("run", help="Execute a pack and export PNGs.")
+    run_parser.add_argument("pack", type=Path, help="Path to the pack YAML file.")
+    run_parser.add_argument(
+        "--artefact-dir",
+        type=Path,
+        dest="artefact_dir",
+        required=True,
+        help="Root directory for exported pack artefacts.",
+    )
+    run_parser.add_argument(
+        "--meta",
+        dest="meta",
+        action="append",
+        default=[],
+        metavar="KEY=VALUE",
+        help="Additional metadata key/value pairs forwarded to pipelines.",
+    )
+    run_parser.add_argument(
+        "--data-mode",
+        dest="data_mode",
+        default="mock",
+        help="Datasource mode (e.g. mock, live).",
+    )
+    run_parser.add_argument(
+        "--datasource",
+        "--data-source",
+        dest="datasource",
+        help="Datasource override key.",
+    )
+    run_parser.add_argument(
+        "--dataset-id",
+        dest="dataset_id",
+        help="Power BI dataset identifier for live execution.",
+    )
+    run_parser.add_argument(
+        "--workspace-id",
+        dest="workspace_id",
+        help="Optional Power BI workspace identifier.",
+    )
+    run_parser.add_argument(
+        "--seed",
+        dest="seed",
+        type=int,
+        help="Seed used by mock data providers.",
+    )
+    run_parser.add_argument(
+        "--scenario",
+        dest="scenario",
+        help="Mock scenario key defined in the visual configuration.",
+    )
+    run_parser.add_argument(
+        "--metrics-root",
+        dest="metrics_root",
+        type=Path,
+        help="Optional metrics directory to resolve relative paths.",
+    )
+    run_parser.add_argument(
+        "--measure-table",
+        dest="measure_table",
+        default="'adhoc'",
+        help="Measure table used when emitting DEFINE statements (defaults to 'adhoc').",
+    )
+    run_parser.add_argument(
+        "--ignore-placeholders",
+        dest="ignore_placeholders",
+        action="store_true",
+        help="Skip metrics marked as placeholders during execution.",
+    )
+    run_parser.add_argument(
+        "--build-artifacts-dir",
+        dest="build_artifacts_dir",
+        type=Path,
+        help="Directory for build artifacts emitted by visuals (e.g. exported PPTX/PNG).",
+    )
+    run_parser.add_argument(
+        "--png-scale",
+        dest="png_scale",
+        type=float,
+        default=None,
+        help="Scale factor applied to PNG outputs (defaults to pipeline configuration).",
+    )
+    run_parser.add_argument(
+        "--width",
+        dest="width",
+        type=int,
+        help="Optional viewport width override supplied to renderers.",
+    )
+    run_parser.add_argument(
+        "--height",
+        dest="height",
+        type=int,
+        help="Optional viewport height override supplied to renderers.",
+    )
+    run_parser.add_argument(
+        "--grain",
+        dest="grain",
+        action="append",
+        default=[],
+        metavar="COLUMN",
+        help="Optional SUMMARIZECOLUMNS grain override (repeatable).",
+    )
+    run_parser.add_argument(
+        "--slides",
+        dest="slides",
+        action="append",
+        default=[],
+        metavar="ID_OR_TITLE",
+        help="Limit execution to matching slide ids/titles/slugs (repeatable).",
+    )
+    run_parser.set_defaults(_handler=_handle_pack_run, print_dax=False, validate_define=False, sort_rows=False)
+
+
 def _register_visual_type_parsers(
     parent: argparse.ArgumentParser,
     *,
@@ -362,6 +485,8 @@ def _build_parser(
     _register_dax_type_parsers(dax_parser, registrations=dax_registrations)
     dax_parser.set_defaults(_handler=_handle_visual_dax)
 
+    _register_pack_parsers(subparsers)
+
     return parser
 
 
@@ -441,6 +566,23 @@ def _prepare_metadata(args: argparse.Namespace, cli: VisualCLIOptions | None) ->
         metadata["grain"] = tuple(grain_override)
     if hasattr(args, "output_png") and args.output_png is not None:
         metadata.setdefault("png_output", args.output_png)
+    return metadata
+
+
+def _prepare_pack_metadata(args: argparse.Namespace) -> Dict[str, object]:
+    metadata: Dict[str, object] = {}
+    metadata.update(_parse_metadata_pairs(args.meta or []))
+    metadata["data_mode"] = _normalise_data_mode(getattr(args, "data_mode", None))
+    for field in ("seed", "scenario", "metrics_root", "measure_table", "ignore_placeholders", "width", "height"):
+        value = getattr(args, field, None)
+        if value is not None:
+            metadata[field] = value
+    build_artifacts_dir = getattr(args, "build_artifacts_dir", None)
+    if build_artifacts_dir is not None:
+        metadata["build_artifacts_dir"] = build_artifacts_dir
+    grain_override = getattr(args, "grain", None)
+    if grain_override:
+        metadata["grain"] = tuple(grain_override)
     return metadata
 
 
@@ -571,6 +713,55 @@ def _execute_pipeline(
 # ---------------------------------------------------------------------------
 # Command handlers
 # ---------------------------------------------------------------------------
+
+
+def _handle_pack_run(args: argparse.Namespace) -> int:
+    if args.artefact_dir is None:
+        raise ValueError("--artefact-dir must be supplied for pack execution.")
+
+    try:
+        pack = load_pack_config(args.pack)
+    except PackConfigError as exc:
+        raise ValueError(str(exc)) from exc
+
+    metadata = _prepare_pack_metadata(args)
+    jinja_env = create_pack_jinja_env()
+
+    options = _build_pipeline_options(args, metadata, include_outputs=False)
+    if args.png_scale is not None:
+        options.png_scale = args.png_scale
+
+    pipeline = VisualPipeline(planner_provider=build_default_query_planner_provider())
+    slide_filter = tuple(args.slides or [])
+
+    try:
+        results = run_pack(
+            args.pack,
+            pack,
+            output_root=args.artefact_dir,
+            base_options=options,
+            pipeline=pipeline,
+            env=jinja_env,
+            only_slides=slide_filter,
+        )
+    except ConfigLoadError as exc:
+        raise ValueError(str(exc)) from exc
+    except (
+        DataSourceConfigError,
+        PowerBIConfigurationError,
+        PowerBIAuthenticationError,
+        PowerBIQueryError,
+        RuntimeError,
+    ) as exc:
+        raise RuntimeError(str(exc)) from exc
+
+    png_count = sum(1 for item in results if item.png_path)
+    if png_count:
+        print(f"[ok] Wrote {png_count} PNG(s) to {args.artefact_dir}")
+    else:
+        print("[warn] No PNG outputs were produced.")
+
+    return 0
 
 
 def _handle_visual_run(args: argparse.Namespace) -> int:
@@ -720,7 +911,7 @@ def _normalise_argv(
 ) -> list[str]:
     if not argv:
         return list(argv)
-    commands = {"visual"}
+    commands = {"visual", "pack"}
     if argv[0] not in commands and not argv[0].startswith("-"):
         return ["visual", "run", "auto", *argv]
     if len(argv) >= 3 and argv[0] == "visual" and argv[1] in {"run", "artifacts", "dax"}:

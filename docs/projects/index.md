@@ -27,6 +27,24 @@ projects/
 
 Planned project-aware features include `praeparo dev <project>` for live reloads, project-level defaults for shared styling, and optional deployment metadata. For a concrete example, see [Automatic Documents](../examples/automatic_documents.md).
 
+## Pack Runner (Pack → PNG)
+
+Packs orchestrate multiple visuals as a single unit. A pack YAML defines shared
+context, optional global filters, and an ordered list of slides; each slide
+references an existing visual YAML and can apply additional filters or
+calculate clauses.
+
+Use `praeparo pack run` to execute a pack:
+
+```bash
+poetry run praeparo pack run projects/example/pack.yaml --artefact-dir .tmp/example/pack_png
+```
+
+Each visual slide is executed via the normal visual registry and pipelines;
+PNGs land in `<artefact-dir>/<slide-slug>.png` with per-slide artefacts under
+`<artefact-dir>/<slide-slug>/`. See [Pack Runner](pack_runner.md) for the full
+YAML contract and execution model.
+
 ## Upcoming: Python Metric Dataset Builder
 
 Notebook-first metric exploration will lean on the planned [Metric Dataset Builder design](python_metric_dataset_builder_plan.md). The document tracks the scope, API surface, and implementation phases before work begins.

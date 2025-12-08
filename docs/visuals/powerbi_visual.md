@@ -117,12 +117,16 @@ render:
 
 ## Interop with packs
 
-- Packs can reference the visual by path and supply context parameters (e.g.,
-  `lender_id`, `month`) that feed filter templates.
-- Placeholder merge semantics match the governance deck so existing customer
-  configs (`registry/packs/**`) can be migrated without re-authoring filters.
-- PPTX renderers should treat `render.image_path` as the canonical drop-in and
-  keep `.pptx`/sidecars alongside the delivered deck for auditing.
+- Packs can reference Power BI visuals by path and supply context parameters
+  (for example, `lender_id`, `month`) that feed filter templates in
+  `filters`.
+- Pack-level filters (defined in the pack YAML) are rendered via the same Jinja
+  helpers (`odata_months_back_range`, etc.) and merged with slide-level
+  `visual.filters` before being passed to the Power BI visual pipeline via
+  `metadata["powerbi_filters"]`.
+- This allows existing visual definitions (`type: powerbi` under
+  `visuals/`) to be reused across multiple slides and packs without
+  re-authoring filters or export logic.
 
 ## What still needs to be implemented
 

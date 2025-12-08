@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from pathlib import Path
 import builtins
+from pathlib import Path
 import sys
 from typing import Dict
 
@@ -9,6 +9,8 @@ import pytest
 
 from praeparo.cli import main as cli_main
 from praeparo.dax import DaxQueryPlan
+from praeparo.models import BaseVisualConfig, PackConfig, PackSlide, PackVisualRef
+from praeparo.pack import PackSlideResult
 from praeparo.visuals.dax_compilers import DaxCompileArtifact, register_dax_compiler
 from praeparo.pipeline import VisualExecutionResult
 from praeparo.pipeline.outputs import OutputKind, PipelineOutputArtifact
@@ -225,3 +227,111 @@ def test_cli_normalises_legacy_invocation(monkeypatch, tmp_path) -> None:
         cli_main([str(config_path)])
 
     assert exc.value.code == 0
+
+
+def test_pack_cli_run_invokes_runner(monkeypatch, tmp_path, capsys) -> None:
+    pack_path = tmp_path / "pack.yaml"
+    pack_path.write_text("contents", encoding="utf-8")
+
+    captured: Dict[str, object] = {}
+
+    def fake_load_pack_config(path: Path) -> PackConfig:
+        captured["path"] = path
+        return PackConfig(
+            schema="test-pack",
+            slides=[PackSlide(title="Slide One", id="slide-id-1", visual=PackVisualRef(ref="one.yaml"))],
+        )
+
+    def fake_run_pack(pack_path_arg, pack, *, output_root, base_options, visual_loader=None, pipeline=None, env=None, only_slides=()):
+        captured["output_root"] = output_root
+        captured["only_slides"] = only_slides
+        slide = pack.slides[0]
+        result = VisualExecutionResult(config=BaseVisualConfig(type="powerbi"), outputs=[])
+        png_path = output_root / "slide-id-1.png"
+        png_path.parent.mkdir(parents=True, exist_ok=True)
+        png_path.write_text("png", encoding="utf-8")
+        return [
+            PackSlideResult(
+                slide=slide,
+                visual_path=pack_path_arg,
+                result=result,
+                png_path=png_path,
+            )
+        ]
+
+    class FakePipeline:
+        def __init__(self, *_, **__):
+            pass
+
+    monkeypatch.setattr("praeparo.cli.load_pack_config", fake_load_pack_config)
+    monkeypatch.setattr("praeparo.cli.run_pack", fake_run_pack)
+    monkeypatch.setattr("praeparo.cli.VisualPipeline", FakePipeline)
+    monkeypatch.setattr("praeparo.cli.build_default_query_planner_provider", lambda: None)
+
+    artefacts_dir = tmp_path / "artefacts"
+    argv = [
+        "pack",
+        "run",
+        str(pack_path),
+        "--artefact-dir",
+        str(artefacts_dir),
+        "--slides",
+        "slide-id-1",
+    ]
+
+    with pytest.raises(SystemExit) as exc:
+        cli_main(argv)
+
+    assert exc.value.code == 0
+    out = capsys.readouterr().out
+    assert "[ok] Wrote 1 PNG" in out
+    assert artefacts_dir.as_posix() in out
+    assert captured["path"] == pack_path
+    assert captured["output_root"] == artefacts_dir
+    assert captured["only_slides"] == ("slide-id-1",)
+
+
+def test_pack_cli_run_warns_when_no_pngs(monkeypatch, tmp_path, capsys) -> None:
+    pack_path = tmp_path / "pack.yaml"
+    pack_path.write_text("contents", encoding="utf-8")
+
+    def fake_load_pack_config(path: Path) -> PackConfig:
+        return PackConfig(
+            schema="test-pack",
+            slides=[PackSlide(title="Slide Zero", visual=PackVisualRef(ref="zero.yaml"))],
+        )
+
+    def fake_run_pack(*_, **__):
+        slide = PackSlide(title="Slide Zero", visual=PackVisualRef(ref="zero.yaml"))
+        return [
+            PackSlideResult(
+                slide=slide,
+                visual_path=pack_path,
+                result=VisualExecutionResult(config=BaseVisualConfig(type="powerbi"), outputs=[]),
+                png_path=None,
+            )
+        ]
+
+    class FakePipeline:
+        def __init__(self, *_, **__):
+            pass
+
+    monkeypatch.setattr("praeparo.cli.load_pack_config", fake_load_pack_config)
+    monkeypatch.setattr("praeparo.cli.run_pack", fake_run_pack)
+    monkeypatch.setattr("praeparo.cli.VisualPipeline", FakePipeline)
+    monkeypatch.setattr("praeparo.cli.build_default_query_planner_provider", lambda: None)
+
+    with pytest.raises(SystemExit) as exc:
+        cli_main(
+            [
+                "pack",
+                "run",
+                str(pack_path),
+                "--artefact-dir",
+                str(tmp_path / "artefacts"),
+            ]
+        )
+
+    assert exc.value.code == 0
+    out = capsys.readouterr().out
+    assert "[warn] No PNG outputs were produced." in out
