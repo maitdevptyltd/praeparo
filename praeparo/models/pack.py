@@ -73,6 +73,10 @@ class PackConfig(BaseModel):
 
     schema: str = Field(..., description="Schema or contract identifier for the pack.")
     context: dict[str, Any] = Field(default_factory=dict, description="Template context shared by slides.")
+    define: str | None = Field(
+        default=None,
+        description="Optional DAX DEFINE block applied to DAX-backed visuals.",
+    )
     calculate: FiltersType = Field(
         default=None,
         description="Pack-level DAX filters applied to DAX-backed visuals.",

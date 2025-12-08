@@ -124,6 +124,8 @@ render:
   helpers (`odata_months_back_range`, etc.) and merged with slide-level
   `visual.filters` before being passed to the Power BI visual pipeline via
   `metadata["powerbi_filters"]`.
+- Pack-level DAX `define` blocks are consumed by DAX-backed pipelines (matrix,
+  cartesian, etc.) and are **not** used by Power BI visuals.
 - This allows existing visual definitions (`type: powerbi` under
   `visuals/`) to be reused across multiple slides and packs without
   re-authoring filters or export logic.

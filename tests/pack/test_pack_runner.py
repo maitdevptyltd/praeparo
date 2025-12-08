@@ -27,6 +27,7 @@ context:
 filters:
   lender: "dim_lender/LenderId eq {{ lender_id }}"
   dates: "{{ odata_months_back_range('dim_calendar/month', month, 3) }}"
+define: "DEFINE VAR Lender = {{ lender_id }}"
 slides:
   - title: Example
     visual:
@@ -38,9 +39,11 @@ slides:
     pack = load_pack_config(pack_path)
     env = create_pack_jinja_env()
     rendered_filters = render_value(pack.filters, env=env, context=pack.context)
+    rendered_define = render_value(pack.define, env=env, context=pack.context)
 
     assert rendered_filters["lender"] == "dim_lender/LenderId eq 201"
     assert rendered_filters["dates"] == "dim_calendar/month ge 2025-08-01 and dim_calendar/month le 2025-10-01"
+    assert rendered_define == "DEFINE VAR Lender = 201"
 
 
 def test_merge_odata_filters_supports_dict_list_and_string() -> None:
@@ -80,6 +83,7 @@ def test_run_pack_routes_visuals_and_emits_pngs(tmp_path: Path) -> None:
     pack = PackConfig(
         schema="test-pack",
         context={"lender_id": 7, "month": "2025-11-01"},
+        define="DEFINE VAR Lender = {{ lender_id }}",
         calculate={"lender": "'dim_lender'[LenderId] = {{ lender_id }}"},
         filters={"lender": "dim_lender/LenderId eq {{ lender_id }}"},
         slides=[
@@ -140,6 +144,7 @@ def test_run_pack_routes_visuals_and_emits_pngs(tmp_path: Path) -> None:
     assert context_meta["calculate"][0].startswith("'dim_lender'[LenderId] = 7")
     assert context_meta["calculate"][1] == "'dim_channel'[Name] = \"Direct\""
     assert len(context_meta["calculate"]) == 2
+    assert context_meta["define"] == ["DEFINE VAR Lender = 7"]
 
 
 def test_run_pack_honours_only_slides(tmp_path: Path) -> None:

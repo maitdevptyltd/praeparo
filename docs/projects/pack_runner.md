@@ -24,6 +24,7 @@ A pack configuration is a small YAML document with:
 
 - A schema/id,
 - Shared `context` used for templating,
+- Optional pack-level `define` (DAX DEFINE block) rendered with the same context,
 - Optional pack-level `calculate` filters (for DAX-backed visuals),
 - Optional pack-level `filters` (for OData / Power BI),
 - An ordered list of `slides`, each optionally referencing a visual.
@@ -37,6 +38,9 @@ context:
   customer: "Example Bank"
   lender_id: 201
   month: "2025-10-01"
+
+define: |
+  DEFINE VAR LenderId = {{ lender_id }}
 
 calculate:
   lender: "'dim_lender'[LenderId] = {{ lender_id }}"
@@ -65,6 +69,9 @@ slides:
 - `schema` – free-form identifier for the pack contract.
 - `context` – key/value pairs exposed to Jinja templates (for example,
   `lender_id`, `month`, `customer`).
+- `define` – optional DAX DEFINE block (single string). Rendered via Jinja using
+  `context` and forwarded to DAX-backed pipelines through
+  `metadata["context"]["define"]`. Ignored by Power BI visuals.
 - `calculate` – DAX filters, expressed as:
   - a single string,
   - a list of strings, or
@@ -131,7 +138,7 @@ At a high level, `praeparo pack run` does the following:
    - `odata_date`, `odata_between`, `odata_months_back_range`, `relativedelta`,
      etc.
 3. **Render templates**:
-   - Pack-level `filters` and `calculate` are rendered using the pack
+   - Pack-level `filters`, `calculate`, and `define` are rendered using the pack
      `context`.
    - Slide-level `visual.filters` and `visual.calculate` are rendered using the
      same context.
@@ -141,8 +148,12 @@ At a high level, `praeparo pack run` does the following:
        string coerced to list) and passed via `metadata["powerbi_filters"]`.
    - For DAX-backed visuals:
      - Pack-level and slide-level `calculate` filters are normalised and
-       combined in order (pack first, then slide overrides) and exposed in the
-       metadata context so matrix/governance pipelines can consume them.
+       combined in order (pack first, then slide overrides).
+     - Pack-level `define` (once rendered) is included alongside the merged
+       `calculate` list in `metadata["context"]` so DAX planning has a single
+       source of truth.
+    - Power BI visuals ignore `define`; they rely on the merged OData filters in
+      `metadata["powerbi_filters"]`.
 5. **Resolve visuals**:
    - Each `visual.ref` is resolved to a `BaseVisualConfig` via the YAML loader.
    - A shared `VisualPipeline` uses the visual type and registry registrations
@@ -192,4 +203,3 @@ future PPTX layer can build on this by:
 By keeping pack orchestration separate from PPTX composition, Praeparo can
 service both notebook/automation workflows (PNG-only) and full deck pipelines
 with minimal duplication.
-

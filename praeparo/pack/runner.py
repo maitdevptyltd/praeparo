@@ -115,6 +115,7 @@ def run_pack(
 
     rendered_global_filters = render_value(pack.filters, env=jinja_env, context=context_payload)
     rendered_global_calculate = render_value(pack.calculate, env=jinja_env, context=context_payload)
+    rendered_define = render_value(pack.define, env=jinja_env, context=context_payload)
 
     resolved_pipeline = pipeline or VisualPipeline(
         planner_provider=build_default_query_planner_provider(),
@@ -153,11 +154,12 @@ def run_pack(
                 options.metadata["powerbi_filters"] = merged_filters
             options.metadata.setdefault("build_artifacts_dir", slide_dir / "pbi_exports")
 
-        if calculate_filters:
+        if calculate_filters or rendered_define:
             existing_context = options.metadata.get("context") if isinstance(options.metadata, dict) else {}
             merged_context = merge_context_payload(
                 base=existing_context if isinstance(existing_context, Mapping) else {},
                 calculate=calculate_filters,
+                define=rendered_define,
             )
             options.metadata["context"] = merged_context
 
