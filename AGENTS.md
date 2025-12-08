@@ -16,9 +16,10 @@ This guide keeps agents aligned while evolving Praeparo. It explains responsibil
 - Add or extend focused unit tests for each feature you touch. Tests must isolate the unit under change, avoid exercising unrelated external systems, and demonstrate expected behaviour (happy paths, failure modes, dry runs).
 - Keep files small and composable—split sprawling modules or docs into focused units so no single file becomes a catch-all dumping ground.
 - Prefer Pydantic models for request/response payloads and configuration (metrics, visuals, datasources) instead of raw dictionaries to gain validation, auto-complete, and richer type checking.
+- Favour strong typing throughout the codebase: avoid `Any` in new surfaces and refactor legacy areas towards precise types (`ExecutionContext`, `PipelineOptions`, visual config/context models) so custom visuals and plugins can consume fully-typed inputs without re-parsing metadata.
 - When validation or normalisation is required, add field validators or custom types within the Pydantic models rather than ad-hoc parsing logic. Keep business rules close to the model so orchestration layers stay lean.
 - Push business logic into reusable engines/modules. Keep CLIs and thin wrappers focused on orchestration, argument parsing, and wiring.
-- Resolve Pyright (basic mode) diagnostics in the files you modify. Note pre-existing issues that cannot be addressed during your task.
+- Run Pyright (basic mode) over every Python surface you modify before handoff, and resolve diagnostics in those files. Note pre-existing issues that cannot be addressed during your task, but do not skip Pyright.
 - Honour downstream consumers (e.g. MSANational.Metrics). Coordinate schema changes with regenerated JSON schema artefacts so IntelliSense stays accurate.
 - Reuse the shared inheritance helper when adding new `extends` features, capture base expressions with `define`, and choose between model-level inheritance (`extends`) and YAML-level `compose` depending on the scenario (compose merges files; extends links model definitions).
 
