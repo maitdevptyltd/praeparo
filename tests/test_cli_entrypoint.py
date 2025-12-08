@@ -242,7 +242,18 @@ def test_pack_cli_run_invokes_runner(monkeypatch, tmp_path, capsys) -> None:
             slides=[PackSlide(title="Slide One", id="slide-id-1", visual=PackVisualRef(ref="one.yaml"))],
         )
 
-    def fake_run_pack(pack_path_arg, pack, *, output_root, base_options, visual_loader=None, pipeline=None, env=None, only_slides=()):
+    def fake_run_pack(
+        pack_path_arg,
+        pack,
+        *,
+        output_root,
+        max_powerbi_concurrency=None,
+        base_options,
+        visual_loader=None,
+        pipeline=None,
+        env=None,
+        only_slides=(),
+    ):
         captured["output_root"] = output_root
         captured["only_slides"] = only_slides
         slide = pack.slides[0]

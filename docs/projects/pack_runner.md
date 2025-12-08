@@ -122,6 +122,9 @@ Key flags:
     --artefact-dir .tmp/example/pack_png \
     --slides overview digital_broker
   ```
+- `--max-pbi-concurrency` – maximum number of Power BI exports in flight at
+  once. Defaults to `5` when not supplied; can also be set via
+  `PRAEPARO_PBI_MAX_CONCURRENCY` (the CLI flag wins when both are provided).
 
 - `--png-scale`, `--data-mode`, `--datasource`, and other global options – share
   semantics with `praeparo visual run` via `PipelineOptions`.
@@ -188,6 +191,31 @@ At a high level, `praeparo pack run` does the following:
 
 Slides whose visuals do not emit PNGs are skipped with a warning; the pack run
 never fails solely because a visual lacks a PNG renderer.
+
+## Power BI export queue
+
+Phase 4 adds a bounded Power BI export queue so pack runs can process multiple
+Power BI slides concurrently:
+
+- Only visuals with `type: powerbi` are queued; all other visual types continue
+  to run synchronously on the main thread.
+- Concurrency is capped by `--max-pbi-concurrency` (or
+  `PRAEPARO_PBI_MAX_CONCURRENCY`), defaulting to `5` when neither is set.
+- The runner enqueues Power BI slides first, executes non-PowerBI slides
+  inline, then waits for all queued exports to complete before returning.
+- If any Power BI export fails, the pack run exits non-zero after reporting the
+  failed slide slugs.
+
+Example with three exports in flight:
+
+```bash
+poetry run praeparo pack run projects/example/pack.yaml \
+  --artefact-dir .tmp/example/pack_png \
+  --max-pbi-concurrency 3
+```
+
+Artefact paths remain unchanged: `<artefact-dir>/<slide-slug>.png` for the main
+PNG plus per-slide artefacts under `<artefact-dir>/<slide-slug>/`.
 
 ## Integration with existing visuals
 

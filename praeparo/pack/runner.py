@@ -12,6 +12,7 @@ from jinja2 import Environment
 
 from praeparo.models import BaseVisualConfig, PackConfig, PackSlide
 from praeparo.pack.filters import merge_calculate_filters, merge_odata_filters
+from praeparo.pack.pbi_queue import PowerBIExportJob, PowerBIExportQueue
 from praeparo.pack.templating import create_pack_jinja_env, render_value
 from praeparo.pipeline import (
     ExecutionContext,
@@ -40,6 +41,9 @@ class PackSlideResult:
     visual_path: Path
     result: VisualExecutionResult
     png_path: Path | None
+
+
+DEFAULT_POWERBI_CONCURRENCY = 5
 
 
 def _slug_for_slide(slide: PackSlide, index: int) -> str:
@@ -103,6 +107,7 @@ def run_pack(
     pack: PackConfig,
     *,
     output_root: Path,
+    max_powerbi_concurrency: int | None = None,
     base_options: PipelineOptions | None = None,
     visual_loader: VisualLoader = load_visual_config,
     pipeline: VisualPipeline | None = None,
@@ -124,6 +129,14 @@ def run_pack(
         planner_provider=build_default_query_planner_provider(),
     )
     base = base_options or PipelineOptions()
+    effective_concurrency = max_powerbi_concurrency or DEFAULT_POWERBI_CONCURRENCY
+    # VisualPipeline is currently stateless per execute() call and relies on per-call
+    # ExecutionContext plus per-visual planners/clients. If future changes add shared
+    # mutable state, re-evaluate thread safety for PowerBIExportQueue.
+    powerbi_queue = PowerBIExportQueue(
+        resolved_pipeline,
+        max_concurrent_exports=effective_concurrency,
+    )
 
     slide_filter = {slugify(item) for item in only_slides} if only_slides else None
     logger.info(
@@ -133,6 +146,7 @@ def run_pack(
             "artefact_dir": str(output_root),
             "slide_count": len(pack.slides),
             "only_slides": sorted(slide_filter) if slide_filter else None,
+            "powerbi_concurrency": effective_concurrency,
         },
     )
 
@@ -152,7 +166,7 @@ def run_pack(
             except TypeError:
                 logger.debug("Rendered global calculate", extra={"count": 1})
 
-    results: list[PackSlideResult] = []
+    ordered_results: list[tuple[int, PackSlideResult]] = []
     for index, slide in enumerate(pack.slides, start=1):
         if slide.visual is None:
             continue
@@ -212,6 +226,27 @@ def run_pack(
                 },
             )
 
+        execution_context = ExecutionContext(
+            config_path=visual_path,
+            project_root=pack_path.parent,
+            case_key=slide_slug,
+            options=options,
+        )
+
+        if visual.type == "powerbi":
+            powerbi_queue.enqueue(
+                PowerBIExportJob(
+                    slide_index=index,
+                    slide_slug=slide_slug,
+                    slide_title=slide.title,
+                    slide=slide,
+                    visual=visual,
+                    visual_path=visual_path,
+                    execution_context=execution_context,
+                )
+            )
+            continue
+
         try:
             logger.debug(
                 "Executing pipeline",
@@ -223,12 +258,6 @@ def run_pack(
                     "png_target": str(options.outputs[0].path) if options.outputs else None,
                     "artefact_dir": str(options.artefact_dir) if options.artefact_dir else None,
                 },
-            )
-            execution_context = ExecutionContext(
-                config_path=visual_path,
-                project_root=pack_path.parent,
-                case_key=slide_slug,
-                options=options,
             )
             result = resolved_pipeline.execute(visual, execution_context)
         except Exception:
@@ -252,16 +281,46 @@ def run_pack(
             },
         )
 
-        results.append(
-            PackSlideResult(
-                slide=slide,
-                visual_path=visual_path,
-                result=result,
-                png_path=png_path,
+        ordered_results.append(
+            (
+                index,
+                PackSlideResult(
+                    slide=slide,
+                    visual_path=visual_path,
+                    result=result,
+                    png_path=png_path,
+                ),
             )
         )
 
-    return results
+    powerbi_results = powerbi_queue.drain()
+    failed_powerbi = [item for item in powerbi_results if item.exception]
+    for item in powerbi_results:
+        if item.result is None:
+            continue
+        png_path = _select_png_output(item.result, item.job.execution_context.options.outputs)
+        ordered_results.append(
+            (
+                item.job.slide_index,
+                PackSlideResult(
+                    slide=item.job.slide,
+                    visual_path=item.job.visual_path,
+                    result=item.result,
+                    png_path=png_path,
+                ),
+            )
+        )
+
+    if failed_powerbi:
+        failed_slides = [item.job.slide_slug for item in failed_powerbi]
+        logger.error(
+            "Power BI slides failed",
+            extra={"failed_slide_count": len(failed_slides), "failed_slides": failed_slides},
+        )
+        raise RuntimeError(f"{len(failed_slides)} Power BI slide(s) failed: {', '.join(failed_slides)}")
+
+    ordered_results.sort(key=lambda pair: pair[0])
+    return [item[1] for item in ordered_results]
 
 
 __all__ = ["PackSlideResult", "run_pack"]

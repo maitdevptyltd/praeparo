@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import threading
+import time
 from pathlib import Path
 from typing import Dict, Tuple
 
@@ -63,9 +65,11 @@ def test_merge_odata_filters_supports_dict_list_and_string() -> None:
 class _StubPipeline:
     def __init__(self) -> None:
         self.calls: list[Tuple[BaseVisualConfig, PipelineOptions]] = []
+        self._lock = threading.Lock()
 
     def execute(self, visual: BaseVisualConfig, context) -> VisualExecutionResult:
-        self.calls.append((visual, context.options))
+        with self._lock:
+            self.calls.append((visual, context.options))
         outputs = []
         for target in context.options.outputs:
             if visual.type == "frame":
@@ -73,6 +77,42 @@ class _StubPipeline:
             target.path.parent.mkdir(parents=True, exist_ok=True)
             target.path.write_text(visual.type, encoding="utf-8")
             outputs.append(PipelineOutputArtifact(kind=target.kind, path=target.path))
+        return VisualExecutionResult(config=visual, outputs=outputs)
+
+
+class _ConcurrentStubPipeline:
+    def __init__(self, *, delay: float = 0.05, fail_case: str | None = None) -> None:
+        self.calls: list[Tuple[BaseVisualConfig, PipelineOptions]] = []
+        self.delay = delay
+        self.fail_case = fail_case
+        self.running_powerbi = 0
+        self.max_running_powerbi = 0
+        self._lock = threading.Lock()
+
+    def execute(self, visual: BaseVisualConfig, context) -> VisualExecutionResult:
+        is_powerbi = visual.type == "powerbi"
+        if is_powerbi:
+            with self._lock:
+                self.running_powerbi += 1
+                self.max_running_powerbi = max(self.max_running_powerbi, self.running_powerbi)
+            try:
+                if self.fail_case and context.case_key == self.fail_case:
+                    raise RuntimeError("boom")
+                if self.delay:
+                    time.sleep(self.delay)
+            finally:
+                with self._lock:
+                    self.running_powerbi -= 1
+
+        path = context.options.outputs[0].path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(visual.type, encoding="utf-8")
+
+        outputs = [PipelineOutputArtifact(kind=OutputKind.PNG, path=path)]
+
+        with self._lock:
+            self.calls.append((visual, context.options))
+
         return VisualExecutionResult(config=visual, outputs=outputs)
 
 
@@ -134,11 +174,12 @@ def test_run_pack_routes_visuals_and_emits_pngs(tmp_path: Path) -> None:
     # Frame visual produces no PNG but should not error.
     assert any(result.result.outputs == [] for result in results if result.result.config.type == "frame")
 
-    powerbi_metadata = pipeline.calls[0][1].metadata
+    metadata_by_type = {call[0].type: call[1].metadata for call in pipeline.calls}
+    powerbi_metadata = metadata_by_type["powerbi"]
     assert "powerbi_filters" in powerbi_metadata
     assert "dim_lender/LenderId eq 7" in str(powerbi_metadata["powerbi_filters"])
 
-    matrix_metadata = pipeline.calls[1][1].metadata
+    matrix_metadata = metadata_by_type["matrix"]
     context_meta = matrix_metadata.get("context")
     assert context_meta and context_meta.get("calculate")
     assert context_meta["calculate"][0].startswith("'dim_lender'[LenderId] = 7")
@@ -212,3 +253,88 @@ def test_run_pack_honours_only_slides(tmp_path: Path) -> None:
     }
     emitted_pngs = {result.png_path for result in results if result.png_path}
     assert expected_pngs == emitted_pngs
+
+
+def test_run_pack_queues_powerbi_and_respects_concurrency(tmp_path: Path) -> None:
+    pack_path = tmp_path / "pack.yaml"
+    pack_path.write_text("", encoding="utf-8")
+
+    pack = PackConfig(
+        schema="test-pack",
+        slides=[
+            PackSlide(title="PBI One", id="pbi-one", visual=PackVisualRef(ref="pbi1.yaml")),
+            PackSlide(title="Matrix Slide", visual=PackVisualRef(ref="matrix.yaml")),
+            PackSlide(title="PBI Two", id="pbi-two", visual=PackVisualRef(ref="pbi2.yaml")),
+        ],
+    )
+
+    visuals: Dict[str, BaseVisualConfig] = {
+        "pbi1.yaml": BaseVisualConfig(type="powerbi"),
+        "pbi2.yaml": BaseVisualConfig(type="powerbi"),
+        "matrix.yaml": BaseVisualConfig(type="matrix"),
+    }
+
+    def _loader(path: Path) -> BaseVisualConfig:
+        return visuals[path.name]
+
+    pipeline = _ConcurrentStubPipeline(delay=0.05)
+    results = run_pack(
+        pack_path,
+        pack,
+        output_root=tmp_path / "artefacts",
+        base_options=PipelineOptions(),
+        visual_loader=_loader,
+        pipeline=pipeline,
+        env=create_pack_jinja_env(),
+        max_powerbi_concurrency=2,
+    )
+
+    png_paths = {result.png_path for result in results if result.png_path}
+    expected_pngs = {
+        tmp_path / "artefacts" / f"{slugify('pbi-one')}.png",
+        tmp_path / "artefacts" / f"{slugify('pbi-two')}.png",
+        tmp_path / "artefacts" / f"{slugify('Matrix Slide')}.png",
+    }
+    assert expected_pngs == png_paths
+    assert pipeline.max_running_powerbi <= 2
+    assert len([item for item in results if item.result.config.type == "powerbi"]) == 2
+
+
+def test_run_pack_raises_when_powerbi_job_fails(tmp_path: Path) -> None:
+    pack_path = tmp_path / "pack.yaml"
+    pack_path.write_text("", encoding="utf-8")
+
+    failing_slug = slugify("fail-pbi")
+    pack = PackConfig(
+        schema="test-pack",
+        slides=[
+            PackSlide(title="OK Slide", id="ok-pbi", visual=PackVisualRef(ref="pbi1.yaml")),
+            PackSlide(title="Fail Slide", id="fail-pbi", visual=PackVisualRef(ref="pbi2.yaml")),
+        ],
+    )
+
+    visuals: Dict[str, BaseVisualConfig] = {
+        "pbi1.yaml": BaseVisualConfig(type="powerbi"),
+        "pbi2.yaml": BaseVisualConfig(type="powerbi"),
+    }
+
+    def _loader(path: Path) -> BaseVisualConfig:
+        return visuals[path.name]
+
+    pipeline = _ConcurrentStubPipeline(delay=0.0, fail_case=failing_slug)
+
+    with pytest.raises(RuntimeError) as excinfo:
+        run_pack(
+            pack_path,
+            pack,
+            output_root=tmp_path / "artefacts",
+            base_options=PipelineOptions(),
+            visual_loader=_loader,
+            pipeline=pipeline,
+            env=create_pack_jinja_env(),
+            max_powerbi_concurrency=2,
+        )
+
+    assert failing_slug in str(excinfo.value)
+    ok_png = tmp_path / "artefacts" / f"{slugify('ok-pbi')}.png"
+    assert ok_png.exists()

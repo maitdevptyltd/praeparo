@@ -23,6 +23,7 @@ from praeparo.pipeline import (
     build_default_query_planner_provider,
 )
 from praeparo.pack import (
+    DEFAULT_POWERBI_CONCURRENCY,
     PackConfigError,
     create_pack_jinja_env,
     load_pack_config,
@@ -47,6 +48,7 @@ from praeparo.visuals.registry import (
 )
 
 LOG_LEVEL_ENV_VAR = "PRAEPARO_LOG_LEVEL"
+PBI_CONCURRENCY_ENV_VAR = "PRAEPARO_PBI_MAX_CONCURRENCY"
 
 
 # ---------------------------------------------------------------------------
@@ -288,6 +290,15 @@ def _register_pack_parsers(parent: argparse._SubParsersAction[argparse.ArgumentP
         dest="data_mode",
         default="mock",
         help="Datasource mode (e.g. mock, live).",
+    )
+    run_parser.add_argument(
+        "--max-pbi-concurrency",
+        dest="max_pbi_concurrency",
+        type=int,
+        help=(
+            "Maximum concurrent Power BI exports "
+            f"(default {DEFAULT_POWERBI_CONCURRENCY}; env {PBI_CONCURRENCY_ENV_VAR})."
+        ),
     )
     run_parser.add_argument(
         "--datasource",
@@ -613,6 +624,25 @@ def _prepare_pack_metadata(args: argparse.Namespace) -> Dict[str, object]:
     return metadata
 
 
+def _resolve_max_pbi_concurrency(args: argparse.Namespace) -> int:
+    if args.max_pbi_concurrency is not None:
+        if args.max_pbi_concurrency < 1:
+            raise ValueError("--max-pbi-concurrency must be at least 1")
+        return args.max_pbi_concurrency
+
+    env_value = os.getenv(PBI_CONCURRENCY_ENV_VAR)
+    if env_value:
+        try:
+            value = int(env_value)
+        except ValueError as exc:
+            raise ValueError(f"{PBI_CONCURRENCY_ENV_VAR} must be an integer") from exc
+        if value < 1:
+            raise ValueError(f"{PBI_CONCURRENCY_ENV_VAR} must be at least 1")
+        return value
+
+    return DEFAULT_POWERBI_CONCURRENCY
+
+
 # ---------------------------------------------------------------------------
 # Execution helpers
 # ---------------------------------------------------------------------------
@@ -758,6 +788,7 @@ def _handle_pack_run(args: argparse.Namespace) -> int:
     if args.png_scale is not None:
         options.png_scale = args.png_scale
 
+    max_pbi_concurrency = _resolve_max_pbi_concurrency(args)
     pipeline = VisualPipeline(planner_provider=build_default_query_planner_provider())
     slide_filter = tuple(args.slides or [])
 
@@ -766,6 +797,7 @@ def _handle_pack_run(args: argparse.Namespace) -> int:
             args.pack,
             pack,
             output_root=args.artefact_dir,
+            max_powerbi_concurrency=max_pbi_concurrency,
             base_options=options,
             pipeline=pipeline,
             env=jinja_env,
