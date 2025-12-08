@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from pathlib import Path
 from typing import Callable, Mapping, Sequence
 
@@ -19,6 +20,9 @@ from .base import ChartPlannerResult, ChartQueryPlanner
 
 if __name__ == "__main__":  # pragma: no cover - module import guard
     raise SystemExit("This module is intended to be imported, not executed directly.")
+
+
+logger = logging.getLogger(__name__)
 
 
 class DaxBackedChartPlanner(ChartQueryPlanner):
@@ -41,6 +45,14 @@ class DaxBackedChartPlanner(ChartQueryPlanner):
         # Delegate DAX generation to the shared metric dataset builder so cartesian visuals
         # and notebooks stay in lockstep.
         builder, dataset_plan = self._configure_builder(config, context)
+        logger.debug(
+            "Configured metric dataset builder",
+            extra={
+                "case": context.case_key,
+                "visual": config.title or config.description or "cartesian",
+                "grain": getattr(builder, "_grain", None),
+            },
+        )
 
         dax_plan = DaxQueryPlan(
             statement=dataset_plan.statement,
@@ -50,6 +62,15 @@ class DaxBackedChartPlanner(ChartQueryPlanner):
         )
 
         dataset = self._resolve_dataset(config, builder, context)
+        logger.info(
+            "Chart dataset resolved",
+            extra={
+                "case": context.case_key,
+                "categories": len(dataset.categories),
+                "series": len(dataset.series),
+                "placeholders": bool(dataset_plan.placeholders),
+            },
+        )
 
         return ChartPlannerResult(
             plan=dax_plan,
@@ -89,6 +110,15 @@ class DaxBackedChartPlanner(ChartQueryPlanner):
 
         calculate_filters = context_filters if isinstance(context_filters, (str, Sequence)) else None
         define_blocks = context_define if isinstance(context_define, (str, Sequence)) else None
+        if calculate_filters or define_blocks:
+            logger.debug(
+                "Applying DAX context to cartesian builder",
+                extra={
+                    "case": context.case_key,
+                    "calculate_count": len(calculate_filters) if isinstance(calculate_filters, Sequence) else (1 if calculate_filters else 0),
+                    "has_define": bool(define_blocks),
+                },
+            )
 
         measure_table = metadata.get("measure_table")
         if not isinstance(measure_table, str) or not measure_table.strip():
@@ -180,13 +210,26 @@ class DaxBackedChartPlanner(ChartQueryPlanner):
                 workspace_id=workspace_override,
             )
             builder.with_datasource(override)
+            logger.info(
+                "Executing chart with dataset override",
+                extra={"case": context.case_key, "dataset_id": dataset_override, "workspace_id": workspace_override},
+            )
         elif datasource_override:
             builder.with_datasource(self._resolve_datasource_override(datasource_override, context))
+            logger.info(
+                "Executing chart via datasource override",
+                extra={"case": context.case_key, "datasource": datasource_override},
+            )
         elif getattr(config, "datasource", None):
             builder.with_datasource(self._resolve_datasource_override(config.datasource, context))
+            logger.info(
+                "Executing chart via datasource",
+                extra={"case": context.case_key, "datasource": config.datasource},
+            )
 
         if provider_key == "mock":
             builder.use_mock(True)
+            logger.info("Chart planner using mock provider", extra={"case": context.case_key})
 
         dataset_result = asyncio.run(builder.aexecute())
         return dataset_result.to_chart_result(config)

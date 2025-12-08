@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import argparse
+import logging
+import os
 import sys
 from pathlib import Path
 from typing import Any, Dict, Iterable, Mapping, MutableMapping, Sequence
@@ -43,6 +45,25 @@ from praeparo.visuals.registry import (
     VisualTypeRegistration,
     iter_visual_registrations,
 )
+
+LOG_LEVEL_ENV_VAR = "PRAEPARO_LOG_LEVEL"
+
+
+# ---------------------------------------------------------------------------
+# Logging
+# ---------------------------------------------------------------------------
+
+
+def _configure_logging(log_level: str | None) -> None:
+    env_level = os.getenv(LOG_LEVEL_ENV_VAR)
+    candidate = (log_level or env_level or "DEBUG").upper()
+    resolved = logging.getLevelName(candidate)
+    level = resolved if isinstance(resolved, int) else logging.DEBUG
+    logging.basicConfig(
+        level=level,
+        format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+    )
+    logging.getLogger().setLevel(level)
 
 
 # ---------------------------------------------------------------------------
@@ -457,6 +478,12 @@ def _build_parser(
     dax_registrations: Iterable[tuple[str, DaxCompilerRegistration]],
 ) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="praeparo", description="Praeparo visual execution tooling.")
+    parser.add_argument(
+        "--log-level",
+        dest="log_level",
+        choices=["CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG", "NOTSET"],
+        help=f"Override log level (default DEBUG; also honours {LOG_LEVEL_ENV_VAR}).",
+    )
     parser.add_argument(
         "--plugin",
         dest="plugins",
@@ -950,6 +977,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     parser = _build_parser(visual_registrations, dax_registrations)
     try:
         args = parser.parse_args(args_list)
+        _configure_logging(getattr(args, "log_level", None))
         handler = getattr(args, "_handler", None)
         if handler is None:
             parser.error("No handler registered for command")

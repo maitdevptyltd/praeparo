@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Iterable, Mapping, Sequence
@@ -27,6 +28,8 @@ from praeparo.visuals.context import merge_context_payload
 
 
 VisualLoader = Callable[[Path], BaseVisualConfig]
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -123,6 +126,31 @@ def run_pack(
     base = base_options or PipelineOptions()
 
     slide_filter = {slugify(item) for item in only_slides} if only_slides else None
+    logger.info(
+        "Running pack",
+        extra={
+            "pack_path": str(pack_path),
+            "artefact_dir": str(output_root),
+            "slide_count": len(pack.slides),
+            "only_slides": sorted(slide_filter) if slide_filter else None,
+        },
+    )
+
+    if context_payload:
+        logger.debug("Rendered pack context", extra={"keys": sorted(context_payload.keys())})
+    if rendered_global_filters:
+        if isinstance(rendered_global_filters, Mapping):
+            logger.debug("Rendered global filters", extra={"keys": sorted(rendered_global_filters.keys())})
+        else:
+            logger.debug("Rendered global filters", extra={"count": len(rendered_global_filters)})
+    if rendered_global_calculate:
+        if isinstance(rendered_global_calculate, Mapping):
+            logger.debug("Rendered global calculate", extra={"keys": sorted(rendered_global_calculate.keys())})
+        else:
+            try:
+                logger.debug("Rendered global calculate", extra={"count": len(rendered_global_calculate)})  # type: ignore[arg-type]
+            except TypeError:
+                logger.debug("Rendered global calculate", extra={"count": 1})
 
     results: list[PackSlideResult] = []
     for index, slide in enumerate(pack.slides, start=1):
@@ -142,6 +170,19 @@ def run_pack(
         calculate_filters = merge_calculate_filters(rendered_global_calculate, slide_calculate)
 
         slide_slug = _slug_for_slide(slide, index)
+        logger.info(
+            "Processing slide",
+            extra={
+                "slide": slide_slug,
+                "index": index,
+                "title": slide.title,
+                "visual_ref": visual_ref,
+            },
+        )
+        logger.debug(
+            "Resolved visual",
+            extra={"visual_path": str(visual_path), "visual_type": getattr(visual, "type", None)},
+        )
         options, slide_dir = _prepare_slide_options(
             base,
             slide_slug=slide_slug,
@@ -162,15 +203,54 @@ def run_pack(
                 define=rendered_define,
             )
             options.metadata["context"] = merged_context
+            logger.debug(
+                "Applied context to slide",
+                extra={
+                    "slide": slide_slug,
+                    "calculate_count": len(calculate_filters) if calculate_filters else 0,
+                    "has_define": bool(rendered_define),
+                },
+            )
 
-        execution_context = ExecutionContext(
-            config_path=visual_path,
-            project_root=pack_path.parent,
-            case_key=slide_slug,
-            options=options,
-        )
-        result = resolved_pipeline.execute(visual, execution_context)
+        try:
+            logger.debug(
+                "Executing pipeline",
+                extra={
+                    "slide": slide_slug,
+                    "visual_type": getattr(visual, "type", None),
+                    "odata_filter_keys": sorted(merged_filters.keys()) if isinstance(merged_filters, Mapping) else None,
+                    "calculate_count": len(calculate_filters) if calculate_filters else 0,
+                    "png_target": str(options.outputs[0].path) if options.outputs else None,
+                    "artefact_dir": str(options.artefact_dir) if options.artefact_dir else None,
+                },
+            )
+            execution_context = ExecutionContext(
+                config_path=visual_path,
+                project_root=pack_path.parent,
+                case_key=slide_slug,
+                options=options,
+            )
+            result = resolved_pipeline.execute(visual, execution_context)
+        except Exception:
+            logger.exception(
+                "Slide failed",
+                extra={
+                    "slide": slide_slug,
+                    "visual_ref": visual_ref,
+                    "visual_path": str(visual_path),
+                },
+            )
+            raise
         png_path = _select_png_output(result, options.outputs)
+        logger.info(
+            "Slide completed",
+            extra={
+                "slide": slide_slug,
+                "visual_type": getattr(visual, "type", None),
+                "png_path": str(png_path) if png_path else None,
+                "artefact_dir": str(slide_dir),
+            },
+        )
 
         results.append(
             PackSlideResult(

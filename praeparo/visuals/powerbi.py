@@ -8,7 +8,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Mapping, Sequence, Tuple
 
-from praeparo.models import PowerBIVisualConfig
+import logging
+
+from praeparo.models import BaseVisualConfig, PowerBIVisualConfig
 from praeparo.powerbi import PowerBIClient, PowerBISettings
 from praeparo.pipeline.outputs import OutputKind, OutputTarget, PipelineOutputArtifact
 from praeparo.pipeline.registry import (
@@ -25,6 +27,9 @@ from praeparo.visuals.registry import register_visual_type
 
 def _load_powerbi_visual(path: Path, payload: Mapping[str, object], stack: Tuple[Path, ...]) -> PowerBIVisualConfig:
     return PowerBIVisualConfig.model_validate(payload)
+
+
+logger = logging.getLogger(__name__)
 
 
 def _normalise_filters(filters: Mapping[str, str] | Sequence[str] | None) -> list[str]:
@@ -118,17 +123,34 @@ class PowerBIExportDataset:
     filters: list[str]
 
 
-def _powerbi_schema_builder(_, config: PowerBIVisualConfig, context) -> SchemaArtifact[dict]:
+def _powerbi_schema_builder(_, config: BaseVisualConfig, context) -> SchemaArtifact[dict]:
+    if not isinstance(config, PowerBIVisualConfig):
+        raise TypeError("Power BI pipeline expects a PowerBIVisualConfig instance.")
     return SchemaArtifact(value=config.model_dump(), filename="schema.json")
 
 
-def _powerbi_dataset_builder(_, config: PowerBIVisualConfig, schema, context) -> DatasetArtifact[PowerBIExportDataset]:
+def _powerbi_dataset_builder(_, config: BaseVisualConfig, schema, context) -> DatasetArtifact[PowerBIExportDataset]:
+    if not isinstance(config, PowerBIVisualConfig):
+        raise TypeError("Power BI pipeline expects a PowerBIVisualConfig instance.")
     # Start by merging any pack-level filters with the visual's own filters.
     inherited_filters = context.options.metadata.get("powerbi_filters") if isinstance(context.options.metadata, dict) else None
     merged_filters = _merge_filters(inherited_filters, config.filters, config.filters_merge_strategy)
 
     # Decide where the primary export and its JSON manifest will land.
     main_path, data_path = _default_export_paths(config, context)
+    logger.info(
+        "Starting Power BI export",
+        extra={
+            "title": config.title or config.description,
+            "mode": config.mode,
+            "format": config.render.format,
+            "report_id": config.source.report_id,
+            "page": config.source.page,
+            "visual_id": config.source.visual_id,
+            "filter_count": len(merged_filters),
+            "export_path": str(main_path),
+        },
+    )
 
     settings = PowerBISettings.from_env()
 
@@ -162,7 +184,28 @@ def _powerbi_dataset_builder(_, config: PowerBIVisualConfig, schema, context) ->
                     )
         return str(main_export), artifacts
 
-    export_path, artifacts = asyncio.run(_run_exports())
+    try:
+        export_path, artifacts = asyncio.run(_run_exports())
+    except Exception:
+        logger.exception(
+            "Power BI export failed",
+            extra={
+                "report_id": config.source.report_id,
+                "page": config.source.page,
+                "visual_id": config.source.visual_id,
+                "export_path": str(main_path),
+            },
+        )
+        raise
+
+    logger.info(
+        "Power BI export completed",
+        extra={
+            "export_path": export_path,
+            "artifact_count": len(artifacts),
+            "artifact_keys": sorted(artifacts.keys()),
+        },
+    )
 
     dataset = PowerBIExportDataset(
         mode=config.mode,
@@ -183,12 +226,14 @@ def _powerbi_dataset_builder(_, config: PowerBIVisualConfig, schema, context) ->
 
 def _powerbi_renderer(
     _,
-    config: PowerBIVisualConfig,
+    config: BaseVisualConfig,
     schema: SchemaArtifact[dict],
     dataset: DatasetArtifact[PowerBIExportDataset],
     context,
     outputs: Sequence[OutputTarget],
 ) -> RenderOutcome:
+    if not isinstance(config, PowerBIVisualConfig):
+        raise TypeError("Power BI pipeline expects a PowerBIVisualConfig instance.")
     outcome = RenderOutcome()
     image_path = Path(dataset.value.image_path) if dataset.value.image_path else None
 
@@ -201,6 +246,10 @@ def _powerbi_renderer(
         target.path.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(image_path, target.path)
         outcome.outputs.append(PipelineOutputArtifact(kind=OutputKind.PNG, path=target.path))
+        logger.info(
+            "Copied Power BI PNG",
+            extra={"source": str(image_path), "target": str(target.path)},
+        )
 
     return outcome
 

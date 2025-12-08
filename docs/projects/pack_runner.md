@@ -129,6 +129,27 @@ Key flags:
 > Tip: pass `--plugin your_project` when packs reference custom visual types
 > registered in your project.
 
+### Logging
+
+`praeparo pack run` emits structured logs via Python’s logging module. The CLI
+defaults to `DEBUG` to aid pack debugging; adjust with either:
+
+```bash
+poetry run praeparo pack run projects/example/pack.yaml \
+  --artefact-dir .tmp/example/pack_png \
+  --log-level INFO
+```
+
+or by setting the environment variable:
+
+```bash
+PRAEPARO_LOG_LEVEL=INFO poetry run praeparo pack run projects/example/pack.yaml --artefact-dir .tmp/example/pack_png
+```
+
+Log records include the pack path, slide slug/title, resolved visual type,
+filter key counts, and PNG/artefact destinations to help pinpoint long-running
+slides and timeouts.
+
 ## Execution model
 
 At a high level, `praeparo pack run` does the following:

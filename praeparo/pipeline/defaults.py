@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import math
 from pathlib import Path
 from typing import Sequence
@@ -30,6 +31,8 @@ from .registry import (
     default_json_writer,
     register_visual_pipeline,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _coerce_dimension(value: object) -> int | None:
@@ -90,6 +93,16 @@ def _matrix_dataset_builder(
     planner_result = planner.plan(config, context=context)
     dataset = planner_result.dataset
     plan = planner_result.plan
+    logger.info(
+        "Matrix planner produced dataset",
+        extra={
+            "case": context.case_key,
+            "title": getattr(config, "title", None),
+            "row_count": len(dataset.rows),
+            "value_count": len(config.values),
+            "has_define": bool(getattr(plan, "define", None)),
+        },
+    )
 
     options = context.options
     if options.sort_rows and dataset.rows:
@@ -147,6 +160,10 @@ def _matrix_renderer(
             scale = target.scale if target.scale is not None else context.options.png_scale
             matrix_png(matrix_config, matrix_dataset, str(path), scale=scale)
             emitted.append(PipelineOutputArtifact(kind=OutputKind.PNG, path=path))
+            logger.info(
+                "Wrote matrix PNG",
+                extra={"case": context.case_key, "target": str(path)},
+            )
 
     return RenderOutcome(figure=figure, outputs=emitted)
 
@@ -207,6 +224,16 @@ def _chart_dataset_builder(
     planner_result = planner.plan(config, context=context)
     dataset = planner_result.dataset
     plan = planner_result.plan
+    logger.info(
+        "Chart planner produced dataset",
+        extra={
+            "case": context.case_key,
+            "title": getattr(config, "title", None),
+            "category_count": len(dataset.categories),
+            "series_count": len(dataset.series),
+            "has_placeholders": bool(getattr(planner_result, "placeholders", ())),
+        },
+    )
 
     options = context.options
     if options.ensure_non_empty_rows and not dataset.categories:
@@ -236,12 +263,12 @@ def _chart_renderer(
 
     figure = cartesian_figure(chart_config, chart_dataset)
     if width is not None or height is not None:
-        updates: dict[str, object] = {"autosize": False}
+        updates: dict[str, int | bool] = {"autosize": False}
         if width is not None:
             updates["width"] = width
         if height is not None:
             updates["height"] = height
-        figure.update_layout(**updates)
+        figure.update_layout(**updates)  # type: ignore[arg-type]
 
     emitted: list[PipelineOutputArtifact] = []
     for target in outputs:
@@ -267,6 +294,10 @@ def _chart_renderer(
                 height=height,
             )
             emitted.append(PipelineOutputArtifact(kind=OutputKind.PNG, path=path))
+            logger.info(
+                "Wrote cartesian PNG",
+                extra={"case": context.case_key, "target": str(path)},
+            )
 
     return RenderOutcome(figure=figure, outputs=emitted)
 

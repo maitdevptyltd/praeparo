@@ -42,8 +42,9 @@ poetry run praeparo pack run projects/example/pack.yaml --artefact-dir .tmp/exam
 
 Each visual slide is executed via the normal visual registry and pipelines;
 PNGs land in `<artefact-dir>/<slide-slug>.png` with per-slide artefacts under
-`<artefact-dir>/<slide-slug>/`. See [Pack Runner](pack_runner.md) for the full
-YAML contract and execution model.
+`<artefact-dir>/<slide-slug>/`. Pack CLI logging defaults to `DEBUG`; override
+with `--log-level` or `PRAEPARO_LOG_LEVEL` (see [Pack Runner](pack_runner.md)
+for details).
 
 ## Upcoming: Python Metric Dataset Builder
 

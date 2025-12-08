@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import logging
 from pathlib import Path
-from typing import Awaitable, Sequence, TYPE_CHECKING, Callable
+from typing import Awaitable, Mapping, Sequence, TYPE_CHECKING, Callable
 
 from praeparo.data import MatrixResultSet, mock_matrix_data
 from praeparo.dax import DaxQueryPlan, build_matrix_query
@@ -18,6 +19,9 @@ from ...dax.clients.base import DaxExecutionClient
 
 if TYPE_CHECKING:  # pragma: no cover
     from ....core import ExecutionContext
+
+
+logger = logging.getLogger(__name__)
 
 
 class DaxBackedMatrixPlanner(MatrixQueryPlanner):
@@ -43,20 +47,53 @@ class DaxBackedMatrixPlanner(MatrixQueryPlanner):
         row_fields = tuple(self._extract_row_fields(config))
         plan = build_matrix_query(config, row_fields)
 
+        context_payload = context.options.metadata.get("context") if isinstance(context.options.metadata, Mapping) else {}
+        calculate_filters = context_payload.get("calculate") if isinstance(context_payload, Mapping) else None
+        define_block = context_payload.get("define") if isinstance(context_payload, Mapping) else None
+        if calculate_filters or define_block:
+            logger.debug(
+                "Applying DAX context",
+                extra={
+                    "case": context.case_key,
+                    "calculate_count": len(calculate_filters) if isinstance(calculate_filters, Sequence) else (1 if calculate_filters else 0),
+                    "has_define": bool(define_block),
+                },
+            )
+
         data_options = context.options.data
         dataset_override = getattr(data_options, "dataset_id", None)
         workspace_override = getattr(data_options, "workspace_id", None)
         provider_key = self._resolve_provider_key(context, data_options)
 
         if dataset_override:
+            logger.info(
+                "Executing matrix with dataset override",
+                extra={
+                    "case": context.case_key,
+                    "dataset_id": dataset_override,
+                    "workspace_id": workspace_override,
+                },
+            )
             dataset = self._execute_with_override(config, row_fields, plan, dataset_override, workspace_override)
             return MatrixPlannerResult(plan=plan, dataset=dataset)
 
         if provider_key == "mock":
+            logger.info(
+                "Executing matrix with mock provider",
+                extra={"case": context.case_key, "title": config.title},
+            )
             dataset = self._mock_provider(config, row_fields)
             return MatrixPlannerResult(plan=plan, dataset=dataset)
 
         dataset = self._execute_from_datasource(config, row_fields, plan, context, data_options)
+        logger.info(
+            "Matrix execution completed",
+            extra={
+                "case": context.case_key,
+                "rows": len(dataset.rows),
+                "columns": [field.placeholder for field in row_fields],
+            },
+        )
         return MatrixPlannerResult(plan=plan, dataset=dataset)
 
     def _extract_row_fields(self, config: MatrixConfig) -> Sequence[FieldReference]:
@@ -118,6 +155,15 @@ class DaxBackedMatrixPlanner(MatrixQueryPlanner):
             raise DataSourceConfigError(msg)
 
         workspace_override = getattr(data_options, "workspace_id", None)
+        logger.info(
+            "Executing matrix via datasource",
+            extra={
+                "case": context.case_key,
+                "datasource": datasource.name,
+                "dataset_id": dataset_id,
+                "workspace_id": workspace_override or datasource.workspace_id,
+            },
+        )
         result = self._dax_client.execute_matrix(
             config,
             row_fields,
@@ -147,4 +193,3 @@ class DaxBackedMatrixPlanner(MatrixQueryPlanner):
             msg = "DAX execution client must return a MatrixResultSet."
             raise TypeError(msg)
         return resolved
-
