@@ -132,7 +132,7 @@ def _apply_parameter_templates(data: dict[str, Any], *, context: Mapping[str, st
     rows = data.get("rows")
     if isinstance(rows, list):
         for item in rows:
-            if isinstance(item, Mapping):
+            if isinstance(item, dict):
                 label = item.get("label")
                 if isinstance(label, str) and "{{" in label:
                     item["label"] = _render_with_context(label, context, location="row label")
@@ -140,7 +140,7 @@ def _apply_parameter_templates(data: dict[str, Any], *, context: Mapping[str, st
     filters = data.get("filters")
     if isinstance(filters, list):
         for item in filters:
-            if isinstance(item, Mapping):
+            if isinstance(item, dict):
                 expression = item.get("expression")
                 if isinstance(expression, str) and "{{" in expression:
                     item["expression"] = _render_with_context(expression, context, location="filter expression")

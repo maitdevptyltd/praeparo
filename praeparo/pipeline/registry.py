@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 import json
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Dict, Generic, Sequence, TypeVar, TYPE_CHECKING
+from typing import Any, Callable, Dict, Generic, Protocol, Sequence, TypeVar, TYPE_CHECKING
 
 from praeparo.data import MatrixResultSet  # noqa: F401 - used by default serializer
+from praeparo.models import BaseVisualConfig
+from praeparo.visuals.context_models import VisualContextModel
 
 if TYPE_CHECKING:  # pragma: no cover
     from plotly.graph_objects import Figure
@@ -15,11 +17,11 @@ if TYPE_CHECKING:  # pragma: no cover
     from .core import ExecutionContext, VisualPipeline, VisualExecutionResult
     from .outputs import OutputTarget, PipelineOutputArtifact
     from praeparo.dax import DaxQueryPlan
-    from praeparo.models import BaseVisualConfig
-
 
 SchemaT = TypeVar("SchemaT")
 DatasetT = TypeVar("DatasetT")
+ConfigT = TypeVar("ConfigT", bound=BaseVisualConfig, contravariant=True)
+ContextT = TypeVar("ContextT", bound=VisualContextModel)
 
 SchemaWriter = Callable[[SchemaT, Path, str], Path]
 DatasetWriter = Callable[[DatasetT, Path, str], Path]
@@ -53,44 +55,50 @@ class RenderOutcome:
     children: list["VisualExecutionResult"] = field(default_factory=list)
 
 
-SchemaBuilder = Callable[
-    ["VisualPipeline", "BaseVisualConfig", "ExecutionContext"],
-    SchemaArtifact[SchemaT],
-]
+class SchemaBuilder(Protocol[SchemaT, ConfigT, ContextT]):
+    def __call__(self, pipeline: "VisualPipeline[ContextT]", config: ConfigT, context: "ExecutionContext[ContextT]") -> SchemaArtifact[SchemaT]:
+        ...
 
-DatasetBuilder = Callable[
-    ["VisualPipeline", "BaseVisualConfig", SchemaArtifact[SchemaT], "ExecutionContext"],
-    DatasetArtifact[DatasetT],
-]
 
-Renderer = Callable[
-    [
-        "VisualPipeline",
-        "BaseVisualConfig",
-        SchemaArtifact[SchemaT],
-        DatasetArtifact[DatasetT],
-        "ExecutionContext",
-        Sequence["OutputTarget"],
-    ],
-    RenderOutcome,
-]
+class DatasetBuilder(Protocol[SchemaT, DatasetT, ConfigT, ContextT]):
+    def __call__(
+        self,
+        pipeline: "VisualPipeline[ContextT]",
+        config: ConfigT,
+        schema: SchemaArtifact[SchemaT],
+        context: "ExecutionContext[ContextT]",
+    ) -> DatasetArtifact[DatasetT]:
+        ...
+
+
+class Renderer(Protocol[SchemaT, DatasetT, ConfigT, ContextT]):
+    def __call__(
+        self,
+        pipeline: "VisualPipeline[ContextT]",
+        config: ConfigT,
+        schema: SchemaArtifact[SchemaT],
+        dataset: DatasetArtifact[DatasetT],
+        context: "ExecutionContext[ContextT]",
+        outputs: Sequence["OutputTarget"],
+    ) -> RenderOutcome:
+        ...
 
 
 @dataclass
-class VisualPipelineDefinition(Generic[SchemaT, DatasetT]):
+class VisualPipelineDefinition(Generic[SchemaT, DatasetT, ConfigT, ContextT]):
     """Associates builders and renderers for a visual type."""
 
-    schema_builder: SchemaBuilder[SchemaT]
-    dataset_builder: DatasetBuilder[SchemaT, DatasetT]
-    renderer: Renderer[SchemaT, DatasetT]
+    schema_builder: SchemaBuilder[SchemaT, ConfigT, ContextT]
+    dataset_builder: DatasetBuilder[SchemaT, DatasetT, ConfigT, ContextT]
+    renderer: Renderer[SchemaT, DatasetT, ConfigT, ContextT]
 
 
-_PIPELINE_DEFINITIONS: Dict[str, VisualPipelineDefinition[Any, Any]] = {}
+_PIPELINE_DEFINITIONS: Dict[str, VisualPipelineDefinition[Any, Any, Any, Any]] = {}
 
 
 def register_visual_pipeline(
     type_name: str,
-    definition: VisualPipelineDefinition[Any, Any],
+    definition: VisualPipelineDefinition[Any, Any, Any, Any],
     *,
     overwrite: bool = False,
 ) -> None:
@@ -104,7 +112,7 @@ def register_visual_pipeline(
     _PIPELINE_DEFINITIONS[key] = definition
 
 
-def get_visual_pipeline_definition(type_name: str) -> VisualPipelineDefinition[Any, Any] | None:
+def get_visual_pipeline_definition(type_name: str) -> VisualPipelineDefinition[Any, Any, Any, Any] | None:
     """Return a registered visual pipeline definition."""
 
     key = type_name.strip().lower()
@@ -160,6 +168,7 @@ __all__ = [
     "DatasetArtifact",
     "DatasetBuilder",
     "DatasetWriter",
+    "Renderer",
     "RenderOutcome",
     "SchemaArtifact",
     "SchemaBuilder",

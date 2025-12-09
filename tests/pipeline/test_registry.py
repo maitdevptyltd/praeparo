@@ -12,6 +12,7 @@ from praeparo.pipeline import (
     register_visual_pipeline,
 )
 from praeparo.pipeline.registry import DatasetArtifact, RenderOutcome, SchemaArtifact
+from praeparo.visuals.context_models import VisualContextModel
 
 
 class CustomVisual(BaseVisualConfig):
@@ -21,25 +22,29 @@ class CustomVisual(BaseVisualConfig):
 def test_registered_pipeline_emits_schema_and_dataset(tmp_path: Path) -> None:
     execution_order: list[str] = []
 
-    def schema_builder(pipeline: VisualPipeline, config: BaseVisualConfig, context: ExecutionContext) -> SchemaArtifact[dict[str, object]]:
+    def schema_builder(
+        pipeline: VisualPipeline[VisualContextModel],
+        config: CustomVisual,
+        context: ExecutionContext[VisualContextModel],
+    ) -> SchemaArtifact[dict[str, object]]:
         execution_order.append("schema")
         return SchemaArtifact(value={"config": config.type}, filename="custom.schema.json")
 
     def dataset_builder(
-        pipeline: VisualPipeline,
-        config: BaseVisualConfig,
+        pipeline: VisualPipeline[VisualContextModel],
+        config: CustomVisual,
         schema: SchemaArtifact[dict[str, object]],
-        context: ExecutionContext,
+        context: ExecutionContext[VisualContextModel],
     ) -> DatasetArtifact[dict[str, object]]:
         execution_order.append("dataset")
         return DatasetArtifact(value={"schemaType": schema.value["config"]}, filename="custom.data.json")
 
     def renderer(
-        pipeline: VisualPipeline,
-        config: BaseVisualConfig,
+        pipeline: VisualPipeline[VisualContextModel],
+        config: CustomVisual,
         schema: SchemaArtifact[dict[str, object]],
         dataset: DatasetArtifact[dict[str, object]],
-        context: ExecutionContext,
+        context: ExecutionContext[VisualContextModel],
         outputs,
     ) -> RenderOutcome:
         execution_order.append("render")

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, cast
 
 import plotly.graph_objects as go
 
@@ -58,7 +58,7 @@ def _row_columns(config: MatrixConfig, dataset: MatrixResultSet) -> list[list[ob
     for row_config in config.rows:
         if row_config.hidden:
             continue
-        column_values = [render_template(row_config.template, record) for record in dataset.rows]
+        column_values = [cast(object, render_template(row_config.template, record)) for record in dataset.rows]
         columns.append(column_values)
     return columns
 

@@ -9,7 +9,7 @@ from typing import Sequence
 
 from praeparo.data import ChartResultSet, MatrixResultSet
 from praeparo.dax import DaxQueryPlan
-from praeparo.models import BaseVisualConfig, CartesianChartConfig, MatrixConfig
+from praeparo.models import CartesianChartConfig, MatrixConfig
 from praeparo.rendering import (
     cartesian_figure,
     cartesian_html,
@@ -18,6 +18,8 @@ from praeparo.rendering import (
     matrix_html,
     matrix_png,
 )
+
+from praeparo.visuals.context_models import VisualContextModel
 
 from .core import ExecutionContext, VisualPipeline, _ensure_parent_directory
 from .outputs import OutputKind, OutputTarget, PipelineOutputArtifact
@@ -68,24 +70,19 @@ def _write_matrix_dataset(dataset: MatrixResultSet, directory: Path, filename: s
 
 
 def _matrix_schema_builder(
-    pipeline: VisualPipeline,
-    config: BaseVisualConfig,
-    context: ExecutionContext,
+    pipeline: VisualPipeline[VisualContextModel],
+    config: MatrixConfig,
+    context: ExecutionContext[VisualContextModel],
 ) -> SchemaArtifact[MatrixConfig]:
-    if not isinstance(config, MatrixConfig):
-        raise TypeError("Matrix pipeline expects a MatrixConfig instance.")
     return SchemaArtifact(value=config, filename="matrix.schema.json", writer=_write_matrix_schema)
 
 
 def _matrix_dataset_builder(
-    pipeline: VisualPipeline,
-    config: BaseVisualConfig,
+    pipeline: VisualPipeline[VisualContextModel],
+    config: MatrixConfig,
     schema: SchemaArtifact[MatrixConfig],
-    context: ExecutionContext,
+    context: ExecutionContext[VisualContextModel],
 ) -> DatasetArtifact[MatrixResultSet]:
-    if not isinstance(config, MatrixConfig):
-        raise TypeError("Matrix pipeline expects a MatrixConfig instance.")
-
     planner = pipeline.resolve_planner(config, context)
     if not isinstance(planner, MatrixQueryPlanner):
         raise TypeError("Resolved planner is not a MatrixQueryPlanner.")
@@ -138,11 +135,11 @@ def _matrix_dataset_builder(
 
 
 def _matrix_renderer(
-    pipeline: VisualPipeline,
-    config: BaseVisualConfig,
+    pipeline: VisualPipeline[VisualContextModel],
+    config: MatrixConfig,
     schema: SchemaArtifact[MatrixConfig],
     dataset: DatasetArtifact[MatrixResultSet],
-    context: ExecutionContext,
+    context: ExecutionContext[VisualContextModel],
     outputs: Sequence[OutputTarget],
 ) -> RenderOutcome:
     matrix_config = schema.value
@@ -199,23 +196,19 @@ def _write_chart_dataset(dataset: ChartResultSet, directory: Path, filename: str
 
 
 def _chart_schema_builder(
-    pipeline: VisualPipeline,
-    config: BaseVisualConfig,
-    context: ExecutionContext,
+    pipeline: VisualPipeline[VisualContextModel],
+    config: CartesianChartConfig,
+    context: ExecutionContext[VisualContextModel],
 ) -> SchemaArtifact[CartesianChartConfig]:
-    if not isinstance(config, CartesianChartConfig):
-        raise TypeError("Chart pipeline expects a CartesianChartConfig instance.")
     return SchemaArtifact(value=config, filename="chart.schema.json", writer=_write_chart_schema)
 
 
 def _chart_dataset_builder(
-    pipeline: VisualPipeline,
-    config: BaseVisualConfig,
+    pipeline: VisualPipeline[VisualContextModel],
+    config: CartesianChartConfig,
     schema: SchemaArtifact[CartesianChartConfig],
-    context: ExecutionContext,
+    context: ExecutionContext[VisualContextModel],
 ) -> DatasetArtifact[ChartResultSet]:
-    if not isinstance(config, CartesianChartConfig):
-        raise TypeError("Chart pipeline expects a CartesianChartConfig instance.")
 
     planner = pipeline.resolve_planner(config, context)
     if not isinstance(planner, ChartQueryPlanner):
@@ -248,11 +241,11 @@ def _chart_dataset_builder(
 
 
 def _chart_renderer(
-    pipeline: VisualPipeline,
-    config: BaseVisualConfig,
+    pipeline: VisualPipeline[VisualContextModel],
+    config: CartesianChartConfig,
     schema: SchemaArtifact[CartesianChartConfig],
     dataset: DatasetArtifact[ChartResultSet],
-    context: ExecutionContext,
+    context: ExecutionContext[VisualContextModel],
     outputs: Sequence[OutputTarget],
 ) -> RenderOutcome:
     chart_config = schema.value
@@ -303,14 +296,14 @@ def _chart_renderer(
 
 
 def register_default_pipelines() -> None:
-    matrix_definition = VisualPipelineDefinition(
+    matrix_definition = VisualPipelineDefinition[MatrixConfig, MatrixResultSet, MatrixConfig, VisualContextModel](
         schema_builder=_matrix_schema_builder,
         dataset_builder=_matrix_dataset_builder,
         renderer=_matrix_renderer,
     )
     register_visual_pipeline("matrix", matrix_definition, overwrite=True)
 
-    chart_definition = VisualPipelineDefinition(
+    chart_definition = VisualPipelineDefinition[CartesianChartConfig, ChartResultSet, CartesianChartConfig, VisualContextModel](
         schema_builder=_chart_schema_builder,
         dataset_builder=_chart_dataset_builder,
         renderer=_chart_renderer,

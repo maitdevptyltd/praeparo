@@ -2,14 +2,11 @@
 
 from __future__ import annotations
 
-from typing import Iterable, Iterator, Sequence, TypeVar
+from typing import Iterable, Iterator, Sequence
 
 from praeparo.visuals.metrics import VisualGroupConfig, VisualMetricConfig
 
 from .planner_core import NameStrategy, default_name_strategy
-
-GroupT = TypeVar("GroupT", bound=VisualGroupConfig)
-MetricT = TypeVar("MetricT", bound=VisualMetricConfig)
 
 
 def normalise_define_blocks(blocks: str | Sequence[str] | None) -> tuple[str, ...]:
@@ -66,9 +63,9 @@ def generate_measure_names(
 
 def iter_group_metrics(
     *,
-    groups: Iterable[GroupT] | None,
-    metrics: Iterable[MetricT] | None = None,
-) -> Iterator[tuple[GroupT | None, MetricT]]:
+    groups: Iterable[VisualGroupConfig] | None,
+    metrics: Iterable[VisualMetricConfig] | None = None,
+) -> Iterator[tuple[VisualGroupConfig | None, VisualMetricConfig]]:
     """Yield `(group, metric)` pairs from the provided groups and top-level metrics."""
 
     if groups:

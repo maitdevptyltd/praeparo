@@ -6,12 +6,13 @@ import asyncio
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Mapping, Sequence, Tuple
+from typing import Mapping, Sequence, Tuple, cast
 
 import logging
 
 from praeparo.models import BaseVisualConfig, PowerBIVisualConfig
 from praeparo.powerbi import PowerBIClient, PowerBISettings
+from praeparo.pipeline import ExecutionContext, VisualPipeline
 from praeparo.pipeline.outputs import OutputKind, OutputTarget, PipelineOutputArtifact
 from praeparo.pipeline.registry import (
     DatasetArtifact,
@@ -21,6 +22,7 @@ from praeparo.pipeline.registry import (
     default_json_writer,
     register_visual_pipeline,
 )
+from praeparo.visuals.context_models import VisualContextModel
 from praeparo.visuals.dax.planner_core import slugify
 from praeparo.visuals.registry import register_visual_type
 
@@ -123,17 +125,27 @@ class PowerBIExportDataset:
     filters: list[str]
 
 
-def _powerbi_schema_builder(_, config: BaseVisualConfig, context) -> SchemaArtifact[dict]:
+def _powerbi_schema_builder(
+    pipeline: VisualPipeline[VisualContextModel],
+    config: BaseVisualConfig,
+    context: ExecutionContext[VisualContextModel],
+) -> SchemaArtifact[dict]:
     if not isinstance(config, PowerBIVisualConfig):
         raise TypeError("Power BI pipeline expects a PowerBIVisualConfig instance.")
     return SchemaArtifact(value=config.model_dump(), filename="schema.json")
 
 
-def _powerbi_dataset_builder(_, config: BaseVisualConfig, schema, context) -> DatasetArtifact[PowerBIExportDataset]:
+def _powerbi_dataset_builder(
+    pipeline: VisualPipeline[VisualContextModel],
+    config: BaseVisualConfig,
+    schema: SchemaArtifact[dict],
+    context: ExecutionContext[VisualContextModel],
+) -> DatasetArtifact[PowerBIExportDataset]:
     if not isinstance(config, PowerBIVisualConfig):
         raise TypeError("Power BI pipeline expects a PowerBIVisualConfig instance.")
     # Start by merging any pack-level filters with the visual's own filters.
-    inherited_filters = context.options.metadata.get("powerbi_filters") if isinstance(context.options.metadata, dict) else None
+    raw_filters = context.options.metadata.get("powerbi_filters") if isinstance(context.options.metadata, dict) else None
+    inherited_filters = cast(Mapping[str, str] | Sequence[str] | None, raw_filters)
     merged_filters = _merge_filters(inherited_filters, config.filters, config.filters_merge_strategy)
 
     # Decide where the primary export and its JSON manifest will land.
@@ -225,11 +237,11 @@ def _powerbi_dataset_builder(_, config: BaseVisualConfig, schema, context) -> Da
 
 
 def _powerbi_renderer(
-    _,
+    pipeline: VisualPipeline[VisualContextModel],
     config: BaseVisualConfig,
     schema: SchemaArtifact[dict],
     dataset: DatasetArtifact[PowerBIExportDataset],
-    context,
+    context: ExecutionContext[VisualContextModel],
     outputs: Sequence[OutputTarget],
 ) -> RenderOutcome:
     if not isinstance(config, PowerBIVisualConfig):
@@ -257,7 +269,7 @@ def _powerbi_renderer(
 register_visual_type("powerbi", _load_powerbi_visual, overwrite=True)
 register_visual_pipeline(
     "powerbi",
-    VisualPipelineDefinition(
+    VisualPipelineDefinition[dict, PowerBIExportDataset, BaseVisualConfig, VisualContextModel](
         schema_builder=_powerbi_schema_builder,
         dataset_builder=_powerbi_dataset_builder,
         renderer=_powerbi_renderer,

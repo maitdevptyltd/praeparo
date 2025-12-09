@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Sequence
+from typing import Any, Sequence
 
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
@@ -34,7 +34,7 @@ def frame_figure(
     titles = [child_config.title or f"Section {index}" for index, (child_config, _) in enumerate(children, start=1)]
     vertical_spacing = AUTO_FRAME_VERTICAL_SPACING if frame.auto_height else 0.08
 
-    subplot_kwargs: dict[str, object] = {}
+    subplot_kwargs: dict[str, Any] = {}
     if frame.show_titles:
         subplot_kwargs["subplot_titles"] = titles
 
@@ -66,7 +66,7 @@ def frame_figure(
         top_margin += SUBPLOT_TITLE_MARGIN
     margin = dict(l=0, r=0, t=top_margin, b=0)
 
-    layout_kwargs = dict(
+    layout_kwargs: dict[str, Any] = dict(
         title=frame.title,
         margin=margin,
         paper_bgcolor="white",
@@ -135,4 +135,3 @@ def frame_png(
 
 
 __all__ = ["frame_figure", "frame_html", "frame_png"]
-

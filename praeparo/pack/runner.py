@@ -26,6 +26,8 @@ from praeparo.pipeline import (
 from praeparo.visuals.dax.planner_core import slugify
 from praeparo.io.yaml_loader import load_visual_config
 from praeparo.visuals.context import merge_context_payload
+from praeparo.visuals.registry import VisualTypeRegistration, get_visual_registration
+from praeparo.visuals.context_models import VisualContextModel
 
 
 VisualLoader = Callable[[Path], BaseVisualConfig]
@@ -90,6 +92,32 @@ def _prepare_slide_options(
         merged_metadata.update(metadata_update)
     options.metadata = merged_metadata
     return options, slide_dir
+
+
+def _instantiate_slide_context(
+    *,
+    registration: VisualTypeRegistration | None,
+    metadata: Mapping[str, object],
+    project_root: Path,
+) -> VisualContextModel | None:
+    if registration is None or registration.context_model is None:
+        return None
+
+    context_model = registration.context_model
+    raw_context: dict[str, object] = dict(metadata)
+
+    metrics_root = raw_context.get("metrics_root")
+    if isinstance(metrics_root, (str, Path)):
+        resolved_root = Path(metrics_root)
+        raw_context["metrics_root"] = resolved_root.expanduser().resolve(strict=False)
+    elif metrics_root is None:
+        raw_context["metrics_root"] = (project_root / "registry" / "metrics").expanduser().resolve(strict=False)
+
+    context_payload = raw_context.get("context")
+    if isinstance(context_payload, Mapping):
+        raw_context["context"] = dict(context_payload)
+
+    return context_model.model_validate(raw_context)
 
 
 def _should_run_slide(slide: PackSlide, *, only: set[str] | None) -> bool:
@@ -226,11 +254,19 @@ def run_pack(
                 },
             )
 
+        registration = get_visual_registration(visual.type)
+        visual_context = _instantiate_slide_context(
+            registration=registration,
+            metadata=options.metadata,
+            project_root=pack_path.parent,
+        )
+
         execution_context = ExecutionContext(
             config_path=visual_path,
             project_root=pack_path.parent,
             case_key=slide_slug,
             options=options,
+            visual_context=visual_context,
         )
 
         if visual.type == "powerbi":

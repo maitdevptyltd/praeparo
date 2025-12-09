@@ -5,11 +5,15 @@ from __future__ import annotations
 import argparse
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Dict, Iterable, Mapping, Sequence, Tuple
+from typing import TYPE_CHECKING, Callable, Dict, Iterable, Mapping, Sequence, Tuple, Type
 
 import yaml
 
 from praeparo.models.visual_base import BaseVisualConfig
+from praeparo.visuals.context_models import VisualContextModel
+
+if TYPE_CHECKING:  # pragma: no cover
+    from praeparo.pipeline import VisualExecutionResult
 
 VisualLoader = Callable[[Path, Mapping[str, object], Tuple[Path, ...]], BaseVisualConfig]
 
@@ -52,6 +56,7 @@ class VisualTypeRegistration:
 
     loader: VisualLoader
     cli: VisualCLIOptions | None = None
+    context_model: Type[VisualContextModel] | None = None
 
 
 _VISUAL_REGISTRY: Dict[str, VisualTypeRegistration] = {}
@@ -63,6 +68,7 @@ def register_visual_type(
     *,
     overwrite: bool = False,
     cli: VisualCLIOptions | None = None,
+    context_model: Type[VisualContextModel] | None = None,
 ) -> None:
     """Register a loader (and optional CLI metadata) for a visual type."""
 
@@ -71,7 +77,7 @@ def register_visual_type(
     key = type_name.strip().lower()
     if not overwrite and key in _VISUAL_REGISTRY:
         raise ValueError(f"Visual type '{key}' is already registered")
-    _VISUAL_REGISTRY[key] = VisualTypeRegistration(loader=loader, cli=cli)
+    _VISUAL_REGISTRY[key] = VisualTypeRegistration(loader=loader, cli=cli, context_model=context_model)
 
 
 def load_visual_definition(

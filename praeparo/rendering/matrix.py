@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from importlib import util as importlib_util
 from pathlib import Path
+from typing import Any
 
 import plotly.graph_objects as go
 
@@ -24,7 +25,7 @@ def matrix_figure(config: MatrixConfig, dataset: MatrixResultSet) -> go.Figure:
     title_margin = MATRIX_TITLE_MARGIN if config.title else 0
     margin = dict(l=0, r=0, t=title_margin, b=0)
 
-    layout_kwargs = dict(
+    layout_kwargs: dict[str, Any] = dict(
         title=config.title,
         margin=margin,
         paper_bgcolor="white",

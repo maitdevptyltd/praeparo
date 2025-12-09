@@ -19,10 +19,14 @@ from praeparo.visuals import (
     VisualCLIOptions,
     register_visual_type,
 )
+from praeparo.visuals import VisualContextModel
 
 
-class _DummyConfig:
-    type = "cli_example"
+class _DummyConfig(BaseVisualConfig):
+    type: str = "cli_example"
+
+class _DummyContext(VisualContextModel):
+    sample: str | None = None
 
 
 def _dummy_loader(path: Path, payload, stack):  # pragma: no cover - loader patched in tests
@@ -40,6 +44,7 @@ def _register_cli_example() -> None:
                 VisualCLIArgument("--sample", help="Sample metadata input.", metadata_key="sample"),
             ),
         ),
+        context_model=_DummyContext,
     )
     register_dax_compiler(
         "cli_example",
@@ -60,6 +65,7 @@ def test_cli_run_populates_metadata(monkeypatch, tmp_path) -> None:
 
     captured_metadata: Dict[str, object] = {}
     captured_options: list = []
+    captured_contexts: list = []
 
     def fake_load_visual_config(path: Path):
         assert path == config_path
@@ -72,6 +78,7 @@ def test_cli_run_populates_metadata(monkeypatch, tmp_path) -> None:
         def execute(self, visual, context):
             captured_metadata.update(context.options.metadata)
             captured_options.append(context.options)
+            captured_contexts.append(context.visual_context)
             result = VisualExecutionResult(
                 config=visual,
                 outputs=[
@@ -129,6 +136,12 @@ def test_cli_run_populates_metadata(monkeypatch, tmp_path) -> None:
     assert options.data.datasource_override is None
     assert options.data.provider_key == "mock"
     assert options.metadata["data_mode"] == "mock"
+    assert captured_contexts
+    ctx = captured_contexts[0]
+    assert isinstance(ctx, _DummyContext)
+    assert ctx.sample == "example"
+    assert ctx.metrics_root == Path("registry/metrics")
+    assert ctx.seed == 42
     if hasattr(builtins, "__praeparo_test_plugin_loaded__"):
         delattr(builtins, "__praeparo_test_plugin_loaded__")
 

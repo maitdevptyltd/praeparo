@@ -19,6 +19,7 @@ from .registry import (
     register_visual_type,
 )
 from .context import ContextLoadError, load_context_file, merge_context_payload
+from .context_models import VisualContextModel
 __all__ = [
     "CalculateInput",
     "VisualGroupConfig",
@@ -37,4 +38,5 @@ __all__ = [
     "VisualCLIArgument",
     "VisualCLIOptions",
     "VisualCLIHooks",
+    "VisualContextModel",
 ]

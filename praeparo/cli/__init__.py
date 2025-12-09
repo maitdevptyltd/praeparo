@@ -34,6 +34,7 @@ from praeparo.visuals.dax_compilers import (
     get_dax_compiler_registration,
     iter_dax_compiler_registrations,
 )
+from praeparo.visuals.context_models import VisualContextModel
 from praeparo.powerbi import (
     PowerBIAuthenticationError,
     PowerBIConfigurationError,
@@ -44,6 +45,7 @@ from praeparo.visuals.registry import (
     VisualCLIArgument,
     VisualCLIOptions,
     VisualTypeRegistration,
+    get_visual_registration,
     iter_visual_registrations,
 )
 
@@ -584,6 +586,43 @@ def _prepare_context_payload(args: argparse.Namespace) -> Dict[str, object]:
     return merge_context_payload(base=base, calculate=args.calculate, define=args.define)
 
 
+def _instantiate_visual_context(
+    *,
+    args: argparse.Namespace,
+    registration: VisualTypeRegistration | None,
+    metadata: Mapping[str, object],
+    project_root: Path | None,
+) -> VisualContextModel | None:
+    if registration is None or registration.context_model is None:
+        return None
+
+    context_model = registration.context_model
+    raw_context: Dict[str, object] = dict(metadata)
+
+    metrics_root: Path | None = None
+    if getattr(args, "metrics_root", None) is not None:
+        metrics_root = Path(args.metrics_root)
+    else:
+        existing_root = raw_context.get("metrics_root")
+        if isinstance(existing_root, (str, Path)):
+            metrics_root = Path(existing_root)
+        elif project_root is not None:
+            metrics_root = project_root / "registry" / "metrics"
+
+    if metrics_root is not None:
+        raw_context["metrics_root"] = metrics_root.expanduser().resolve(strict=False)
+
+    context_payload = raw_context.get("context")
+    if isinstance(context_payload, Mapping):
+        raw_context["context"] = dict(context_payload)
+
+    grain_override = getattr(args, "grain", None)
+    if grain_override:
+        raw_context["grain"] = tuple(grain_override)
+
+    return context_model.model_validate(raw_context)
+
+
 def _prepare_metadata(args: argparse.Namespace, cli: VisualCLIOptions | None) -> Dict[str, object]:
     metadata: Dict[str, object] = {}
     metadata.update(_parse_metadata_pairs(args.meta or []))
@@ -744,14 +783,22 @@ def _execute_pipeline(
     visual: BaseVisualConfig,
     args: argparse.Namespace,
     options: PipelineOptions,
+    registration: VisualTypeRegistration | None,
 ) -> VisualExecutionResult:
     project_root = _project_root_for(args.config)
     planner_provider = build_default_query_planner_provider()
+    visual_context = _instantiate_visual_context(
+        args=args,
+        registration=registration,
+        metadata=options.metadata,
+        project_root=project_root,
+    )
     context = ExecutionContext(
         config_path=args.config,
         project_root=project_root,
         case_key=args.config.stem,
         options=options,
+        visual_context=visual_context,
     )
     pipeline = VisualPipeline(planner_provider=planner_provider)
 
@@ -830,9 +877,10 @@ def _handle_visual_run(args: argparse.Namespace) -> int:
     if args._visual_type == "auto":
         args._visual_type = visual.type
 
+    registration = get_visual_registration(args._visual_type)
     metadata = _prepare_metadata(args, cli_options)
     options = _build_pipeline_options(args, metadata, include_outputs=True)
-    result = _execute_pipeline(visual, args, options)
+    result = _execute_pipeline(visual, args, options, registration)
 
     if args.print_dax:
         _print_dax_output(result)
@@ -854,12 +902,13 @@ def _handle_visual_artifacts(args: argparse.Namespace) -> int:
     if args._visual_type == "auto":
         args._visual_type = visual.type
 
+    registration = get_visual_registration(args._visual_type)
     if args.artefact_dir is None:
         raise ValueError("--artefact-dir must be supplied when generating artefacts.")
 
     metadata = _prepare_metadata(args, cli_options)
     options = _build_pipeline_options(args, metadata, include_outputs=False)
-    result = _execute_pipeline(visual, args, options)
+    result = _execute_pipeline(visual, args, options, registration)
 
     if cli_options and cli_options.hooks.post_execute:
         cli_options.hooks.post_execute(result, args)
@@ -884,6 +933,8 @@ def _handle_visual_dax(args: argparse.Namespace) -> int:
     registration: DaxCompilerRegistration | None = None
     visual: object | None = None
 
+    visual_registration: VisualTypeRegistration | None = None
+
     if type_name == "auto":
         candidate = _load_visual(config_path)
         candidate_type = getattr(candidate, "type", None)
@@ -894,12 +945,14 @@ def _handle_visual_dax(args: argparse.Namespace) -> int:
         registration = get_dax_compiler_registration(type_name)
         if registration is None:
             raise ValueError(f"No DAX compiler registered for visual type '{type_name}'.")
+        visual_registration = get_visual_registration(type_name)
         if registration.loader is not None:
             visual = registration.loader(config_path)
         else:
             visual = candidate
     else:
         registration = get_dax_compiler_registration(type_name)
+        visual_registration = get_visual_registration(type_name)
 
     if registration is None:
         raise ValueError(f"No DAX compiler registered for visual type '{type_name}'.")
@@ -912,11 +965,18 @@ def _handle_visual_dax(args: argparse.Namespace) -> int:
     options = _build_pipeline_options(args, metadata, include_outputs=False)
 
     project_root = _project_root_for(args.config)
+    visual_context = _instantiate_visual_context(
+        args=args,
+        registration=visual_registration,
+        metadata=options.metadata,
+        project_root=project_root,
+    )
     context = ExecutionContext(
         config_path=args.config,
         project_root=project_root,
         case_key=args.config.stem,
         options=options,
+        visual_context=visual_context,
     )
 
     artifacts = registration.compiler(visual, context, args)

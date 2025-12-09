@@ -18,6 +18,7 @@ from .registry import (
     get_visual_pipeline_definition,
     register_visual_pipeline,
 )
+from .visual_definition import VisualPipelineDefinitionBase
 from .providers import (
     DefaultQueryPlannerProvider,
     QueryPlannerProvider,
@@ -45,6 +46,7 @@ __all__ = [
     "SchemaArtifact",
     "SchemaBuilder",
     "VisualPipelineDefinition",
+    "VisualPipelineDefinitionBase",
     "get_visual_pipeline_definition",
     "register_visual_pipeline",
 ]

@@ -128,13 +128,13 @@ async def powerbi_matrix_data(
 def _coerce_number(value: object) -> float | None:
     if value is None:
         return None
-    if isinstance(value, (int, float)):
-        number = float(value)
-    else:
+    if isinstance(value, (int, float, str, bytes, bytearray)):
         try:
             number = float(value)
         except (TypeError, ValueError):
             return None
+    else:
+        return None
     if math.isnan(number):
         return None
     return number

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from importlib import util as importlib_util
 from pathlib import Path
-from typing import Iterable, cast
+from typing import Any, Iterable, cast
 
 import plotly.graph_objects as go
 from plotly.graph_objs.layout import Legend, Margin
@@ -17,7 +17,7 @@ from praeparo.models import (
 
 
 def _apply_dimensions(figure: go.Figure, width: int | None, height: int | None) -> None:
-    updates: dict[str, object] = {}
+    updates: dict[str, Any] = {}
     if width is not None:
         updates["width"] = int(width)
     if height is not None:

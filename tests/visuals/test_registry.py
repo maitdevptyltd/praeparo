@@ -11,6 +11,7 @@ from praeparo.visuals import load_visual_definition, register_visual_type
 class DummyVisual(BaseVisualConfig):
     model_config = BaseVisualConfig.model_config
 
+    type: str = "dummy"
     payload: str
 
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 import inspect
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Awaitable, Callable, Dict, List, Mapping, Protocol, Sequence
+from typing import Awaitable, Callable, Dict, Generic, List, Mapping, Optional, Protocol, Sequence, TypeVar
 
 import plotly.graph_objects as go
 
@@ -34,6 +34,9 @@ from .registry import (
     default_json_writer,
     get_visual_pipeline_definition,
 )
+from praeparo.visuals.context_models import VisualContextModel
+
+ContextT = TypeVar("ContextT", bound=VisualContextModel)
 
 
 @dataclass
@@ -68,13 +71,14 @@ class PipelineOptions:
 
 
 @dataclass
-class ExecutionContext:
+class ExecutionContext(Generic[ContextT]):
     """Identifies the visual and environment participating in a run."""
 
     config_path: Path | None = None
     project_root: Path | None = None
     case_key: str | None = None
     options: PipelineOptions = field(default_factory=PipelineOptions)
+    visual_context: Optional[ContextT] = None
 
 
 @dataclass
@@ -156,15 +160,15 @@ def _first_non_empty_candidate(candidates: Sequence[str]) -> str:
     return "visual"
 
 
-class VisualPipelineStrategy(Protocol):
+class VisualPipelineStrategy(Protocol[ContextT]):
     """Strategy executed for each supported visual type."""
 
-    def execute(self, config: BaseVisualConfig, context: ExecutionContext) -> VisualExecutionResult:
+    def execute(self, config: BaseVisualConfig, context: ExecutionContext[ContextT]) -> VisualExecutionResult:
         """Render `config` with the provided execution context."""
         ...
 
 
-class VisualPipeline:
+class VisualPipeline(Generic[ContextT]):
     """Entry point that fans out to visual-type specific strategies."""
 
     def __init__(
@@ -176,14 +180,14 @@ class VisualPipeline:
         self._strategies: Dict[str, VisualPipelineStrategy] = {}
         self.register_strategy("frame", _FrameStrategy(self))
 
-    def resolve_planner(self, visual: BaseVisualConfig, context: ExecutionContext):
+    def resolve_planner(self, visual: BaseVisualConfig, context: ExecutionContext[ContextT]):
         """Resolve a planner for the supplied visual configuration."""
         return self._planner_provider.resolve(visual, context)
 
     def register_strategy(self, visual_type: str, strategy: VisualPipelineStrategy) -> None:
         self._strategies[visual_type] = strategy
 
-    def execute(self, config: BaseVisualConfig, context: ExecutionContext) -> VisualExecutionResult:
+    def execute(self, config: BaseVisualConfig, context: ExecutionContext[ContextT]) -> VisualExecutionResult:
         definition = get_visual_pipeline_definition(config.type)
         if definition is not None:
             return self._execute_definition(definition, config, context)
@@ -195,9 +199,9 @@ class VisualPipeline:
 
     def _execute_definition(
         self,
-        definition: VisualPipelineDefinition[object, object],
+        definition: VisualPipelineDefinition[object, object, BaseVisualConfig, ContextT],
         config: BaseVisualConfig,
-        context: ExecutionContext,
+        context: ExecutionContext[ContextT],
     ) -> VisualExecutionResult:
         schema_artifact = definition.schema_builder(self, config, context)
         dataset_artifact = definition.dataset_builder(self, config, schema_artifact, context)
@@ -292,7 +296,7 @@ class _FrameStrategy:
     def __init__(self, pipeline: VisualPipeline) -> None:
         self._pipeline = pipeline
 
-    def execute(self, config: BaseVisualConfig, context: ExecutionContext) -> VisualExecutionResult:
+    def execute(self, config: BaseVisualConfig, context: ExecutionContext[ContextT]) -> VisualExecutionResult:
         if not isinstance(config, FrameConfig):
             raise TypeError("Frame strategy requires a FrameConfig instance.")
 
