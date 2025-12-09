@@ -74,20 +74,63 @@ def merge_odata_filters(
 def normalise_calculate_filters(value: FiltersType) -> list[str]:
     """Return calculate filters as an ordered list of strings."""
 
-    normalised = normalise_filters(value)
-    if normalised is None:
-        return []
-    if isinstance(normalised, dict):
-        return list(normalised.values())
-    return list(normalised)
+    named, unlabelled = _split_calculate_filters(value)
+    return [*named.values(), *unlabelled]
 
 
 def merge_calculate_filters(global_filters: FiltersType, local_filters: FiltersType) -> list[str]:
-    """Combine pack-level and slide-level calculate filters, preserving order."""
+    """Combine pack-level and slide-level calculate filters with named overrides."""
 
-    base = normalise_calculate_filters(global_filters)
-    additions = normalise_calculate_filters(local_filters)
-    return [*base, *additions]
+    global_named, global_unlabelled = _split_calculate_filters(global_filters)
+    local_named, local_unlabelled = _split_calculate_filters(local_filters)
+
+    merged_named = {**global_named, **local_named}
+    merged_unlabelled = [*global_unlabelled, *local_unlabelled]
+
+    return [*merged_named.values(), *merged_unlabelled]
+
+
+def _split_calculate_filters(value: FiltersType) -> tuple[dict[str, str], list[str]]:
+    """
+    Split calculate filters into named and unlabelled components.
+
+    Named filters come from mappings (including mappings inside sequences). Strings
+    and other non-mapping entries are treated as unlabelled and maintain order.
+    """
+
+    named: dict[str, str] = {}
+    unlabelled: list[str] = []
+
+    if value is None:
+        return named, unlabelled
+
+    if isinstance(value, str):
+        candidate = _strip(value)
+        if candidate:
+            unlabelled.append(candidate)
+        return named, unlabelled
+
+    if isinstance(value, Mapping):
+        for key, candidate in value.items():
+            cleaned = _strip(candidate)
+            if cleaned:
+                named[str(key)] = cleaned
+        return named, unlabelled
+
+    if isinstance(value, Sequence):
+        for entry in value:
+            if isinstance(entry, Mapping):
+                entry_named, entry_unlabelled = _split_calculate_filters(entry)
+                named.update(entry_named)
+                unlabelled.extend(entry_unlabelled)
+                continue
+            candidate = _strip(entry)
+            if candidate:
+                unlabelled.append(candidate)
+        return named, unlabelled
+
+    msg = f"Unsupported filter type: {type(value).__name__}"
+    raise TypeError(msg)
 
 
 __all__ = [

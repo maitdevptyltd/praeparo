@@ -245,6 +245,64 @@ def test_run_pack_populates_typed_dax_context(tmp_path: Path) -> None:
     assert visual_ctx.dax.define == ("DEFINE MEASURE Test[Value] = 1",)
 
 
+def test_run_pack_named_calculate_overrides_global(tmp_path: Path) -> None:
+    register_visual_type(
+        "contextual_override",
+        lambda path, payload=None, stack=(): BaseVisualConfig(type="contextual_override"),
+        overwrite=True,
+        context_model=VisualContextModel,
+    )
+
+    pack_path = tmp_path / "pack.yaml"
+    pack_path.write_text("", encoding="utf-8")
+
+    pack = PackConfig(
+        schema="test-pack",
+        context={"lender_id": 7},
+        calculate={
+            "lender": "'dim_lender'[LenderId] = {{ lender_id }}",
+            "channel": "'dim_channel'[Name] = \"Base\"",
+        },
+        slides=[
+            PackSlide(
+                title="Context Slide",
+                visual=PackVisualRef(
+                    ref="contextual.yaml",
+                    calculate={
+                        "lender": "'dim_lender'[LenderId] = 9",
+                        "region": "'dim_region'[Name] = \"NSW\"",
+                    },
+                ),
+            ),
+        ],
+    )
+
+    visuals: Dict[str, BaseVisualConfig] = {"contextual.yaml": BaseVisualConfig(type="contextual_override")}
+
+    def _loader(path: Path, payload: Mapping[str, object] | None = None, stack: tuple[Path, ...] = ()) -> BaseVisualConfig:
+        return visuals[path.name]
+
+    pipeline = _StubPipeline()
+    run_pack(
+        pack_path,
+        pack,
+        output_root=tmp_path / "artefacts",
+        base_options=PipelineOptions(),
+        visual_loader=_loader,
+        pipeline=cast(VisualPipeline[Any], pipeline),
+        env=create_pack_jinja_env(),
+    )
+
+    assert pipeline.contexts
+    visual_ctx = pipeline.contexts[0].visual_context
+    assert visual_ctx is not None
+    assert visual_ctx.dax.calculate == (
+        "'dim_lender'[LenderId] = 9",
+        "'dim_channel'[Name] = \"Base\"",
+        "'dim_region'[Name] = \"NSW\"",
+    )
+
+
 def test_run_pack_honours_only_slides(tmp_path: Path) -> None:
     pack_path = tmp_path / "pack.yaml"
     pack_path.write_text("", encoding="utf-8")

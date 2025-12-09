@@ -27,6 +27,7 @@ from praeparo.pack import (
     PackConfigError,
     create_pack_jinja_env,
     load_pack_config,
+    render_value,
     run_pack,
 )
 from praeparo.visuals.dax_compilers import (
@@ -579,10 +580,73 @@ def _collect_visual_metadata(args: argparse.Namespace, cli: VisualCLIOptions | N
     return payload
 
 
+def _pack_to_visual_context_base(payload: Mapping[str, object]) -> Dict[str, object]:
+    """
+    Adapt a pack-like configuration payload into a visual context mapping.
+
+    - Flattens the `context` section into the base mapping so visual context models can consume it directly.
+    - Carries `calculate` and `define` forward for normalisation in merge_context_payload.
+    """
+
+    base: Dict[str, object] = {}
+
+    context_section = payload.get("context")
+    if isinstance(context_section, Mapping):
+        for key, value in context_section.items():
+            base[str(key)] = value
+
+    if "calculate" in payload:
+        base["calculate"] = payload["calculate"]
+
+    if "define" in payload:
+        base["define"] = payload["define"]
+
+    return base
+
+
+def _build_template_context(payload: Mapping[str, object]) -> Mapping[str, object]:
+    """
+    Derive a Jinja context from a context payload.
+
+    Prefer an explicit `context` mapping; otherwise fall back to top-level keys
+    that are likely to be templating variables rather than filter blocks.
+    """
+
+    context_section = payload.get("context")
+    if isinstance(context_section, Mapping):
+        return context_section
+
+    skip_keys = {"calculate", "define", "filters", "slides", "schema"}
+    fallback: Dict[str, object] = {}
+    for key, value in payload.items():
+        if key in skip_keys:
+            continue
+        fallback[str(key)] = value
+    return fallback
+
+
 def _prepare_context_payload(args: argparse.Namespace) -> Dict[str, object]:
     base: Mapping[str, object] | None = None
+    template_context: Mapping[str, object] = {}
     if args.context_path is not None:
-        base = load_context_file(args.context_path)
+        raw = load_context_file(args.context_path)
+        if isinstance(raw, Mapping) and "schema" in raw and "slides" in raw:
+            base = _pack_to_visual_context_base(raw)
+            context_section = raw.get("context")
+            if isinstance(context_section, Mapping):
+                template_context = context_section
+        else:
+            base = raw
+            if isinstance(raw, Mapping):
+                template_context = _build_template_context(raw)
+
+    if base is not None:
+        env = create_pack_jinja_env()
+        base = dict(base)
+        for key in ("calculate", "define", "filters"):
+            if key in base:
+                base[key] = render_value(base[key], env=env, context=template_context)
+
     return merge_context_payload(base=base, calculate=args.calculate, define=args.define)
 
 

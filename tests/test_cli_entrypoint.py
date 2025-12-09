@@ -155,6 +155,137 @@ def test_cli_run_populates_metadata(monkeypatch, tmp_path) -> None:
         delattr(builtins, "__praeparo_test_plugin_loaded__")
 
 
+def test_cli_run_accepts_pack_context(monkeypatch, tmp_path) -> None:
+    config_path = tmp_path / "visual.yaml"
+    config_path.write_text("type: cli_example\n", encoding="utf-8")
+
+    pack_path = tmp_path / "pack.yaml"
+    pack_path.write_text(
+        "\n".join(
+            [
+                "schema: ing-pack",
+                "context:",
+                "  lender_id: 201",
+                "  month: 2025-10-01",
+                "  customer: ING",
+                "calculate:",
+                "  lender: \"'dim_lender'[LenderId] = {{ lender_id }}\"",
+                "slides: []",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    captured_metadata: Dict[str, object] = {}
+    captured_contexts: list = []
+
+    def fake_load_visual_config(path: Path):
+        assert path == config_path
+        return _DummyConfig()
+
+    class FakePipeline:
+        def __init__(self, *_, **__):
+            pass
+
+        def execute(self, visual, context):
+            captured_metadata.update(context.options.metadata)
+            captured_contexts.append(context.visual_context)
+            return VisualExecutionResult(
+                config=visual,
+                outputs=[PipelineOutputArtifact(kind=OutputKind.HTML, path=tmp_path / "out.html")],
+            )
+
+    monkeypatch.setattr("praeparo.cli.load_visual_config", fake_load_visual_config)
+    monkeypatch.setattr("praeparo.cli.VisualPipeline", FakePipeline)
+    monkeypatch.setattr("praeparo.cli.build_default_query_planner_provider", lambda: None)
+
+    argv = [
+        "visual",
+        "run",
+        "cli_example",
+        str(config_path),
+        "--context",
+        str(pack_path),
+        "--artefact-dir",
+        str(tmp_path / "artefacts"),
+    ]
+
+    with pytest.raises(SystemExit) as exc:
+        cli_main(argv)
+
+    assert exc.value.code == 0
+    assert captured_contexts
+    ctx = captured_contexts[0]
+    assert ctx.dax.calculate == ("'dim_lender'[LenderId] = 201",)
+    assert ctx.dax.define == ()
+
+    context_payload = cast(Mapping[str, Any], captured_metadata.get("context"))
+    assert context_payload["lender_id"] == 201
+    assert str(context_payload["month"]) == "2025-10-01"
+    assert context_payload["customer"] == "ING"
+    assert context_payload["calculate"] == ["'dim_lender'[LenderId] = 201"]
+    assert all("{{" not in item for item in ctx.dax.calculate)
+
+
+def test_cli_run_prefers_last_named_calculate(monkeypatch, tmp_path) -> None:
+    config_path = tmp_path / "visual.yaml"
+    config_path.write_text("type: cli_example\n", encoding="utf-8")
+
+    context_path = tmp_path / "context.yaml"
+    context_path.write_text(
+        "\n".join(
+            [
+                "calculate:",
+                "  - lender: \"'dim_lender'[LenderId] = 201\"",
+                "  - lender: \"'dim_lender'[LenderId] = 301\"",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    captured_metadata: Dict[str, object] = {}
+    captured_contexts: list = []
+
+    def fake_load_visual_config(path: Path):
+        assert path == config_path
+        return _DummyConfig()
+
+    class FakePipeline:
+        def __init__(self, *_, **__):
+            pass
+
+        def execute(self, visual, context):
+            captured_metadata.update(context.options.metadata)
+            captured_contexts.append(context.visual_context)
+            return VisualExecutionResult(
+                config=visual,
+                outputs=[PipelineOutputArtifact(kind=OutputKind.HTML, path=tmp_path / "out.html")],
+            )
+
+    monkeypatch.setattr("praeparo.cli.load_visual_config", fake_load_visual_config)
+    monkeypatch.setattr("praeparo.cli.VisualPipeline", FakePipeline)
+    monkeypatch.setattr("praeparo.cli.build_default_query_planner_provider", lambda: None)
+
+    argv = [
+        "visual",
+        "run",
+        "cli_example",
+        str(config_path),
+        "--context",
+        str(context_path),
+    ]
+
+    with pytest.raises(SystemExit) as exc:
+        cli_main(argv)
+
+    assert exc.value.code == 0
+    assert captured_contexts
+    ctx = captured_contexts[0]
+    assert ctx.dax.calculate == ("'dim_lender'[LenderId] = 301",)
+    context_payload = cast(Mapping[str, Any], captured_metadata.get("context"))
+    assert context_payload["calculate"] == ["'dim_lender'[LenderId] = 301"]
+
+
 def test_cli_live_mode_defaults_datasource(monkeypatch, tmp_path) -> None:
     config_path = tmp_path / "visual.yaml"
     config_path.write_text("type: cli_example\n", encoding="utf-8")
