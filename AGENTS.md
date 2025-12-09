@@ -17,7 +17,7 @@ This guide keeps agents aligned while evolving Praeparo. It explains responsibil
 - Keep files small and composable—split sprawling modules or docs into focused units so no single file becomes a catch-all dumping ground.
 - Prefer Pydantic models for request/response payloads and configuration (metrics, visuals, datasources) instead of raw dictionaries to gain validation, auto-complete, and richer type checking.
 - Favour strong typing throughout the codebase: avoid `Any` in new surfaces and refactor legacy areas towards precise types (`ExecutionContext`, `PipelineOptions`, visual config/context models) so custom visuals and plugins can consume fully-typed inputs without re-parsing metadata.
-- When validation or normalisation is required, add field validators or custom types within the Pydantic models rather than ad-hoc parsing logic. Keep business rules close to the model so orchestration layers stay lean.
+- When validation or normalisation is required, add field validators or custom types within the Pydantic models rather than ad-hoc parsing logic. Keep business rules close to the model so orchestration layers stay lean, especially for visual context (e.g. customer names, metrics roots, column strategies, DAX context).
 - Push business logic into reusable engines/modules. Keep CLIs and thin wrappers focused on orchestration, argument parsing, and wiring.
 - Run Pyright (basic mode) over every Python surface you modify before handoff, and resolve diagnostics in those files. Note pre-existing issues that cannot be addressed during your task, but do not skip Pyright.
 - Honour downstream consumers (e.g. MSANational.Metrics). Coordinate schema changes with regenerated JSON schema artefacts so IntelliSense stays accurate.
@@ -67,12 +67,13 @@ This guide keeps agents aligned while evolving Praeparo. It explains responsibil
 - Confirm Pyright (basic mode) passes for all touched files; record unavoidable diagnostics when they originate outside your changes.
 - Ensure every code change ships with matching unit tests and updated documentation.
 - Provide a ready-to-use Conventional Commit-style summary message as part of the handoff notes.
+- Confirm that any new or significantly refactored multi-step helpers (pipelines, CLI commands, pack runners, dataset/context discovery, custom visual pipelines) include a docstring and paragraph-level intent comments that mirror the behaviour described in the relevant doc/epic.
 
 ## Code Style Preferences
 
 - **Prefer simple designs.** Favor composable helpers with clear extension points; avoid over-engineering.
 - **Avoid monolithic files.** Break features across modules/packages that mirror capabilities so reviews stay focused and diffs stay small. Lean on SOLID-style separation of concerns so each module owns one responsibility and can evolve independently.
-- **Prefer names over comments.** If intent still isn’t obvious, add a short docstring or paragraph comment that explains the *why*.
+- **Prefer names over comments, but narrate orchestration.** For any pipeline stage, CLI handler, pack runner, or visual-specific orchestrator, add a short docstring plus paragraph comments that explain the *why* and the flow.
 - **Comment intent, not syntax.** Explain why a block exists instead of paraphrasing the code.
 - **Comment at the boundary.** Place comments above branches, side-effects, or multi-step helpers.
 - **Keep comments short.** One or two lines max—otherwise introduce a helper or docstring.

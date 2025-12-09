@@ -8,7 +8,7 @@ from praeparo.visuals.context_models import VisualContextModel
 def test_visual_context_model_defaults() -> None:
     ctx = VisualContextModel()
 
-    assert ctx.metrics_root == Path("registry/metrics")
+    assert ctx.metrics_root == Path("registry/metrics").expanduser().resolve(strict=False)
     assert ctx.seed == 42
     assert ctx.scenario is None
     assert ctx.ignore_placeholders is False

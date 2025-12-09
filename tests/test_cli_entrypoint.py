@@ -144,7 +144,7 @@ def test_cli_run_populates_metadata(monkeypatch, tmp_path) -> None:
     ctx = captured_contexts[0]
     assert isinstance(ctx, _DummyContext)
     assert ctx.sample == "example"
-    assert ctx.metrics_root == Path("registry/metrics")
+    assert ctx.metrics_root == Path("registry/metrics").expanduser().resolve(strict=False)
     assert ctx.seed == 42
     assert ctx.dax.calculate == ("Metric = 1",)
     assert ctx.dax.define == ("MEASURE Demo[Value] = 1",)
