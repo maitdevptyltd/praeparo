@@ -1,7 +1,7 @@
 """Public interface for the metric dataset builder package."""
 
 from .builder import MetricDatasetBuilder
-from .context import MetricDatasetBuilderContext
+from .context import MetricDatasetBuilderContext, discover_dataset_context
 from .models import MetricDatasetPlan, MetricDatasetResult
 
 __all__ = [
@@ -9,4 +9,5 @@ __all__ = [
     "MetricDatasetBuilderContext",
     "MetricDatasetPlan",
     "MetricDatasetResult",
+    "discover_dataset_context",
 ]

@@ -19,6 +19,10 @@ class CustomVisual(BaseVisualConfig):
     type: str = "custom_visual"
 
 
+class ContextAwareVisual(BaseVisualConfig):
+    type: str = "context_aware_visual"
+
+
 def test_registered_pipeline_emits_schema_and_dataset(tmp_path: Path) -> None:
     execution_order: list[str] = []
 
@@ -73,3 +77,54 @@ def test_registered_pipeline_emits_schema_and_dataset(tmp_path: Path) -> None:
     kinds = {artifact.kind for artifact in result.outputs}
     assert OutputKind.SCHEMA in kinds
     assert OutputKind.DATA in kinds
+
+
+def test_pipeline_populates_dataset_context(tmp_path: Path) -> None:
+    observed: dict[str, object] = {}
+
+    def schema_builder(
+        pipeline: VisualPipeline[VisualContextModel],
+        config: ContextAwareVisual,
+        context: ExecutionContext[VisualContextModel],
+    ) -> SchemaArtifact[dict[str, object]]:
+        return SchemaArtifact(value={"config": config.type}, filename="context.schema.json")
+
+    def dataset_builder(
+        pipeline: VisualPipeline[VisualContextModel],
+        config: ContextAwareVisual,
+        schema: SchemaArtifact[dict[str, object]],
+        context: ExecutionContext[VisualContextModel],
+    ) -> DatasetArtifact[dict[str, object]]:
+        observed["dataset_context"] = context.dataset_context
+        return DatasetArtifact(value={"schemaType": schema.value["config"]}, filename="context.data.json")
+
+    def renderer(
+        pipeline: VisualPipeline[VisualContextModel],
+        config: ContextAwareVisual,
+        schema: SchemaArtifact[dict[str, object]],
+        dataset: DatasetArtifact[dict[str, object]],
+        context: ExecutionContext[VisualContextModel],
+        outputs,
+    ) -> RenderOutcome:
+        return RenderOutcome()
+
+    register_visual_pipeline(
+        "context_aware_visual",
+        VisualPipelineDefinition(
+            schema_builder=schema_builder,
+            dataset_builder=dataset_builder,
+            renderer=renderer,
+        ),
+        overwrite=True,
+    )
+
+    pipeline = VisualPipeline()
+    visual_context = VisualContextModel(metrics_root=tmp_path / "metrics")
+    context = ExecutionContext(options=PipelineOptions(artefact_dir=tmp_path), visual_context=visual_context)
+
+    result = pipeline.execute(ContextAwareVisual(), context)
+
+    assert observed["dataset_context"] is not None
+    assert context.dataset_context is observed["dataset_context"]
+    assert result.schema_path == tmp_path / "context.schema.json"
+    assert result.dataset_path == tmp_path / "context.data.json"

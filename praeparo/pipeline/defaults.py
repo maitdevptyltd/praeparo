@@ -83,6 +83,10 @@ def _matrix_dataset_builder(
     schema: SchemaArtifact[MatrixConfig],
     context: ExecutionContext[VisualContextModel],
 ) -> DatasetArtifact[MatrixResultSet]:
+    dataset_ctx = context.dataset_context
+    if dataset_ctx is None:
+        raise RuntimeError("Matrix visuals expect ExecutionContext.dataset_context to be populated.")
+
     planner = pipeline.resolve_planner(config, context)
     if not isinstance(planner, MatrixQueryPlanner):
         raise TypeError("Resolved planner is not a MatrixQueryPlanner.")
@@ -209,6 +213,9 @@ def _chart_dataset_builder(
     schema: SchemaArtifact[CartesianChartConfig],
     context: ExecutionContext[VisualContextModel],
 ) -> DatasetArtifact[ChartResultSet]:
+    dataset_ctx = context.dataset_context
+    if dataset_ctx is None:
+        raise RuntimeError("Cartesian visuals expect ExecutionContext.dataset_context to be populated.")
 
     planner = pipeline.resolve_planner(config, context)
     if not isinstance(planner, ChartQueryPlanner):

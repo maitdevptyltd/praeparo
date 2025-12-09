@@ -4,10 +4,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Mapping, Sequence
+from typing import Mapping, Sequence, TYPE_CHECKING
 
 from praeparo.visuals.context_models import VisualContextModel
 from praeparo.visuals.dax import DEFAULT_MEASURE_TABLE, normalise_define_blocks, normalise_filter_group
+
+if TYPE_CHECKING:
+    from praeparo.pipeline import ExecutionContext
 
 
 def _ensure_path(value: str | Path | None, *, default: Path) -> Path:
@@ -144,4 +147,56 @@ class MetricDatasetBuilderContext:
         )
 
 
-__all__ = ["MetricDatasetBuilderContext", "normalise_filters"]
+def _resolve_provider_key(execution: "ExecutionContext[VisualContextModel]") -> str | None:
+    """Resolve the provider key with case-specific overrides."""
+
+    data_options = execution.options.data
+    overrides = getattr(data_options, "provider_case_overrides", {}) or {}
+
+    if execution.case_key and execution.case_key in overrides:
+        candidate = overrides[execution.case_key].strip().lower()
+        if candidate:
+            return candidate
+
+    provider_key = getattr(data_options, "provider_key", None)
+    if provider_key:
+        candidate = provider_key.strip().lower()
+        if candidate:
+            return candidate
+
+    return None
+
+
+def discover_dataset_context(
+    execution: "ExecutionContext[VisualContextModel]",
+    *,
+    default_metrics_root: Path | None = None,
+) -> MetricDatasetBuilderContext:
+    """Derive a MetricDatasetBuilderContext from pipeline execution state."""
+
+    project_root = execution.project_root or (execution.config_path.parent if execution.config_path else Path.cwd())
+    visual_context = execution.visual_context
+
+    # Prefer the visual-provided metrics root; otherwise fall back to caller hints or discovery.
+    if visual_context is not None:
+        metrics_root = visual_context.metrics_root
+    elif default_metrics_root is not None:
+        metrics_root = default_metrics_root
+    else:
+        metrics_root = _discover_metrics_root(project_root)
+
+    use_mock = _resolve_provider_key(execution) == "mock"
+    ignore_placeholders = bool(getattr(visual_context, "ignore_placeholders", False)) if visual_context else False
+
+    return MetricDatasetBuilderContext.discover(
+        project_root=project_root,
+        metrics_root=metrics_root,
+        default_datasource=execution.options.data.datasource_override,
+        case_key=execution.case_key,
+        ignore_placeholders=ignore_placeholders,
+        visual_context=visual_context,
+        metadata=execution.options.metadata,
+        use_mock=use_mock,
+    )
+
+__all__ = ["MetricDatasetBuilderContext", "discover_dataset_context", "normalise_filters"]

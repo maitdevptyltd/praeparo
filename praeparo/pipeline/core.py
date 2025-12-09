@@ -5,10 +5,11 @@ from __future__ import annotations
 import inspect
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Awaitable, Callable, Dict, Generic, List, Mapping, Optional, Protocol, Sequence, TypeVar
+from typing import Awaitable, Callable, Dict, Generic, List, Mapping, Optional, Protocol, Sequence, TypeVar, cast
 
 import plotly.graph_objects as go
 
+from praeparo.datasets.context import MetricDatasetBuilderContext
 from praeparo.data import MatrixResultSet
 from praeparo.dax import DaxQueryPlan
 from praeparo.models import BaseVisualConfig, FrameChildConfig, FrameConfig, MatrixConfig
@@ -79,6 +80,9 @@ class ExecutionContext(Generic[ContextT]):
     case_key: str | None = None
     options: PipelineOptions = field(default_factory=PipelineOptions)
     visual_context: Optional[ContextT] = None
+    # Framework-derived dataset environment for this execution. Populated once by the
+    # pipeline so schema, dataset, and renderer stages reuse the same discovery output.
+    dataset_context: MetricDatasetBuilderContext | None = None
 
 
 @dataclass
@@ -188,6 +192,20 @@ class VisualPipeline(Generic[ContextT]):
         self._strategies[visual_type] = strategy
 
     def execute(self, config: BaseVisualConfig, context: ExecutionContext[ContextT]) -> VisualExecutionResult:
+        # Derive a shared dataset context once so every pipeline stage reuses the same discovery output.
+        if context.dataset_context is None:
+            from praeparo.datasets.context import discover_dataset_context
+
+            default_metrics_root = None
+            metadata_root = context.options.metadata.get("metrics_root")
+            if isinstance(metadata_root, (str, Path)):
+                default_metrics_root = Path(metadata_root)
+
+            context.dataset_context = discover_dataset_context(
+                cast(ExecutionContext[VisualContextModel], context),
+                default_metrics_root=default_metrics_root,
+            )
+
         definition = get_visual_pipeline_definition(config.type)
         if definition is not None:
             return self._execute_definition(definition, config, context)
