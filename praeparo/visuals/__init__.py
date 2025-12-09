@@ -18,8 +18,9 @@ from .registry import (
     load_visual_definition,
     register_visual_type,
 )
-from .context import ContextLoadError, load_context_file, merge_context_payload
+from .context import ContextLoadError, load_context_file, merge_context_payload, resolve_dax_context
 from .context_models import VisualContextModel
+from .dax_context import DAXContextModel
 __all__ = [
     "CalculateInput",
     "VisualGroupConfig",
@@ -35,8 +36,10 @@ __all__ = [
     "ContextLoadError",
     "load_context_file",
     "merge_context_payload",
+    "resolve_dax_context",
     "VisualCLIArgument",
     "VisualCLIOptions",
     "VisualCLIHooks",
     "VisualContextModel",
+    "DAXContextModel",
 ]

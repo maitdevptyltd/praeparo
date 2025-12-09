@@ -5,6 +5,8 @@ from typing import Tuple
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from praeparo.visuals.dax_context import DAXContextModel
+
 
 class VisualContextModel(BaseModel):
     """Base typed context passed to visual pipelines."""
@@ -16,3 +18,4 @@ class VisualContextModel(BaseModel):
     scenario: str | None = None
     ignore_placeholders: bool = False
     grain: Tuple[str, ...] | None = None
+    dax: DAXContextModel = Field(default_factory=DAXContextModel)

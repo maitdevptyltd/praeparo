@@ -3,7 +3,7 @@ from __future__ import annotations
 import builtins
 from pathlib import Path
 import sys
-from typing import Dict
+from typing import Any, Dict, Mapping, cast
 
 import pytest
 
@@ -50,7 +50,11 @@ def _register_cli_example() -> None:
         "cli_example",
         lambda visual, context, args: [
             DaxCompileArtifact(
-                path=(context.options.artefact_dir or context.config_path.parent) / f"{context.config_path.stem}.dax",
+                path=(
+                    context.options.artefact_dir
+                    or (context.config_path or Path("visual.yaml")).parent
+                )
+                / f"{(context.config_path or Path('visual.yaml')).stem}.dax",
                 plan=DaxQueryPlan(statement="EVALUATE {}", rows=(), values=()),
                 statement="EVALUATE {}",
             )
@@ -142,6 +146,11 @@ def test_cli_run_populates_metadata(monkeypatch, tmp_path) -> None:
     assert ctx.sample == "example"
     assert ctx.metrics_root == Path("registry/metrics")
     assert ctx.seed == 42
+    assert ctx.dax.calculate == ("Metric = 1",)
+    assert ctx.dax.define == ("MEASURE Demo[Value] = 1",)
+    context_payload = cast(Mapping[str, Any], captured_metadata.get("context"))
+    assert context_payload.get("calculate") == ["Metric = 1"]
+    assert context_payload.get("define") == ["MEASURE Demo[Value] = 1"]
     if hasattr(builtins, "__praeparo_test_plugin_loaded__"):
         delattr(builtins, "__praeparo_test_plugin_loaded__")
 

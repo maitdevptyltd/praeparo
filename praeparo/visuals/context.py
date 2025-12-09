@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Mapping, MutableMapping, Sequence
+from typing import Mapping, MutableMapping, Sequence, cast
 
 import yaml
 
@@ -81,4 +81,22 @@ def merge_context_payload(
     return dict(result)
 
 
-__all__ = ["ContextLoadError", "load_context_file", "merge_context_payload"]
+def resolve_dax_context(
+    *,
+    base: Mapping[str, object] | None = None,
+    calculate: Sequence[str] | str | None = None,
+    define: Sequence[str] | str | None = None,
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """Merge and normalise global DAX fragments from CLI flags and context payload."""
+
+    from praeparo.visuals.dax import normalise_define_blocks, normalise_filter_group
+
+    merged = merge_context_payload(base=base, calculate=calculate, define=define)
+    calculate_value = merged.get("calculate")
+    define_value = merged.get("define")
+    calculate_filters = normalise_filter_group(cast("Sequence[str] | str | None", calculate_value))
+    define_blocks = normalise_define_blocks(cast("Sequence[str] | str | None", define_value))
+    return calculate_filters, define_blocks
+
+
+__all__ = ["ContextLoadError", "load_context_file", "merge_context_payload", "resolve_dax_context"]

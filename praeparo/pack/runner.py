@@ -25,7 +25,7 @@ from praeparo.pipeline import (
 )
 from praeparo.visuals.dax.planner_core import slugify
 from praeparo.io.yaml_loader import load_visual_config
-from praeparo.visuals.context import merge_context_payload
+from praeparo.visuals.context import merge_context_payload, resolve_dax_context
 from praeparo.visuals.registry import VisualTypeRegistration, get_visual_registration
 from praeparo.visuals.context_models import VisualContextModel
 
@@ -116,6 +116,15 @@ def _instantiate_slide_context(
     context_payload = raw_context.get("context")
     if isinstance(context_payload, Mapping):
         raw_context["context"] = dict(context_payload)
+
+    calculate_filters: tuple[str, ...]
+    define_blocks: tuple[str, ...]
+    calculate_filters, define_blocks = resolve_dax_context(
+        base=context_payload if isinstance(context_payload, Mapping) else None,
+        calculate=None,
+        define=None,
+    )
+    raw_context["dax"] = {"calculate": calculate_filters, "define": define_blocks}
 
     return context_model.model_validate(raw_context)
 

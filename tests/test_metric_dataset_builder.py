@@ -10,6 +10,8 @@ import pytest
 from praeparo.datasets import MetricDatasetBuilder, MetricDatasetBuilderContext
 from praeparo.models import CartesianChartConfig
 from praeparo.models.cartesian import AxisConfig, CartesianSeriesConfig, CategoryConfig, ValueAxesConfig
+from praeparo.visuals.context_models import VisualContextModel
+from praeparo.visuals.dax_context import DAXContextModel
 from praeparo.visuals.metrics import VisualMetricConfig
 
 
@@ -40,6 +42,45 @@ def _builder(tmp_path: Path) -> MetricDatasetBuilder:
     context = MetricDatasetBuilderContext.discover(project_root=tmp_path, metrics_root=metrics_root)
     builder = MetricDatasetBuilder(context)
     return builder
+
+
+def test_discover_merges_visual_context_dax(tmp_path: Path) -> None:
+    metrics_root = tmp_path / "metrics"
+    metrics_root.mkdir()
+    visual_ctx = VisualContextModel(
+        dax=DAXContextModel(
+            calculate=("CTX_FILTER",),
+            define=("DEFINE MEASURE Ctx[Value] = 1",),
+        )
+    )
+
+    context = MetricDatasetBuilderContext.discover(
+        project_root=tmp_path,
+        metrics_root=metrics_root,
+        calculate=["CLI_FILTER"],
+        define=["DEFINE VAR Extra = 1"],
+        visual_context=visual_ctx,
+    )
+
+    assert context.global_filters == ("CTX_FILTER", "CLI_FILTER")
+    assert context.define_blocks == ("DEFINE MEASURE Ctx[Value] = 1", "DEFINE VAR Extra = 1")
+
+
+def test_discover_falls_back_to_explicit_calculate_when_context_empty(tmp_path: Path) -> None:
+    metrics_root = tmp_path / "metrics"
+    metrics_root.mkdir()
+    visual_ctx = VisualContextModel()
+
+    context = MetricDatasetBuilderContext.discover(
+        project_root=tmp_path,
+        metrics_root=metrics_root,
+        calculate="'dim_calendar'[IsCurrent] = TRUE()",
+        define=None,
+        visual_context=visual_ctx,
+    )
+
+    assert context.global_filters == ("'dim_calendar'[IsCurrent] = TRUE()",)
+    assert context.define_blocks == ()
 
 
 def test_plan_generates_expected_measure_map(tmp_path: Path) -> None:
@@ -175,5 +216,10 @@ def test_mock_series_profiles_affect_values(tmp_path: Path) -> None:
 
     rows = builder.execute()
 
-    values = [row["total"] for row in rows]
+    values = []
+    for row in rows:
+        raw = row.get("total")
+        if isinstance(raw, (int, float)):
+            values.append(float(raw))
+    assert values
     assert values[0] > values[-1]

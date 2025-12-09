@@ -4,7 +4,7 @@ from dataclasses import dataclass
 import threading
 import time
 from pathlib import Path
-from typing import Dict, Tuple
+from typing import Any, Dict, Mapping, Tuple, cast
 
 import pytest
 
@@ -13,9 +13,10 @@ from praeparo.pack.filters import merge_odata_filters
 from praeparo.pack.loader import load_pack_config
 from praeparo.pack.runner import run_pack
 from praeparo.pack.templating import create_pack_jinja_env, render_value
-from praeparo.pipeline import PipelineOptions, VisualExecutionResult
+from praeparo.pipeline import PipelineOptions, VisualExecutionResult, VisualPipeline
 from praeparo.pipeline.outputs import OutputKind, PipelineOutputArtifact
 from praeparo.visuals.dax.planner_core import slugify
+from praeparo.visuals import VisualContextModel, register_visual_type
 
 
 def test_pack_loader_and_templating(tmp_path: Path) -> None:
@@ -66,10 +67,12 @@ class _StubPipeline:
     def __init__(self) -> None:
         self.calls: list[Tuple[BaseVisualConfig, PipelineOptions]] = []
         self._lock = threading.Lock()
+        self.contexts: list = []
 
     def execute(self, visual: BaseVisualConfig, context) -> VisualExecutionResult:
         with self._lock:
             self.calls.append((visual, context.options))
+            self.contexts.append(context)
         outputs = []
         for target in context.options.outputs:
             if visual.type == "frame":
@@ -153,7 +156,7 @@ def test_run_pack_routes_visuals_and_emits_pngs(tmp_path: Path) -> None:
         "frame.yaml": BaseVisualConfig(type="frame"),
     }
 
-    def _loader(path: Path) -> BaseVisualConfig:
+    def _loader(path: Path, payload: Mapping[str, object] | None = None, stack: tuple[Path, ...] = ()) -> BaseVisualConfig:
         return visuals[path.name]
 
     pipeline = _StubPipeline()
@@ -163,7 +166,7 @@ def test_run_pack_routes_visuals_and_emits_pngs(tmp_path: Path) -> None:
         output_root=tmp_path / "artefacts",
         base_options=PipelineOptions(),
         visual_loader=_loader,
-        pipeline=pipeline,
+        pipeline=cast(VisualPipeline[Any], pipeline),
         env=create_pack_jinja_env(),
     )
 
@@ -174,18 +177,72 @@ def test_run_pack_routes_visuals_and_emits_pngs(tmp_path: Path) -> None:
     # Frame visual produces no PNG but should not error.
     assert any(result.result.outputs == [] for result in results if result.result.config.type == "frame")
 
-    metadata_by_type = {call[0].type: call[1].metadata for call in pipeline.calls}
+    metadata_by_type: Dict[str, Dict[str, object]] = {call[0].type: cast(Dict[str, object], call[1].metadata) for call in pipeline.calls}
     powerbi_metadata = metadata_by_type["powerbi"]
     assert "powerbi_filters" in powerbi_metadata
     assert "dim_lender/LenderId eq 7" in str(powerbi_metadata["powerbi_filters"])
 
     matrix_metadata = metadata_by_type["matrix"]
     context_meta = matrix_metadata.get("context")
-    assert context_meta and context_meta.get("calculate")
-    assert context_meta["calculate"][0].startswith("'dim_lender'[LenderId] = 7")
-    assert context_meta["calculate"][1] == "'dim_channel'[Name] = \"Direct\""
-    assert len(context_meta["calculate"]) == 2
-    assert context_meta["define"] == ["DEFINE VAR Lender = 7"]
+    assert isinstance(context_meta, dict)
+    calculate_payload = context_meta.get("calculate")
+    assert isinstance(calculate_payload, list)
+    assert calculate_payload[0].startswith("'dim_lender'[LenderId] = 7")
+    assert calculate_payload[1] == "'dim_channel'[Name] = \"Direct\""
+    assert len(calculate_payload) == 2
+    define_payload = context_meta.get("define")
+    assert isinstance(define_payload, list)
+    assert define_payload == ["DEFINE VAR Lender = 7"]
+
+
+def test_run_pack_populates_typed_dax_context(tmp_path: Path) -> None:
+    register_visual_type(
+        "contextual",
+        lambda path, payload=None, stack=(): BaseVisualConfig(type="contextual"),
+        overwrite=True,
+        context_model=VisualContextModel,
+    )
+
+    pack_path = tmp_path / "pack.yaml"
+    pack_path.write_text("", encoding="utf-8")
+
+    pack = PackConfig(
+        schema="test-pack",
+        calculate=["'dim_channel'[Name] = \"Base\""],
+        define="DEFINE MEASURE Test[Value] = 1",
+        slides=[
+            PackSlide(
+                title="Context Slide",
+                visual=PackVisualRef(ref="contextual.yaml", calculate=["'dim_channel'[Name] = \"Direct\""]),
+            ),
+        ],
+    )
+
+    visuals: Dict[str, BaseVisualConfig] = {"contextual.yaml": BaseVisualConfig(type="contextual")}
+
+    def _loader(path: Path, payload: Mapping[str, object] | None = None, stack: tuple[Path, ...] = ()) -> BaseVisualConfig:
+        return visuals[path.name]
+
+    pipeline = _StubPipeline()
+    results = run_pack(
+        pack_path,
+        pack,
+        output_root=tmp_path / "artefacts",
+        base_options=PipelineOptions(metadata={"metrics_root": "registry/metrics"}),
+        visual_loader=_loader,
+        pipeline=cast(VisualPipeline[Any], pipeline),
+        env=create_pack_jinja_env(),
+    )
+
+    assert results
+    assert pipeline.contexts
+    visual_ctx = pipeline.contexts[0].visual_context
+    assert visual_ctx is not None
+    assert visual_ctx.dax.calculate == (
+        "'dim_channel'[Name] = \"Base\"",
+        "'dim_channel'[Name] = \"Direct\"",
+    )
+    assert visual_ctx.dax.define == ("DEFINE MEASURE Test[Value] = 1",)
 
 
 def test_run_pack_honours_only_slides(tmp_path: Path) -> None:
@@ -226,7 +283,7 @@ def test_run_pack_honours_only_slides(tmp_path: Path) -> None:
         "four.yaml": BaseVisualConfig(type="powerbi"),
     }
 
-    def _loader(path: Path) -> BaseVisualConfig:
+    def _loader(path: Path, payload: Mapping[str, object] | None = None, stack: tuple[Path, ...] = ()) -> BaseVisualConfig:
         return visuals[path.name]
 
     pipeline = _StubPipeline()
@@ -236,7 +293,7 @@ def test_run_pack_honours_only_slides(tmp_path: Path) -> None:
         output_root=tmp_path / "artefacts",
         base_options=PipelineOptions(),
         visual_loader=_loader,
-        pipeline=pipeline,
+        pipeline=cast(VisualPipeline[Any], pipeline),
         env=create_pack_jinja_env(),
         only_slides=["keep-1", "Also Keep", slugify("Slug Target")],
     )
@@ -274,7 +331,7 @@ def test_run_pack_queues_powerbi_and_respects_concurrency(tmp_path: Path) -> Non
         "matrix.yaml": BaseVisualConfig(type="matrix"),
     }
 
-    def _loader(path: Path) -> BaseVisualConfig:
+    def _loader(path: Path, payload: Mapping[str, object] | None = None, stack: tuple[Path, ...] = ()) -> BaseVisualConfig:
         return visuals[path.name]
 
     pipeline = _ConcurrentStubPipeline(delay=0.05)
@@ -284,7 +341,7 @@ def test_run_pack_queues_powerbi_and_respects_concurrency(tmp_path: Path) -> Non
         output_root=tmp_path / "artefacts",
         base_options=PipelineOptions(),
         visual_loader=_loader,
-        pipeline=pipeline,
+        pipeline=cast(VisualPipeline[Any], pipeline),
         env=create_pack_jinja_env(),
         max_powerbi_concurrency=2,
     )
@@ -318,7 +375,7 @@ def test_run_pack_raises_when_powerbi_job_fails(tmp_path: Path) -> None:
         "pbi2.yaml": BaseVisualConfig(type="powerbi"),
     }
 
-    def _loader(path: Path) -> BaseVisualConfig:
+    def _loader(path: Path, payload: Mapping[str, object] | None = None, stack: tuple[Path, ...] = ()) -> BaseVisualConfig:
         return visuals[path.name]
 
     pipeline = _ConcurrentStubPipeline(delay=0.0, fail_case=failing_slug)
@@ -330,7 +387,7 @@ def test_run_pack_raises_when_powerbi_job_fails(tmp_path: Path) -> None:
             output_root=tmp_path / "artefacts",
             base_options=PipelineOptions(),
             visual_loader=_loader,
-            pipeline=pipeline,
+            pipeline=cast(VisualPipeline[Any], pipeline),
             env=create_pack_jinja_env(),
             max_powerbi_concurrency=2,
         )

@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Mapping, Sequence
 
+from praeparo.visuals.context_models import VisualContextModel
 from praeparo.visuals.dax import DEFAULT_MEASURE_TABLE, normalise_define_blocks, normalise_filter_group
 
 
@@ -91,6 +92,7 @@ class MetricDatasetBuilderContext:
         define: Sequence[str] | str | None = None,
         metadata: Mapping[str, object] | None = None,
         use_mock: bool = False,
+        visual_context: VisualContextModel | None = None,
     ) -> "MetricDatasetBuilderContext":
         """Resolve the builder context by inspecting the caller's working tree."""
 
@@ -111,6 +113,21 @@ class MetricDatasetBuilderContext:
         if default_reference is None and datasource_path is not None:
             default_reference = str(datasource_path)
 
+        context_filters: tuple[str, ...] = tuple()
+        define_blocks: tuple[str, ...] = tuple()
+
+        if visual_context is not None:
+            context_filters = normalise_filters(visual_context.dax.calculate)
+            define_blocks = normalise_define_blocks(visual_context.dax.define)
+
+        calculate_overrides = normalise_filters(calculate)
+        define_overrides = normalise_define_blocks(define)
+
+        if calculate_overrides:
+            context_filters = tuple(context_filters) + tuple(calculate_overrides) if context_filters else tuple(calculate_overrides)
+        if define_overrides:
+            define_blocks = tuple(define_blocks) + tuple(define_overrides) if define_blocks else tuple(define_overrides)
+
         return cls(
             project_root=base,
             metrics_root=metrics_path,
@@ -120,8 +137,8 @@ class MetricDatasetBuilderContext:
             case_key=case_key,
             measure_table=measure_table or DEFAULT_MEASURE_TABLE,
             ignore_placeholders=ignore_placeholders,
-            global_filters=normalise_filters(calculate),
-            define_blocks=normalise_define_blocks(define),
+            global_filters=context_filters,
+            define_blocks=define_blocks,
             metadata=dict(metadata or {}),
             use_mock=use_mock,
         )

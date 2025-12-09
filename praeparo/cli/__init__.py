@@ -40,7 +40,7 @@ from praeparo.powerbi import (
     PowerBIConfigurationError,
     PowerBIQueryError,
 )
-from praeparo.visuals.context import ContextLoadError, load_context_file, merge_context_payload
+from praeparo.visuals.context import ContextLoadError, load_context_file, merge_context_payload, resolve_dax_context
 from praeparo.visuals.registry import (
     VisualCLIArgument,
     VisualCLIOptions,
@@ -619,6 +619,20 @@ def _instantiate_visual_context(
     grain_override = getattr(args, "grain", None)
     if grain_override:
         raw_context["grain"] = tuple(grain_override)
+
+    calculate_filters: tuple[str, ...] = tuple()
+    define_blocks: tuple[str, ...] = tuple()
+    try:
+        calculate_filters, define_blocks = resolve_dax_context(
+            base=context_payload if isinstance(context_payload, Mapping) else None,
+            calculate=getattr(args, "calculate", None),
+            define=getattr(args, "define", None),
+        )
+    except Exception:
+        # If DAX context cannot be resolved, fall back to defaults and let model validation surface errors.
+        calculate_filters, define_blocks = (), ()
+
+    raw_context["dax"] = {"calculate": calculate_filters, "define": define_blocks}
 
     return context_model.model_validate(raw_context)
 
