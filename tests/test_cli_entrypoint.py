@@ -382,6 +382,83 @@ def test_cli_normalises_legacy_invocation(monkeypatch, tmp_path) -> None:
     assert exc.value.code == 0
 
 
+def test_pack_cli_loads_plugin_module(monkeypatch, tmp_path) -> None:
+    plugin_dir = tmp_path / "plugins"
+    plugin_dir.mkdir()
+    plugin_module_name = "cli_pack_test_plugin"
+    (plugin_dir / f"{plugin_module_name}.py").write_text(
+        "import builtins\nbuiltins.__praeparo_pack_test_plugin_loaded__ = True\n",
+        encoding="utf-8",
+    )
+    sys.path.insert(0, str(plugin_dir))
+
+    pack_path = tmp_path / "pack.yaml"
+    pack_path.write_text("contents", encoding="utf-8")
+
+    def fake_load_pack_config(path: Path) -> PackConfig:
+        assert path == pack_path
+        return PackConfig(
+            schema="test-pack",
+            slides=[PackSlide(title="Slide One", id="slide-id-1", visual=PackVisualRef(ref="one.yaml"))],
+        )
+
+    def fake_run_pack(
+        pack_path_arg,
+        pack,
+        *,
+        output_root,
+        max_powerbi_concurrency=None,
+        base_options=None,
+        visual_loader=None,
+        pipeline=None,
+        env=None,
+        only_slides=(),
+    ):
+        slide = pack.slides[0]
+        png_path = output_root / "slide-id-1.png"
+        png_path.parent.mkdir(parents=True, exist_ok=True)
+        png_path.write_text("png", encoding="utf-8")
+        return [
+            PackSlideResult(
+                slide=slide,
+                visual_path=pack_path_arg,
+                result=VisualExecutionResult(config=BaseVisualConfig(type="powerbi"), outputs=[]),
+                png_path=png_path,
+            )
+        ]
+
+    class FakePipeline:
+        def __init__(self, *_, **__):
+            pass
+
+    monkeypatch.setattr("praeparo.cli.load_pack_config", fake_load_pack_config)
+    monkeypatch.setattr("praeparo.cli.run_pack", fake_run_pack)
+    monkeypatch.setattr("praeparo.cli.VisualPipeline", FakePipeline)
+    monkeypatch.setattr("praeparo.cli.build_default_query_planner_provider", lambda: None)
+
+    artefacts_dir = tmp_path / "artefacts"
+    argv = [
+        "pack",
+        "run",
+        str(pack_path),
+        "--plugin",
+        plugin_module_name,
+        "--artefact-dir",
+        str(artefacts_dir),
+    ]
+
+    try:
+        with pytest.raises(SystemExit) as exc:
+            cli_main(argv)
+        assert exc.value.code == 0
+        assert hasattr(builtins, "__praeparo_pack_test_plugin_loaded__")
+    finally:
+        if str(plugin_dir) in sys.path:
+            sys.path.remove(str(plugin_dir))
+        if hasattr(builtins, "__praeparo_pack_test_plugin_loaded__"):
+            delattr(builtins, "__praeparo_pack_test_plugin_loaded__")
+
+
 def test_pack_cli_run_invokes_runner(monkeypatch, tmp_path, capsys) -> None:
     pack_path = tmp_path / "pack.yaml"
     pack_path.write_text("contents", encoding="utf-8")

@@ -126,11 +126,26 @@ Key flags:
   once. Defaults to `5` when not supplied; can also be set via
   `PRAEPARO_PBI_MAX_CONCURRENCY` (the CLI flag wins when both are provided).
 
+- `--plugin MODULE` – import one or more modules before resolving registrations
+  so custom visuals, pipelines, or DAX compilers become available:
+
+  ```bash
+  poetry run praeparo pack run projects/example/pack.yaml \
+    --plugin your_project \
+    --artefact-dir .tmp/example/pack_png
+  ```
+
+  The same flag can be supplied at the top level if preferred:
+
+  ```bash
+  poetry run praeparo --plugin your_project pack run projects/example/pack.yaml --artefact-dir .tmp/example/pack_png
+  ```
+
 - `--png-scale`, `--data-mode`, `--datasource`, and other global options – share
   semantics with `praeparo visual run` via `PipelineOptions`.
 
-> Tip: pass `--plugin your_project` when packs reference custom visual types
-> registered in your project.
+> Tip: use `--plugin` whenever packs rely on project-specific registrations; the
+> flag works both at the top level and on the `pack run` command.
 
 ### Logging
 

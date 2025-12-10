@@ -96,9 +96,7 @@ def _default_output_path(config_path: Path, project_root: Path | None, extension
     return build_dir / f"{config_path.stem}.{extension}"
 
 
-def _build_common_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(add_help=False)
-    parser.add_argument("config", type=Path, help="Path to the visual YAML file.")
+def _add_plugin_argument(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--plugin",
         dest="plugins",
@@ -107,6 +105,12 @@ def _build_common_parser() -> argparse.ArgumentParser:
         metavar="MODULE",
         help="Additional module(s) to import before executing commands (e.g. to register custom visuals).",
     )
+
+
+def _build_common_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("config", type=Path, help="Path to the visual YAML file.")
+    _add_plugin_argument(parser)
     parser.add_argument(
         "--artefact-dir",
         type=Path,
@@ -275,6 +279,7 @@ def _register_pack_parsers(parent: argparse._SubParsersAction[argparse.ArgumentP
 
     run_parser = pack_subparsers.add_parser("run", help="Execute a pack and export PNGs.")
     run_parser.add_argument("pack", type=Path, help="Path to the pack YAML file.")
+    _add_plugin_argument(run_parser)
     run_parser.add_argument(
         "--artefact-dir",
         type=Path,
@@ -500,14 +505,7 @@ def _build_parser(
         choices=["CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG", "NOTSET"],
         help=f"Override log level (default DEBUG; also honours {LOG_LEVEL_ENV_VAR}).",
     )
-    parser.add_argument(
-        "--plugin",
-        dest="plugins",
-        action="append",
-        default=[],
-        metavar="MODULE",
-        help="Additional module(s) to import before executing commands (e.g. to register custom visuals).",
-    )
+    _add_plugin_argument(parser)
 
     subparsers = parser.add_subparsers(dest="command", metavar="COMMAND")
     subparsers.required = True
@@ -672,8 +670,6 @@ def _instantiate_visual_context(
         existing_root = raw_context.get("metrics_root")
         if isinstance(existing_root, (str, Path)):
             metrics_root = Path(existing_root)
-        elif project_root is not None:
-            metrics_root = project_root / "registry" / "metrics"
 
     if metrics_root is not None:
         raw_context["metrics_root"] = metrics_root.expanduser().resolve(strict=False)

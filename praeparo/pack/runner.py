@@ -110,8 +110,6 @@ def _instantiate_slide_context(
     if isinstance(metrics_root, (str, Path)):
         resolved_root = Path(metrics_root)
         raw_context["metrics_root"] = resolved_root.expanduser().resolve(strict=False)
-    elif metrics_root is None:
-        raw_context["metrics_root"] = (project_root / "registry" / "metrics").expanduser().resolve(strict=False)
 
     context_payload = raw_context.get("context")
     if isinstance(context_payload, Mapping):
