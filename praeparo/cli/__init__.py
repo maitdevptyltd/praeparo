@@ -9,6 +9,8 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, Iterable, Mapping, MutableMapping, Sequence
 
+from pydantic import ValidationError
+
 from praeparo.datasources import DataSourceConfigError
 from praeparo.env import ensure_env_loaded
 from praeparo.io.yaml_loader import ConfigLoadError, load_visual_config
@@ -854,6 +856,21 @@ def _load_visual(config_path: Path) -> BaseVisualConfig:
     try:
         return load_visual_config(config_path)
     except ConfigLoadError as exc:
+        # Surface underlying validation details (e.g. Pydantic ValidationError)
+        # so CLI users can see exactly which field failed.
+        cause = exc.__cause__
+        if isinstance(cause, ValidationError):
+            lines: list[str] = []
+            for error in cause.errors():
+                loc = ".".join(str(part) for part in error.get("loc", ()))
+                msg = error.get("msg", "")
+                if loc:
+                    lines.append(f"- {loc}: {msg}")
+                else:
+                    lines.append(f"- {msg}")
+            detail = "\n".join(lines)
+            message = f"{exc}\n\nValidation details:\n{detail}"
+            raise ValueError(message) from exc
         raise ValueError(str(exc)) from exc
 
 
