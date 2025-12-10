@@ -159,6 +159,10 @@ def run_pack(
     rendered_global_filters = render_value(pack.filters, env=jinja_env, context=context_payload)
     rendered_global_calculate = render_value(pack.calculate, env=jinja_env, context=context_payload)
     rendered_define = render_value(pack.define, env=jinja_env, context=context_payload)
+    visual_context_base: dict[str, object] = {}
+    if context_payload:
+        for key, value in context_payload.items():
+            visual_context_base[str(key)] = value
 
     resolved_pipeline = pipeline or VisualPipeline(
         planner_provider=build_default_query_planner_provider(),
@@ -232,10 +236,16 @@ def run_pack(
             "Resolved visual",
             extra={"visual_path": str(visual_path), "visual_type": getattr(visual, "type", None)},
         )
+        metadata_update: dict[str, object] = {}
+        if visual_context_base:
+            # Carry pack-level context into slide metadata so typed visual contexts
+            # can derive defaults (e.g., reference month) before DAX merges run.
+            metadata_update["context"] = visual_context_base
         options, slide_dir = _prepare_slide_options(
             base,
             slide_slug=slide_slug,
             artefact_root=output_root,
+            metadata_update=metadata_update,
             png_scale=base.png_scale,
         )
 

@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 import threading
 import time
 from pathlib import Path
 from typing import Any, Dict, Mapping, Tuple, cast
 
 import pytest
+from pydantic import model_validator
 
 from praeparo.models import BaseVisualConfig, PackConfig, PackSlide, PackVisualRef
 from praeparo.pack.filters import merge_odata_filters
@@ -243,6 +245,68 @@ def test_run_pack_populates_typed_dax_context(tmp_path: Path) -> None:
         "'dim_channel'[Name] = \"Direct\"",
     )
     assert visual_ctx.dax.define == ("DEFINE MEASURE Test[Value] = 1",)
+
+
+def test_run_pack_forwards_pack_context_into_visual_context(tmp_path: Path) -> None:
+    class _TestContextModel(VisualContextModel):
+        reference_date: date | None = None
+        trailing_months: int = 3
+
+        @model_validator(mode="before")
+        @classmethod
+        def _from_context(cls, values: Mapping[str, object]) -> Mapping[str, object]:
+            data = dict(values)
+            ctx = data.get("context") or {}
+            if isinstance(ctx, Mapping):
+                if "reference_date" not in data and "month" in ctx:
+                    data["reference_date"] = ctx["month"]
+                if "trailing_months" not in data and "trailing_months" in ctx:
+                    data["trailing_months"] = ctx["trailing_months"]
+            return data
+
+    register_visual_type(
+        "contextual_month",
+        lambda path, payload=None, stack=(): BaseVisualConfig(type="contextual_month"),
+        overwrite=True,
+        context_model=_TestContextModel,
+    )
+
+    pack_path = tmp_path / "pack.yaml"
+    pack_path.write_text("", encoding="utf-8")
+
+    pack = PackConfig(
+        schema="test-pack",
+        context={"month": "2025-10-01", "trailing_months": 3},
+        slides=[
+            PackSlide(
+                title="Context Slide",
+                visual=PackVisualRef(ref="contextual_month.yaml"),
+            ),
+        ],
+    )
+
+    visuals: Dict[str, BaseVisualConfig] = {"contextual_month.yaml": BaseVisualConfig(type="contextual_month")}
+
+    def _loader(path: Path, payload: Mapping[str, object] | None = None, stack: tuple[Path, ...] = ()) -> BaseVisualConfig:
+        return visuals[path.name]
+
+    pipeline = _StubPipeline()
+    results = run_pack(
+        pack_path,
+        pack,
+        output_root=tmp_path / "artefacts",
+        base_options=PipelineOptions(metadata={"metrics_root": "registry/metrics"}),
+        visual_loader=_loader,
+        pipeline=cast(VisualPipeline[Any], pipeline),
+        env=create_pack_jinja_env(),
+    )
+
+    assert results
+    assert pipeline.contexts
+    visual_ctx = pipeline.contexts[0].visual_context
+    assert isinstance(visual_ctx, _TestContextModel)
+    assert visual_ctx.reference_date == date(2025, 10, 1)
+    assert visual_ctx.trailing_months == 3
 
 
 def test_run_pack_named_calculate_overrides_global(tmp_path: Path) -> None:
