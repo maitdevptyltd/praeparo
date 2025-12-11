@@ -205,6 +205,54 @@ def _resolve_default_template(pack_path: Path) -> Path | None:
     return None
 
 
+def _reuse_existing_assets(
+    *,
+    slide: PackSlide,
+    slide_slug: str,
+    ordinal: str,
+    pack_root: Path,
+    output_root: Path,
+    slide_png_map: dict[str, Path],
+    placeholder_png_map: dict[str, dict[str, Path]],
+) -> None:
+    """Populate PNG maps from prior artefacts and static image definitions.
+
+    This helper is used when slides are skipped (partial runs) and by the
+    PPTX-only restitch path to reuse existing outputs without executing
+    visuals. Static images remain mandatory: if a path is configured but not
+    found on disk, surface an error so callers can fix the pack definition.
+    """
+
+    if slide.image:
+        image_path = (pack_root / slide.image).expanduser().resolve(strict=False)
+        if not image_path.exists():
+            raise ValueError(f"Static slide image not found for '{slide_slug}': {image_path}")
+        slide_png_map.setdefault(slide_slug, image_path)
+
+    png_path = output_root / f"[{ordinal}]_{slide_slug}.png"
+    if png_path.exists():
+        slide_png_map.setdefault(slide_slug, png_path)
+
+    if not slide.placeholders:
+        return
+
+    placeholder_map = placeholder_png_map.setdefault(slide_slug, {})
+    for placeholder_id, placeholder in slide.placeholders.items():
+        placeholder_slug = f"{slide_slug}__{slugify(placeholder_id)}"
+
+        if placeholder.image:
+            image_path = (pack_root / placeholder.image).expanduser().resolve(strict=False)
+            if not image_path.exists():
+                raise ValueError(
+                    f"Static placeholder image not found for '{placeholder_id}' on slide '{slide_slug}': {image_path}"
+                )
+            placeholder_map.setdefault(placeholder_slug, image_path)
+
+        placeholder_png = output_root / f"[{ordinal}]_{placeholder_slug}.png"
+        if placeholder_png.exists():
+            placeholder_map.setdefault(placeholder_slug, placeholder_png)
+
+
 def _render_slide_metadata(*, pack: PackConfig, env: Environment, context: Mapping[str, object]) -> None:
     """Apply Jinja templating to slide-level metadata so downstream consumers see rendered text."""
 
@@ -293,10 +341,20 @@ def run_pack(
         return render_value(value, env=jinja_env, context=context_payload)
 
     for index, slide in enumerate(pack.slides, start=1):
-        if slide_filter and not _should_run_slide(slide, only=slide_filter):
-            continue
-
         slide_slug = _slug_for_slide(slide, index)
+        ordinal = f"{index:02d}"
+
+        if slide_filter and not _should_run_slide(slide, only=slide_filter):
+            _reuse_existing_assets(
+                slide=slide,
+                slide_slug=slide_slug,
+                ordinal=ordinal,
+                pack_root=pack_root,
+                output_root=output_root,
+                slide_png_map=slide_png_map,
+                placeholder_png_map=placeholder_png_map,
+            )
+            continue
 
         def _execute_visual(
             *,
@@ -313,7 +371,6 @@ def run_pack(
             merged_filters = merge_odata_filters(rendered_global_filters, _render_filters(filters))
             calculate_filters = merge_calculate_filters(rendered_global_calculate, _render_filters(calculate))
 
-            ordinal = f"{index:02d}"
             artifact_label = f"[{ordinal}]_{slide_label}"
             logger.info(
                 "Processing slide",
@@ -552,6 +609,56 @@ def run_pack(
                 raise
 
     return sorted_results
+
+
+def restitch_pack_pptx(
+    pack_path: Path,
+    pack: PackConfig,
+    *,
+    output_root: Path,
+    result_file: Path,
+    base_options: PipelineOptions,
+) -> None:
+    """Rebuild a pack PPTX using existing artefacts and static images."""
+
+    output_root.mkdir(parents=True, exist_ok=True)
+    result_file.parent.mkdir(parents=True, exist_ok=True)
+
+    slide_png_map: dict[str, Path] = {}
+    placeholder_png_map: dict[str, dict[str, Path]] = {}
+    pack_root = pack_path.parent
+
+    for index, slide in enumerate(pack.slides, start=1):
+        slide_slug = _slug_for_slide(slide, index)
+        ordinal = f"{index:02d}"
+
+        _reuse_existing_assets(
+            slide=slide,
+            slide_slug=slide_slug,
+            ordinal=ordinal,
+            pack_root=pack_root,
+            output_root=output_root,
+            slide_png_map=slide_png_map,
+            placeholder_png_map=placeholder_png_map,
+        )
+
+    template_override = base_options.metadata.get("pptx_template") if base_options.metadata else None
+    template_path = Path(template_override) if template_override else _resolve_default_template(pack_path)
+    if template_path is None:
+        logger.warning(
+            "Skipping PPTX assembly because no template was found",
+            extra={"pack": str(pack_path), "result_file": str(result_file)},
+        )
+        return
+
+    assemble_pack_pptx(
+        pack=pack,
+        results=[],
+        slide_pngs=slide_png_map,
+        placeholder_pngs=placeholder_png_map,
+        result_path=result_file,
+        template_path=template_path,
+    )
 
 
 __all__ = ["PackPowerBIFailure", "PackSlideResult", "run_pack"]

@@ -1097,6 +1097,126 @@ def test_pack_cli_run_warns_when_no_pngs(monkeypatch, tmp_path, capsys) -> None:
     assert "[warn] No PNG outputs were produced." in out
 
 
+def test_pack_cli_pptx_only_restitch(monkeypatch, tmp_path, capsys) -> None:
+    pack_path = tmp_path / "pack.yaml"
+    pack_path.write_text("contents", encoding="utf-8")
+
+    captured: Dict[str, object] = {"run_pack_called": False, "restitch_called": False}
+
+    def fake_load_pack_config(path: Path) -> PackConfig:
+        return PackConfig(
+            schema="test-pack",
+            slides=[PackSlide(title="Slide One", id="slide-id-1", visual=PackVisualRef(ref="one.yaml"))],
+        )
+
+    def fake_run_pack(*_, **__):
+        captured["run_pack_called"] = True
+        raise AssertionError("run_pack should not be invoked for --pptx-only")
+
+    def fake_restitch(pack_path_arg, pack, *, output_root, result_file, base_options):
+        captured["restitch_called"] = True
+        captured["output_root"] = output_root
+        captured["result_file"] = result_file
+        captured["metadata"] = base_options.metadata
+
+    def fake_allocate_revision(*args, **kwargs):
+        captured["revision_strategy"] = kwargs.get("strategy")
+        return None
+
+    monkeypatch.setattr("praeparo.cli.load_pack_config", fake_load_pack_config)
+    monkeypatch.setattr("praeparo.cli.run_pack", fake_run_pack)
+    monkeypatch.setattr("praeparo.cli.restitch_pack_pptx", fake_restitch)
+    monkeypatch.setattr("praeparo.cli.allocate_revision", fake_allocate_revision)
+    monkeypatch.setattr("praeparo.cli.build_default_query_planner_provider", lambda: None)
+    monkeypatch.setattr("praeparo.cli.VisualPipeline", lambda *_, **__: None)
+
+    artefacts_dir = tmp_path / "artefacts"
+    result_path = tmp_path / "deck" / "out.pptx"
+    argv = [
+        "pack",
+        "run",
+        str(pack_path),
+        "--artefact-dir",
+        str(artefacts_dir),
+        "--result-file",
+        str(result_path),
+        "--pptx-only",
+    ]
+
+    with pytest.raises(SystemExit) as exc:
+        cli_main(argv)
+
+    assert exc.value.code == 0
+    assert captured["restitch_called"] is True
+    assert captured["run_pack_called"] is False
+    assert captured["output_root"] == artefacts_dir
+    assert captured["result_file"] == result_path
+    assert captured["metadata"].get("result_file") == result_path
+    assert captured["revision_strategy"] == "minor"
+    out = capsys.readouterr().out
+    assert "Restitched PPTX" in out
+
+
+@pytest.mark.parametrize(
+    "extra_args,expected_strategy",
+    [
+        ([], "full"),
+        (["--slides", "one"], "minor"),
+        (["--pptx-only", "--result-file", "out.pptx", "--artefact-dir", "artifacts"], "minor"),
+    ],
+)
+def test_pack_cli_infers_revision_strategy(monkeypatch, tmp_path, extra_args, expected_strategy) -> None:
+    pack_path = tmp_path / "pack.yaml"
+    pack_path.write_text("contents", encoding="utf-8")
+
+    captured: Dict[str, object] = {}
+
+    def fake_load_pack_config(path: Path) -> PackConfig:
+        return PackConfig(
+            schema="test-pack",
+            slides=[PackSlide(title="Slide One", id="slide-id-1", visual=PackVisualRef(ref="one.yaml"))],
+        )
+
+    def fake_run_pack(*_, **__):
+        return []
+
+    def fake_restitch(*_, **__):
+        return None
+
+    def fake_allocate_revision(*args, **kwargs):
+        captured["strategy"] = kwargs.get("strategy")
+        return None
+
+    monkeypatch.setattr("praeparo.cli.load_pack_config", fake_load_pack_config)
+    monkeypatch.setattr("praeparo.cli.run_pack", fake_run_pack)
+    monkeypatch.setattr("praeparo.cli.restitch_pack_pptx", fake_restitch)
+    monkeypatch.setattr("praeparo.cli.allocate_revision", fake_allocate_revision)
+    monkeypatch.setattr("praeparo.cli.build_default_query_planner_provider", lambda: None)
+    monkeypatch.setattr("praeparo.cli.VisualPipeline", lambda *_, **__: None)
+
+    argv = [
+        "pack",
+        "run",
+        str(pack_path),
+        "--artefact-dir",
+        str(tmp_path / "artefacts"),
+    ]
+
+    for token in extra_args:
+        if token == "out.pptx":
+            argv.append(str(tmp_path / "out.pptx"))
+            continue
+        if token == "artifacts":
+            argv.append(str(tmp_path / "pptx_artifacts"))
+            continue
+        argv.append(token)
+
+    with pytest.raises(SystemExit):
+        cli_main(argv)
+
+    assert captured["strategy"] == expected_strategy
+
+
 def test_pack_cli_allow_partial_prints_summary(monkeypatch, tmp_path, capsys) -> None:
     pack_path = tmp_path / "pack.yaml"
     pack_path.write_text("contents", encoding="utf-8")

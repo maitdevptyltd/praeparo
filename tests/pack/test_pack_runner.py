@@ -11,14 +11,14 @@ from typing import Any, Dict, Mapping, Tuple, cast
 import pytest
 from pydantic import ValidationError, model_validator
 from pptx import Presentation
-from pptx.enum.shapes import MSO_SHAPE_TYPE
+from pptx.enum.shapes import MSO_SHAPE_TYPE, PP_PLACEHOLDER
 from pptx.util import Inches
 from PIL import Image
 
 from praeparo.models import BaseVisualConfig, PackConfig, PackPlaceholder, PackSlide, PackVisualRef
 from praeparo.pack.filters import merge_odata_filters
 from praeparo.pack.loader import load_pack_config
-from praeparo.pack.runner import PackPowerBIFailure, run_pack
+from praeparo.pack.runner import PackPowerBIFailure, restitch_pack_pptx, run_pack
 from praeparo.pack.templating import create_pack_jinja_env, render_value
 from praeparo.pipeline import PipelineOptions, VisualExecutionResult, VisualPipeline
 from praeparo.pipeline.outputs import OutputKind, PipelineOutputArtifact
@@ -861,7 +861,27 @@ def test_run_pack_builds_pptx_with_template_only_slide(tmp_path: Path) -> None:
     pack_path.write_text("", encoding="utf-8")
 
     template_path = tmp_path / "pack_template.pptx"
-    _build_pack_template(template_path)
+    prs = Presentation()
+    picture_with_caption = prs.slide_layouts[8]
+
+    # Single-image template uses a picture placeholder so the single-visual shorthand works.
+    single = prs.slides.add_slide(picture_with_caption)
+    image_ph = next(ph for ph in single.placeholders if ph.placeholder_format.type == PP_PLACEHOLDER.PICTURE)
+    image_ph.name = "image"
+    single.notes_slide.notes_text_frame.text = "TEMPLATE_TAG=single_image"
+
+    # Two-up template relies on explicit pictures so placeholder binding matches by name.
+    blank = prs.slide_layouts[6]
+    two_up = prs.slides.add_slide(blank)
+    tmp_img = tmp_path / "tmp.png"
+    _write_png(tmp_img)
+    left = two_up.shapes.add_picture(str(tmp_img), Inches(0.5), Inches(1), width=Inches(3), height=Inches(2.5))
+    left.name = "left_chart"
+    right = two_up.shapes.add_picture(str(tmp_img), Inches(4), Inches(1), width=Inches(3), height=Inches(2.5))
+    right.name = "right_chart"
+    two_up.notes_slide.notes_text_frame.text = "TEMPLATE_TAG=two_up"
+    prs.save(template_path)
+    tmp_img.unlink(missing_ok=True)
     result_path = tmp_path / "deck" / "governance.pptx"
 
     pack = PackConfig(
@@ -914,7 +934,26 @@ def test_run_pack_binds_static_slide_image(tmp_path: Path) -> None:
     pack_path.write_text("", encoding="utf-8")
 
     template_path = tmp_path / "pack_template.pptx"
-    _build_pack_template(template_path)
+    prs = Presentation()
+    picture_with_caption = prs.slide_layouts[8]
+
+    single = prs.slides.add_slide(picture_with_caption)
+    image_ph = next(ph for ph in single.placeholders if ph.placeholder_format.type == PP_PLACEHOLDER.PICTURE)
+    image_ph.name = "image"
+    single.notes_slide.notes_text_frame.text = "TEMPLATE_TAG=single_image"
+
+    blank = prs.slide_layouts[6]
+    two_up = prs.slides.add_slide(blank)
+    tmp_img = tmp_path / "tmp.png"
+    _write_png(tmp_img)
+    left = two_up.shapes.add_picture(str(tmp_img), Inches(0.5), Inches(1), width=Inches(3), height=Inches(2.5))
+    left.name = "left_chart"
+    right = two_up.shapes.add_picture(str(tmp_img), Inches(4), Inches(1), width=Inches(3), height=Inches(2.5))
+    right.name = "right_chart"
+    two_up.notes_slide.notes_text_frame.text = "TEMPLATE_TAG=two_up"
+
+    prs.save(template_path)
+    tmp_img.unlink(missing_ok=True)
     result_path = tmp_path / "deck" / "static_home.pptx"
 
     logo_path = pack_path.parent / "logo.png"
@@ -953,7 +992,6 @@ def test_run_pack_binds_static_placeholder_image(tmp_path: Path) -> None:
     pack_path.write_text("", encoding="utf-8")
 
     template_path = tmp_path / "pack_template.pptx"
-    _build_pack_template(template_path)
     result_path = tmp_path / "deck" / "static_placeholder.pptx"
 
     logo_path = pack_path.parent / "logo.png"
@@ -1062,3 +1100,96 @@ def test_pack_models_validate_static_image_rules() -> None:
 
     with pytest.raises(ValidationError):
         PackSlide(title="Image With Visual", template="single", visual=PackVisualRef(ref="one.yaml"), image="logo.png")
+
+
+def test_restitch_pack_pptx_reuses_existing_assets(tmp_path: Path) -> None:
+    pack_path = tmp_path / "pack.yaml"
+    pack_path.write_text("", encoding="utf-8")
+
+    template_path = tmp_path / "pack_template.pptx"
+    prs = Presentation()
+    picture_with_caption = prs.slide_layouts[8]
+
+    single = prs.slides.add_slide(picture_with_caption)
+    image_ph = next(ph for ph in single.placeholders if ph.placeholder_format.type == PP_PLACEHOLDER.PICTURE)
+    image_ph.name = "image"
+    single.notes_slide.notes_text_frame.text = "TEMPLATE_TAG=single_image"
+
+    blank = prs.slide_layouts[6]
+    two_up = prs.slides.add_slide(blank)
+    tmp_img = tmp_path / "tmp.png"
+    _write_png(tmp_img)
+    left = two_up.shapes.add_picture(str(tmp_img), Inches(0.5), Inches(1), width=Inches(3), height=Inches(2.5))
+    left.name = "left_chart"
+    right = two_up.shapes.add_picture(str(tmp_img), Inches(4), Inches(1), width=Inches(3), height=Inches(2.5))
+    right.name = "right_chart"
+    two_up.notes_slide.notes_text_frame.text = "TEMPLATE_TAG=two_up"
+
+    prs.save(template_path)
+    tmp_img.unlink(missing_ok=True)
+    result_path = tmp_path / "deck" / "restitched.pptx"
+
+    pack = PackConfig(
+        schema="test-pack",
+        slides=[
+            PackSlide(
+                title="Static Slide",
+                template="single_image",
+                image="static.png",
+            ),
+            PackSlide(
+                title="Two Up Slide",
+                template="two_up",
+                placeholders={
+                    "left_chart": PackPlaceholder(visual=PackVisualRef(ref="left.yaml")),
+                    "right_chart": PackPlaceholder(image="right.png"),
+                },
+            ),
+            PackSlide(
+                title="Visual Slide",
+                template="single_image",
+                visual=PackVisualRef(ref="visual.yaml"),
+            ),
+        ],
+    )
+
+    pack_root = pack_path.parent
+    pack_root.mkdir(parents=True, exist_ok=True)
+    static_path = pack_root / "static.png"
+    _write_png(static_path)
+    right_placeholder_path = pack_root / "right.png"
+    _write_coloured_png(right_placeholder_path, colour=(0, 255, 0, 255))
+
+    output_root = tmp_path / "artefacts"
+    output_root.mkdir(parents=True, exist_ok=True)
+
+    static_slug = slugify("Static Slide")
+    two_up_slug = slugify("Two Up Slide")
+    visual_slug = slugify("Visual Slide")
+
+    _write_coloured_png(output_root / f"[01]_{static_slug}.png", colour=(0, 0, 255, 255))
+    _write_coloured_png(output_root / f"[02]_{two_up_slug}__left_chart.png", colour=(255, 0, 0, 255))
+    _write_coloured_png(output_root / f"[03]_{visual_slug}.png", colour=(128, 128, 128, 255))
+
+    base_options = PipelineOptions(metadata={"pptx_template": template_path, "result_file": result_path})
+    restitch_pack_pptx(
+        pack_path,
+        pack,
+        output_root=output_root,
+        result_file=result_path,
+        base_options=base_options,
+    )
+
+    prs = Presentation(result_path)
+    assert len(prs.slides) == 3
+
+    static_blobs = _picture_blobs_by_name(prs.slides[0])
+    assert static_blobs.get("image") == static_path.read_bytes()
+
+    two_up_blobs = _picture_blobs_by_name(prs.slides[1])
+    left_png = (output_root / f"[02]_{two_up_slug}__left_chart.png").read_bytes()
+    assert two_up_blobs.get("left_chart") == left_png
+    assert two_up_blobs.get("right_chart") == right_placeholder_path.read_bytes()
+
+    visual_blobs = _picture_blobs_by_name(prs.slides[2])
+    assert visual_blobs.get("image") == (output_root / f"[03]_{visual_slug}.png").read_bytes()

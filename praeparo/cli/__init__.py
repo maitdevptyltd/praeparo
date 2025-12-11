@@ -37,6 +37,7 @@ from praeparo.pack import (
     create_pack_jinja_env,
     load_pack_config,
     render_value,
+    restitch_pack_pptx,
     run_pack,
 )
 from praeparo.visuals.dax_compilers import (
@@ -476,6 +477,12 @@ def _register_pack_parsers(parent: argparse._SubParsersAction[argparse.ArgumentP
         default=[],
         metavar="ID_OR_TITLE",
         help="Limit execution to matching slide titles, ids, or slugified equivalents (repeatable).",
+    )
+    run_parser.add_argument(
+        "--pptx-only",
+        dest="pptx_only",
+        action="store_true",
+        help="Rebuild PPTX from existing artefacts without executing visuals.",
     )
     run_parser.set_defaults(_handler=_handle_pack_run, print_dax=False, validate_define=False, sort_rows=False)
 
@@ -1183,12 +1190,27 @@ def _handle_pack_run(args: argparse.Namespace) -> int:
     except PackConfigError as exc:
         raise ValueError(str(exc)) from exc
 
+    strategy_arg = getattr(args, "revision_strategy", None)
+    override_revision = getattr(args, "revision", None)
+    pptx_only = getattr(args, "pptx_only", False)
+    has_slides = bool(args.slides)
+    effective_strategy = strategy_arg
+    if (
+        effective_strategy is None
+        and override_revision is None
+        and not getattr(args, "revision_dry_run", False)
+    ):
+        if pptx_only or has_slides:
+            effective_strategy = "minor"
+        else:
+            effective_strategy = "full"
+
     revision_info = allocate_revision(
         pack_path,
         artefact_root=artefact_dir,
         pack_context=pack.context or {},
-        strategy=getattr(args, "revision_strategy", None),
-        override=getattr(args, "revision", None),
+        strategy=effective_strategy,
+        override=override_revision,
         dry_run=getattr(args, "revision_dry_run", False),
     )
 
@@ -1211,6 +1233,23 @@ def _handle_pack_run(args: argparse.Namespace) -> int:
 
     args.artefact_dir = artefact_dir
     args.result_file = result_file
+
+    if getattr(args, "pptx_only", False):
+        if args.result_file is None:
+            raise ValueError("PPTX-only restitch requires a result file; provide dest or --result-file.")
+        metadata = _prepare_pack_metadata(args)
+        options = _build_pipeline_options(args, metadata, include_outputs=False)
+        if args.png_scale is not None:
+            options.png_scale = args.png_scale
+        restitch_pack_pptx(
+            pack_path,
+            pack,
+            output_root=args.artefact_dir,
+            result_file=args.result_file,
+            base_options=options,
+        )
+        print(f"[ok] Restitched PPTX to {args.result_file}")
+        return 0
 
     metadata = _prepare_pack_metadata(args)
     jinja_env = create_pack_jinja_env()
