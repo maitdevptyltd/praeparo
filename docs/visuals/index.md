@@ -124,6 +124,13 @@ Need to surface the compiled statements? Register a compiler via
 `praeparo visual dax <type>` alongside the existing `run` / `artifacts`
 subcommands.
 
+## Python-Backed Visuals
+
+- Use `PythonVisualBase` for code-first visuals; override `build_dataset` and `render`.
+- Run them with `praeparo python-visual run path/to/module.py --output-png ...`.
+- Context models stay typed (re-use `VisualContextModel` fields plus your own), and the pipeline still discovers metrics/datasources for you.
+- See [python_visuals.md](python_visuals.md) for the full quickstart.
+
 ## Python Metric Dataset Builder (Planned)
 
 Prefer a notebook workflow over YAML when sketching visuals? Review the

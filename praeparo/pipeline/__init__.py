@@ -19,6 +19,7 @@ from .registry import (
     register_visual_pipeline,
 )
 from .visual_definition import VisualPipelineDefinitionBase
+from .python_visual import PythonVisualBase, PYTHON_VISUAL_TYPE
 from .providers import (
     DefaultQueryPlannerProvider,
     QueryPlannerProvider,
@@ -36,6 +37,8 @@ __all__ = [
     "PipelineDataOptions",
     "PipelineOptions",
     "PipelineOutputArtifact",
+    "PythonVisualBase",
+    "PYTHON_VISUAL_TYPE",
     "QueryPlannerProvider",
     "VisualExecutionResult",
     "VisualPipeline",

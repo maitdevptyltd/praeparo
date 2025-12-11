@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import argparse
+import importlib.util
+import inspect
 import logging
 import os
 import sys
@@ -22,7 +24,10 @@ from praeparo.pipeline import (
     PipelineOptions,
     VisualExecutionResult,
     VisualPipeline,
+    PythonVisualBase,
+    PYTHON_VISUAL_TYPE,
     build_default_query_planner_provider,
+    register_visual_pipeline,
 )
 from praeparo.pack import (
     DEFAULT_POWERBI_CONCURRENCY,
@@ -399,6 +404,35 @@ def _register_pack_parsers(parent: argparse._SubParsersAction[argparse.ArgumentP
     run_parser.set_defaults(_handler=_handle_pack_run, print_dax=False, validate_define=False, sort_rows=False)
 
 
+def _update_config_argument_help(parser: argparse.ArgumentParser, help_text: str) -> None:
+    """Override the help text for the shared 'config' positional argument."""
+
+    for action in parser._actions:
+        if getattr(action, "dest", None) == "config":
+            action.help = help_text
+            return
+
+
+def _register_python_visual_parsers(parent: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+    python_parser = parent.add_parser("python-visual", help="Python-backed visual commands.")
+    python_subparsers = python_parser.add_subparsers(dest="python_visual_command", metavar="SUBCOMMAND")
+    python_subparsers.required = True
+
+    run_parser = python_subparsers.add_parser(
+        "run",
+        help="Execute a Python visual class from a module.",
+        parents=[_build_common_parser(), _build_run_specific_parser()],
+        add_help=True,
+    )
+    _update_config_argument_help(run_parser, "Path to the Python visual module.")
+    run_parser.add_argument(
+        "--visual-class",
+        dest="visual_class",
+        help="Optional class name to load when multiple visuals are defined in the module.",
+    )
+    run_parser.set_defaults(_handler=_handle_python_visual_run)
+
+
 def _register_visual_type_parsers(
     parent: argparse.ArgumentParser,
     *,
@@ -526,6 +560,7 @@ def _build_parser(
     _register_dax_type_parsers(dax_parser, registrations=dax_registrations)
     dax_parser.set_defaults(_handler=_handle_visual_dax)
 
+    _register_python_visual_parsers(subparsers)
     _register_pack_parsers(subparsers)
 
     return parser
@@ -657,10 +692,26 @@ def _instantiate_visual_context(
     metadata: Mapping[str, object],
     project_root: Path | None,
 ) -> VisualContextModel | None:
-    if registration is None or registration.context_model is None:
+    context_model: type[VisualContextModel] | None = None
+    if registration is not None:
+        context_model = registration.context_model
+    if context_model is None:
         return None
+    return _instantiate_context_model(
+        args=args,
+        context_model=context_model,
+        metadata=metadata,
+        project_root=project_root,
+    )
 
-    context_model = registration.context_model
+
+def _instantiate_context_model(
+    *,
+    args: argparse.Namespace,
+    context_model: type[VisualContextModel],
+    metadata: Mapping[str, object],
+    project_root: Path | None,
+) -> VisualContextModel:
     raw_context: Dict[str, object] = dict(metadata)
 
     metrics_root: Path | None = None
@@ -821,6 +872,69 @@ def _collect_output_targets(args: argparse.Namespace) -> list[OutputTarget]:
     return targets
 
 
+def _load_python_module(path: Path):
+    """Import and return a module from an arbitrary file path."""
+
+    if not path.exists():
+        raise ValueError(f"Python visual module not found: {path}")
+
+    module_name = f"praeparo_python_visual_{path.stem}_{abs(hash(path))}"
+    spec = importlib.util.spec_from_file_location(module_name, path)
+    if spec is None or spec.loader is None:
+        raise ValueError(f"Unable to load Python visual module at {path}")
+
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    try:
+        spec.loader.exec_module(module)
+    except Exception as exc:  # pragma: no cover - surfaced to CLI users
+        raise RuntimeError(f"Failed to import Python visual module '{path}': {exc}") from exc
+
+    return module
+
+
+def _discover_python_visual(module, *, class_name: str | None = None) -> type[PythonVisualBase]:
+    """Locate a PythonVisualBase subclass in *module*."""
+
+    candidates = [
+        member
+        for member in module.__dict__.values()
+        if inspect.isclass(member) and issubclass(member, PythonVisualBase) and member is not PythonVisualBase
+    ]
+
+    if class_name:
+        for candidate in candidates:
+            if candidate.__name__ == class_name:
+                return candidate
+        available = ", ".join(cls.__name__ for cls in candidates) or "none"
+        raise ValueError(f"Python visual class '{class_name}' not found. Available: {available}")
+
+    if not candidates:
+        raise ValueError("No PythonVisualBase subclasses were found in the supplied module.")
+    if len(candidates) > 1:
+        names = ", ".join(cls.__name__ for cls in candidates)
+        raise ValueError(f"Multiple Python visuals found; specify one with --visual-class. Options: {names}")
+
+    return candidates[0]
+
+
+def _load_python_visual(path: Path, class_name: str | None = None) -> PythonVisualBase:
+    """Import *path* and instantiate the requested Python visual class."""
+
+    module = _load_python_module(path)
+    visual_cls = _discover_python_visual(module, class_name=class_name)
+
+    try:
+        instance = visual_cls()
+    except Exception as exc:  # pragma: no cover - surfaced to CLI users
+        raise RuntimeError(f"Failed to instantiate visual '{visual_cls.__name__}': {exc}") from exc
+
+    if getattr(instance, "context_model", None) is None:
+        raise ValueError(f"Python visual '{visual_cls.__name__}' must declare a context_model attribute.")
+
+    return instance
+
+
 def _print_dax_output(result: VisualExecutionResult) -> None:
     visual = result.config
     if isinstance(visual, MatrixConfig):
@@ -908,6 +1022,46 @@ def _execute_pipeline(
 # ---------------------------------------------------------------------------
 # Command handlers
 # ---------------------------------------------------------------------------
+
+
+def _handle_python_visual_run(args: argparse.Namespace) -> int:
+    """Execute a PythonVisualBase subclass using the standard pipeline."""
+
+    visual = _load_python_visual(args.config, getattr(args, "visual_class", None))
+    metadata = _prepare_metadata(args, cli=None)
+    options = _build_pipeline_options(args, metadata, include_outputs=True)
+
+    project_root = _project_root_for(args.config)
+    visual_context = _instantiate_context_model(
+        args=args,
+        context_model=visual.context_model,
+        metadata=options.metadata,
+        project_root=project_root,
+    )
+
+    context = ExecutionContext(
+        config_path=args.config,
+        project_root=project_root,
+        case_key=args.config.stem,
+        options=options,
+        visual_context=visual_context,
+    )
+
+    definition = visual.to_definition()
+    register_visual_pipeline(PYTHON_VISUAL_TYPE, definition, overwrite=True)
+    pipeline = VisualPipeline(planner_provider=build_default_query_planner_provider())
+
+    visual_config = visual.to_config()
+    result = pipeline.execute(visual_config, context)
+
+    if args.print_dax:
+        _print_dax_output(result)
+
+    message = _summarise_outputs(result)
+    if message:
+        print(message)
+
+    return 0
 
 
 def _handle_pack_run(args: argparse.Namespace) -> int:
@@ -1121,7 +1275,7 @@ def _normalise_argv(
 ) -> list[str]:
     if not argv:
         return list(argv)
-    commands = {"visual", "pack"}
+    commands = {"visual", "pack", "python-visual"}
     if argv[0] not in commands and not argv[0].startswith("-"):
         return ["visual", "run", "auto", *argv]
     if len(argv) >= 3 and argv[0] == "visual" and argv[1] in {"run", "artifacts", "dax"}:
