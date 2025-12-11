@@ -12,7 +12,8 @@ from praeparo.dax import DaxQueryPlan
 from praeparo.models import BaseVisualConfig, PackConfig, PackSlide, PackVisualRef
 from praeparo.pack import PackPowerBIFailure, PackSlideResult
 from praeparo.visuals.dax_compilers import DaxCompileArtifact, register_dax_compiler
-from praeparo.pipeline import VisualExecutionResult
+from praeparo.visuals.dax import slugify
+from praeparo.pipeline import PipelineOptions, VisualExecutionResult
 from praeparo.pipeline.outputs import OutputKind, PipelineOutputArtifact
 from praeparo.visuals import (
     VisualCLIArgument,
@@ -530,6 +531,222 @@ def test_pack_cli_run_invokes_runner(monkeypatch, tmp_path, capsys) -> None:
     assert captured["path"] == pack_path
     assert captured["output_root"] == artefacts_dir
     assert captured["only_slides"] == ("slide-id-1",)
+
+
+def test_pack_cli_dest_directory_sets_defaults(monkeypatch, tmp_path, capsys) -> None:
+    pack_path = tmp_path / "ing governance pack.yaml"
+    pack_path.write_text("contents", encoding="utf-8")
+    dest = tmp_path / "out" / "ing"
+
+    captured: Dict[str, object] = {}
+
+    def fake_load_pack_config(path: Path) -> PackConfig:
+        return PackConfig(
+            schema="test-pack",
+            slides=[PackSlide(title="Slide One", id="slide-id-1", visual=PackVisualRef(ref="one.yaml"))],
+        )
+
+    def fake_run_pack(
+        pack_path_arg,
+        pack,
+        *,
+        output_root,
+        max_powerbi_concurrency=None,
+        base_options=None,
+        visual_loader=None,
+        pipeline=None,
+        env=None,
+        only_slides=(),
+    ):
+        captured["output_root"] = output_root
+        captured["base_options"] = base_options
+        slide = pack.slides[0]
+        png_path = output_root / "slide-id-1.png"
+        png_path.parent.mkdir(parents=True, exist_ok=True)
+        png_path.write_text("png", encoding="utf-8")
+        return [
+            PackSlideResult(
+                slide=slide,
+                visual_path=pack_path_arg,
+                result=VisualExecutionResult(config=BaseVisualConfig(type="powerbi"), outputs=[]),
+                png_path=png_path,
+            )
+        ]
+
+    class FakePipeline:
+        def __init__(self, *_, **__):
+            pass
+
+    monkeypatch.setattr("praeparo.cli.load_pack_config", fake_load_pack_config)
+    monkeypatch.setattr("praeparo.cli.run_pack", fake_run_pack)
+    monkeypatch.setattr("praeparo.cli.VisualPipeline", FakePipeline)
+    monkeypatch.setattr("praeparo.cli.build_default_query_planner_provider", lambda: None)
+
+    with pytest.raises(SystemExit) as exc:
+        cli_main(
+            [
+                "pack",
+                "run",
+                str(pack_path),
+                str(dest),
+            ]
+        )
+
+    assert exc.value.code == 0
+    artefact_dir = dest / "_artifacts"
+    assert captured["output_root"] == artefact_dir
+    base_options = cast(PipelineOptions, captured["base_options"])
+    assert base_options is not None
+    assert base_options.artefact_dir == artefact_dir
+    expected_result = dest / f"{slugify(pack_path.stem)}.pptx"
+    assert base_options.metadata.get("result_file") == expected_result
+    out = capsys.readouterr().out
+    assert artefact_dir.as_posix() in out
+
+
+def test_pack_cli_dest_pptx_sets_result_and_artifacts(monkeypatch, tmp_path, capsys) -> None:
+    pack_path = tmp_path / "ing pack.yaml"
+    pack_path.write_text("contents", encoding="utf-8")
+    dest = tmp_path / "out" / "ing_governance_2025-12.pptx"
+
+    captured: Dict[str, object] = {}
+
+    def fake_load_pack_config(path: Path) -> PackConfig:
+        return PackConfig(
+            schema="test-pack",
+            slides=[PackSlide(title="Slide One", id="slide-id-1", visual=PackVisualRef(ref="one.yaml"))],
+        )
+
+    def fake_run_pack(
+        pack_path_arg,
+        pack,
+        *,
+        output_root,
+        max_powerbi_concurrency=None,
+        base_options=None,
+        visual_loader=None,
+        pipeline=None,
+        env=None,
+        only_slides=(),
+    ):
+        captured["output_root"] = output_root
+        captured["base_options"] = base_options
+        slide = pack.slides[0]
+        png_path = output_root / "slide-id-1.png"
+        png_path.parent.mkdir(parents=True, exist_ok=True)
+        png_path.write_text("png", encoding="utf-8")
+        return [
+            PackSlideResult(
+                slide=slide,
+                visual_path=pack_path_arg,
+                result=VisualExecutionResult(config=BaseVisualConfig(type="powerbi"), outputs=[]),
+                png_path=png_path,
+            )
+        ]
+
+    class FakePipeline:
+        def __init__(self, *_, **__):
+            pass
+
+    monkeypatch.setattr("praeparo.cli.load_pack_config", fake_load_pack_config)
+    monkeypatch.setattr("praeparo.cli.run_pack", fake_run_pack)
+    monkeypatch.setattr("praeparo.cli.VisualPipeline", FakePipeline)
+    monkeypatch.setattr("praeparo.cli.build_default_query_planner_provider", lambda: None)
+
+    with pytest.raises(SystemExit) as exc:
+        cli_main(
+            [
+                "pack",
+                "run",
+                str(pack_path),
+                str(dest),
+            ]
+        )
+
+    assert exc.value.code == 0
+    artefact_dir = dest.parent / dest.stem / "_artifacts"
+    assert captured["output_root"] == artefact_dir
+    base_options = cast(PipelineOptions, captured["base_options"])
+    assert base_options is not None
+    assert base_options.artefact_dir == artefact_dir
+    assert base_options.metadata.get("result_file") == dest
+    out = capsys.readouterr().out
+    assert artefact_dir.as_posix() in out
+
+
+def test_pack_cli_dest_allows_flag_overrides(monkeypatch, tmp_path, capsys) -> None:
+    pack_path = tmp_path / "ing pack.yaml"
+    pack_path.write_text("contents", encoding="utf-8")
+    dest = tmp_path / "out" / "ing_governance_2025-12.pptx"
+    explicit_artefact_dir = tmp_path / "custom" / "artefacts"
+    explicit_result = tmp_path / "custom" / "ing.pptx"
+
+    captured: Dict[str, object] = {}
+
+    def fake_load_pack_config(path: Path) -> PackConfig:
+        return PackConfig(
+            schema="test-pack",
+            slides=[PackSlide(title="Slide One", id="slide-id-1", visual=PackVisualRef(ref="one.yaml"))],
+        )
+
+    def fake_run_pack(
+        pack_path_arg,
+        pack,
+        *,
+        output_root,
+        max_powerbi_concurrency=None,
+        base_options=None,
+        visual_loader=None,
+        pipeline=None,
+        env=None,
+        only_slides=(),
+    ):
+        captured["output_root"] = output_root
+        captured["base_options"] = base_options
+        slide = pack.slides[0]
+        png_path = output_root / "slide-id-1.png"
+        png_path.parent.mkdir(parents=True, exist_ok=True)
+        png_path.write_text("png", encoding="utf-8")
+        return [
+            PackSlideResult(
+                slide=slide,
+                visual_path=pack_path_arg,
+                result=VisualExecutionResult(config=BaseVisualConfig(type="powerbi"), outputs=[]),
+                png_path=png_path,
+            )
+        ]
+
+    class FakePipeline:
+        def __init__(self, *_, **__):
+            pass
+
+    monkeypatch.setattr("praeparo.cli.load_pack_config", fake_load_pack_config)
+    monkeypatch.setattr("praeparo.cli.run_pack", fake_run_pack)
+    monkeypatch.setattr("praeparo.cli.VisualPipeline", FakePipeline)
+    monkeypatch.setattr("praeparo.cli.build_default_query_planner_provider", lambda: None)
+
+    with pytest.raises(SystemExit) as exc:
+        cli_main(
+            [
+                "pack",
+                "run",
+                str(pack_path),
+                str(dest),
+                "--artefact-dir",
+                str(explicit_artefact_dir),
+                "--result-file",
+                str(explicit_result),
+            ]
+        )
+
+    assert exc.value.code == 0
+    assert captured["output_root"] == explicit_artefact_dir
+    base_options = cast(PipelineOptions, captured["base_options"])
+    assert base_options is not None
+    assert base_options.artefact_dir == explicit_artefact_dir
+    assert base_options.metadata.get("result_file") == explicit_result
+    out = capsys.readouterr().out
+    assert explicit_artefact_dir.as_posix() in out
 
 
 def test_pack_cli_run_warns_when_no_pngs(monkeypatch, tmp_path, capsys) -> None:

@@ -106,6 +106,18 @@ poetry run praeparo pack run \
   --artefact-dir .tmp/example/pack_png
 ```
 
+You can optionally supply a positional `dest` to derive defaults for `--artefact-dir`
+and a PPTX `--result-file`:
+
+- `praeparo pack run projects/example/pack.yaml out/ing` writes artefacts to
+  `out/ing/_artifacts/` and defaults the PPTX to `out/ing/<pack-slug>.pptx`.
+- `praeparo pack run projects/example/pack.yaml out/ing_governance.pptx` writes
+  artefacts to `out/ing_governance/_artifacts/` and the PPTX to
+  `out/ing_governance.pptx`.
+
+Explicit flags still win: if you pass `--artefact-dir` or `--result-file`, those
+values override anything derived from the positional `dest`.
+
 Key flags:
 
 - `pack run <path>` – path to the pack YAML. Can be absolute or relative to the
@@ -115,6 +127,11 @@ Key flags:
     the 1-based slide position padded to two digits.
   - Visual-specific artefacts (for example Power BI exports) land under
     `<artefact-dir>/[NN]_<slide-slug>/`.
+  - Omit this flag only when using the positional `dest` shorthand; the derived
+    `artefact_dir` will be `dest/_artifacts` (or `<dest-stem>/_artifacts` when
+    `dest` ends with `.pptx`).
+- `--result-file` – optional PPTX destination. Defaults to `<dest>/<pack-slug>.pptx`
+  when `dest` is a directory or to the exact `dest` when it ends with `.pptx`.
 - `--slides` – optional list of slide ids/titles/slugified titles to restrict
   execution:
 

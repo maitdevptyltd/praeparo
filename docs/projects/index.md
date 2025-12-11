@@ -40,6 +40,11 @@ Use `praeparo pack run` to execute a pack:
 poetry run praeparo pack run projects/example/pack.yaml --artefact-dir .tmp/example/pack_png
 ```
 
+Prefer the explicit flags for clarity, but you can use a positional shorthand:
+`praeparo pack run projects/example/pack.yaml out/report.pptx` maps artefacts to
+`out/report/_artifacts/` and the PPTX to `out/report.pptx`; a directory
+`dest` maps to `dest/_artifacts/` plus `dest/<pack-slug>.pptx`.
+
 Each visual slide is executed via the normal visual registry and pipelines;
 PNGs land in `<artefact-dir>/[NN]_<slide-slug>.png` with per-slide artefacts under
 `<artefact-dir>/[NN]_<slide-slug>/`. Pack CLI logging defaults to `DEBUG`; override

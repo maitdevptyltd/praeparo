@@ -43,6 +43,7 @@ from praeparo.visuals.dax_compilers import (
     get_dax_compiler_registration,
     iter_dax_compiler_registrations,
 )
+from praeparo.visuals.dax import slugify
 from praeparo.visuals.context_models import VisualContextModel
 from praeparo.powerbi import (
     PowerBIAuthenticationError,
@@ -60,6 +61,7 @@ from praeparo.visuals.registry import (
 
 LOG_LEVEL_ENV_VAR = "PRAEPARO_LOG_LEVEL"
 PBI_CONCURRENCY_ENV_VAR = "PRAEPARO_PBI_MAX_CONCURRENCY"
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -278,6 +280,32 @@ def _build_run_specific_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _derive_pack_dest_defaults(pack_path: Path, dest: Path | None) -> tuple[Path | None, Path | None]:
+    """
+    Interpret the optional positional `dest` for pack runs.
+
+    Returns (artefact_dir, result_file) defaults derived from the shorthand,
+    leaving explicit flags to override later.
+    """
+
+    if dest is None:
+        return None, None
+
+    dest_str = str(dest).strip()
+    if not dest_str:
+        raise ValueError("Destination path cannot be empty.")
+
+    destination = Path(dest_str).expanduser()
+    if destination.suffix.lower() == ".pptx":
+        artefact_dir = destination.parent / destination.stem / "_artifacts"
+        return artefact_dir, destination
+
+    pack_slug = slugify(pack_path.stem)
+    artefact_dir = destination / "_artifacts"
+    result_file = destination / f"{pack_slug}.pptx"
+    return artefact_dir, result_file
+
+
 def _register_pack_parsers(parent: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     pack_parser = parent.add_parser("pack", help="Pack pipeline commands.")
     pack_subparsers = pack_parser.add_subparsers(dest="pack_command", metavar="SUBCOMMAND")
@@ -285,13 +313,33 @@ def _register_pack_parsers(parent: argparse._SubParsersAction[argparse.ArgumentP
 
     run_parser = pack_subparsers.add_parser("run", help="Execute a pack and export PNGs.")
     run_parser.add_argument("pack", type=Path, help="Path to the pack YAML file.")
+    run_parser.add_argument(
+        "dest",
+        nargs="?",
+        type=Path,
+        help=(
+            "Optional destination shorthand. A .pptx path sets --result-file to that location and "
+            "defaults --artefact-dir to <parent>/<stem>/_artifacts; a directory or extension-less "
+            "path defaults to <dest>/_artifacts and <dest>/<pack-slug>.pptx. Flags override these defaults."
+        ),
+    )
     _add_plugin_argument(run_parser)
     run_parser.add_argument(
         "--artefact-dir",
         type=Path,
         dest="artefact_dir",
-        required=True,
-        help="Root directory for exported pack artefacts.",
+        help=(
+            "Root directory for exported pack artefacts. Optional when using positional dest; "
+            "overrides any defaults derived from dest when both are provided."
+        ),
+    )
+    run_parser.add_argument(
+        "--result-file",
+        dest="result_file",
+        type=Path,
+        help=(
+            "Optional PPTX destination. Overrides defaults derived from positional dest when supplied."
+        ),
     )
     run_parser.add_argument(
         "--meta",
@@ -791,6 +839,9 @@ def _prepare_pack_metadata(args: argparse.Namespace) -> Dict[str, object]:
         value = getattr(args, field, None)
         if value is not None:
             metadata[field] = value
+    result_file = getattr(args, "result_file", None)
+    if result_file is not None:
+        metadata["result_file"] = result_file
     build_artifacts_dir = getattr(args, "build_artifacts_dir", None)
     if build_artifacts_dir is not None:
         metadata["build_artifacts_dir"] = build_artifacts_dir
@@ -1075,11 +1126,32 @@ def _handle_python_visual_run(args: argparse.Namespace) -> int:
 
 
 def _handle_pack_run(args: argparse.Namespace) -> int:
-    if args.artefact_dir is None:
-        raise ValueError("--artefact-dir must be supplied for pack execution.")
+    pack_path: Path = args.pack
+    dest: Path | None = getattr(args, "dest", None)
+    default_artefact_dir, default_result_file = _derive_pack_dest_defaults(pack_path, dest)
+
+    explicit_result_file: Path | None = getattr(args, "result_file", None)
+    if dest is not None and (args.artefact_dir or explicit_result_file):
+        logger.info(
+            "Positional dest supplied; explicit flags override derived defaults.",
+            extra={
+                "dest": str(dest),
+                "artefact_dir": str(args.artefact_dir) if args.artefact_dir else None,
+                "result_file": str(explicit_result_file) if explicit_result_file else None,
+            },
+        )
+
+    artefact_dir = args.artefact_dir or default_artefact_dir
+    result_file = explicit_result_file or default_result_file
+
+    if artefact_dir is None:
+        raise ValueError("Provide --artefact-dir or a positional dest to choose output locations.")
+
+    args.artefact_dir = artefact_dir
+    args.result_file = result_file
 
     try:
-        pack = load_pack_config(args.pack)
+        pack = load_pack_config(pack_path)
     except PackConfigError as exc:
         raise ValueError(str(exc)) from exc
 
