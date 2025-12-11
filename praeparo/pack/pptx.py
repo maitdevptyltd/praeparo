@@ -10,12 +10,14 @@ layer on top of the pack PNG pipeline.
 from __future__ import annotations
 
 import copy
+import io
 import logging
 from pathlib import Path
 from typing import Iterable, Mapping, Sequence
 
 from pptx import Presentation
 from pptx.enum.shapes import MSO_SHAPE_TYPE, PP_PLACEHOLDER
+import pptx.shapes.picture as pptx_picture
 
 from praeparo.models import PackConfig, PackSlide
 from praeparo.visuals.dax.planner_core import slugify
@@ -50,7 +52,20 @@ def _clone_slide(presentation: Presentation, template_slide) -> object:
         new_slide.shapes._spTree.remove(shape._element)  # type: ignore[attr-defined]
 
     for shape in template_slide.shapes:
-        new_slide.shapes._spTree.insert_element_before(copy.deepcopy(shape._element), "p:extLst")  # type: ignore[attr-defined]
+        if isinstance(shape, pptx_picture.Picture):
+            img = io.BytesIO(shape.image.blob)
+            pic = new_slide.shapes.add_picture(
+                image_file=img,
+                left=shape.left,
+                top=shape.top,
+                width=shape.width,
+                height=shape.height,
+            )
+            pic.name = getattr(shape, "name", None) or pic.name
+            continue
+
+        newel = copy.deepcopy(shape._element)  # type: ignore[attr-defined]
+        new_slide.shapes._spTree.insert_element_before(newel, "p:extLst")  # type: ignore[attr-defined]
 
     return new_slide
 
@@ -67,6 +82,18 @@ def _picture_shapes(slide) -> list:
                     shapes.append(shape)
             except ValueError:
                 # Some placeholders (e.g. missing type) may raise; skip them.
+                continue
+    return shapes
+
+
+def _picture_placeholder_shapes(slide) -> list:
+    shapes = []
+    for shape in slide.shapes:
+        if getattr(shape, "is_placeholder", False):
+            try:
+                if shape.placeholder_format.type == PP_PLACEHOLDER.PICTURE:
+                    shapes.append(shape)
+            except ValueError:
                 continue
     return shapes
 
@@ -210,12 +237,11 @@ def assemble_pack_pptx(
             if image_path is None:
                 raise ValueError(f"Missing PNG for slide '{slide_slug}'")
 
-            picture_shapes = _picture_shapes(cloned)
+            picture_shapes = _picture_placeholder_shapes(cloned)
             if len(picture_shapes) != 1:
                 raise ValueError(
                     f"Slide '{slide_slug}' uses single-visual shorthand but template '{slide.template}' "
-                    f"has {len(picture_shapes)} picture placeholders: "
-                    f"{[getattr(shape, 'name', None) for shape in picture_shapes]}"
+                    f"has {len(picture_shapes)} picture picture-placeholders."
                 )
             _replace_picture(picture_shapes[0], image_path)
         else:

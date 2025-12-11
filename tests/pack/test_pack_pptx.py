@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from pathlib import Path
 import struct
 import zlib
+from pathlib import Path
 
 from pptx import Presentation
-from pptx.enum.shapes import MSO_SHAPE_TYPE
+from pptx.enum.shapes import MSO_SHAPE_TYPE, PP_PLACEHOLDER
 from pptx.util import Inches
 
 from praeparo.pack.pptx import assemble_pack_pptx
@@ -33,17 +33,22 @@ def _write_png(path: Path, width: int = 1, height: int = 1) -> None:
 
 def _build_template(path: Path) -> None:
     prs = Presentation()
-    blank = prs.slide_layouts[6]
-
-    # Single-image template
-    single = prs.slides.add_slide(blank)
+    picture_with_caption = prs.slide_layouts[8]
     tmp_img = path.parent / "tmp.png"
     _write_png(tmp_img)
-    pic = single.shapes.add_picture(str(tmp_img), Inches(1), Inches(1), width=Inches(4), height=Inches(3))
-    pic.name = "image"
+
+    # Single-image template uses the built-in picture placeholder layout so we exercise placeholder logic.
+    single = prs.slides.add_slide(picture_with_caption)
+    picture_placeholder = next(ph for ph in single.placeholders if ph.placeholder_format.type == PP_PLACEHOLDER.PICTURE)
+    picture_placeholder.name = "image"
+    picture_placeholder.left = Inches(1)
+    picture_placeholder.top = Inches(1)
+    picture_placeholder.width = Inches(4)
+    picture_placeholder.height = Inches(3)
     single.notes_slide.notes_text_frame.text = "TEMPLATE_TAG=single_image"
 
     # Two-up template
+    blank = prs.slide_layouts[6]
     two_up = prs.slides.add_slide(blank)
     left = two_up.shapes.add_picture(str(tmp_img), Inches(0.5), Inches(1), width=Inches(3), height=Inches(2.5))
     left.name = "left_chart"
@@ -51,6 +56,28 @@ def _build_template(path: Path) -> None:
     right.name = "right_chart"
     two_up.notes_slide.notes_text_frame.text = "TEMPLATE_TAG=two_up"
 
+    prs.save(path)
+    tmp_img.unlink(missing_ok=True)
+
+
+def _build_template_with_background(path: Path) -> None:
+    prs = Presentation()
+    picture_with_caption = prs.slide_layouts[8]
+
+    slide = prs.slides.add_slide(picture_with_caption)
+    tmp_img = path.parent / "tmp_background.png"
+    _write_png(tmp_img, width=10, height=10)
+    background = slide.shapes.add_picture(str(tmp_img), Inches(0), Inches(0), width=prs.slide_width, height=prs.slide_height)
+    background.name = "background"
+
+    logo_placeholder = next(ph for ph in slide.placeholders if ph.placeholder_format.type == PP_PLACEHOLDER.PICTURE)
+    logo_placeholder.name = "logo"
+    logo_placeholder.left = Inches(1)
+    logo_placeholder.top = Inches(1)
+    logo_placeholder.width = Inches(2)
+    logo_placeholder.height = Inches(1.5)
+
+    slide.notes_slide.notes_text_frame.text = "TEMPLATE_TAG=home"
     prs.save(path)
     tmp_img.unlink(missing_ok=True)
 
@@ -246,4 +273,49 @@ def test_assemble_pptx_handles_template_only_slide(tmp_path: Path) -> None:
     prs = Presentation(out)
     assert len(prs.slides) == 2
     static_pictures = [s for s in prs.slides[0].shapes if s.shape_type == MSO_SHAPE_TYPE.PICTURE]
-    assert static_pictures, "Template-only slide should retain its image without errors"
+    picture_placeholders = [
+        s
+        for s in prs.slides[0].shapes
+        if getattr(s, "is_placeholder", False)
+        and getattr(s, "placeholder_format", None)
+        and s.placeholder_format.type == PP_PLACEHOLDER.PICTURE
+    ]
+    assert static_pictures or picture_placeholders, "Template-only slide should retain its image without errors"
+
+
+def test_background_picture_ignored_for_single_visual_shorthand(tmp_path: Path) -> None:
+    template_path = tmp_path / "template_bg.pptx"
+    _build_template_with_background(template_path)
+
+    pack = PackConfig(
+        schema="test-pack",
+        slides=[
+            PackSlide(
+                title="Home",
+                id="home",
+                template="home",
+                visual=PackVisualRef(ref="home.yaml"),
+            )
+        ],
+    )
+
+    slide_slug = slugify("home")
+    png_path = tmp_path / f"{slide_slug}.png"
+    _write_png(png_path, width=120, height=80)
+
+    out = tmp_path / "deck_bg.pptx"
+    assemble_pack_pptx(
+        pack=pack,
+        results=[],
+        slide_pngs={slide_slug: png_path},
+        placeholder_pngs={},
+        result_path=out,
+        template_path=template_path,
+    )
+
+    prs = Presentation(out)
+    slide = prs.slides[0]
+    pictures = [shape for shape in slide.shapes if shape.shape_type == MSO_SHAPE_TYPE.PICTURE]
+
+    assert len(pictures) >= 2, "Background image should remain alongside replaced placeholder"
+    assert "logo" in [getattr(shape, "name", None) for shape in pictures]
