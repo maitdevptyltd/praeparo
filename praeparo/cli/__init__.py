@@ -341,7 +341,8 @@ def _derive_visual_dest_defaults(
 
     if suffix == ".png":
         artefact_dir = destination.parent / destination.stem / "_artifacts"
-        return artefact_dir, None, destination
+        html_output = artefact_dir / f"{config_path.stem}.html"
+        return artefact_dir, html_output, destination
 
     if suffix == ".html":
         artefact_dir = destination.parent / destination.stem / "_artifacts"

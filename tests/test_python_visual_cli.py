@@ -72,8 +72,8 @@ def test_python_visual_cli_surfaces_import_errors(tmp_path, capsys) -> None:
 def test_python_visual_cli_dest_png_sets_defaults(tmp_path, monkeypatch) -> None:
     module_path = _copy_fixture(tmp_path / "simple_visual.py")
     dest = tmp_path / "render.png"
-    expected_html = module_path.parent / "build" / f"{module_path.stem}.html"
     expected_artefacts = dest.parent / dest.stem / "_artifacts"
+    expected_html = expected_artefacts / f"{module_path.stem}.html"
 
     captured = {}
 
@@ -136,7 +136,8 @@ def test_python_visual_cli_dest_directory_defaults(tmp_path, monkeypatch) -> Non
 def test_bare_py_invocation_auto_detects_python_visual(tmp_path) -> None:
     module_path = _copy_fixture(tmp_path / "simple_visual.py")
     dest = tmp_path / "auto.png"
-    expected_html = module_path.parent / "build" / f"{module_path.stem}.html"
+    artefact_dir = dest.parent / dest.stem / "_artifacts"
+    expected_html = artefact_dir / f"{module_path.stem}.html"
 
     argv = [str(module_path), str(dest)]
 
@@ -151,7 +152,8 @@ def test_bare_py_invocation_auto_detects_python_visual(tmp_path) -> None:
 def test_visual_run_py_invocation_redirects(tmp_path) -> None:
     module_path = _copy_fixture(tmp_path / "simple_visual.py")
     dest = tmp_path / "redirect.png"
-    expected_html = module_path.parent / "build" / f"{module_path.stem}.html"
+    artefact_dir = dest.parent / dest.stem / "_artifacts"
+    expected_html = artefact_dir / f"{module_path.stem}.html"
 
     argv = ["visual", "run", str(module_path), str(dest)]
 
