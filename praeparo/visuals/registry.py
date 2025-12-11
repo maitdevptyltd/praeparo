@@ -69,6 +69,19 @@ def _is_python_visual_type(value: str) -> bool:
     return "/" in candidate or "\\" in candidate or candidate.startswith((".", "/", "\\"))
 
 
+def _load_python_visual_placeholder(
+    path: Path,
+    payload: Mapping[str, object],
+    stack: Tuple[Path, ...],
+) -> BaseVisualConfig:
+    """Fail fast when users declare a YAML visual with type: python."""
+
+    raise ValueError(
+        "YAML-wrapped Python visuals must set 'type' to a module path like './my_visual.py' "
+        "(not 'type: python'). The 'python' pipeline/type is registered dynamically per run."
+    )
+
+
 def register_visual_type(
     type_name: str,
     loader: VisualLoader,
@@ -129,7 +142,13 @@ def load_visual_definition(
 
         visual, config = load_python_visual_from_yaml(target, payload)
         register_visual_pipeline(PYTHON_VISUAL_TYPE, visual.to_definition(), overwrite=True)
-        return config
+        register_visual_type(
+            PYTHON_VISUAL_TYPE,
+            _load_python_visual_placeholder,
+            overwrite=True,
+            context_model=visual.context_model,
+        )
+        return config  # type: ignore[return-value]
 
     key = visual_type.strip().lower()
     registration = _VISUAL_REGISTRY.get(key)

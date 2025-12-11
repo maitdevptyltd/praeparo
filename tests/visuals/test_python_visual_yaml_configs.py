@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from pathlib import Path
+from textwrap import dedent
 
 import pytest
 
+from praeparo.cli import main as cli_main
 from praeparo.io.yaml_loader import load_visual_config
 from praeparo.models import CartesianChartConfig
 from praeparo.models.cartesian import PythonCartesianChartConfig
@@ -65,3 +67,70 @@ def test_registered_cartesian_visuals_still_load() -> None:
 
     assert isinstance(visual_config, CartesianChartConfig)
     assert visual_config.type == "column"
+
+
+def test_yaml_python_visual_cli_applies_context_calculate_filters(tmp_path, capsys) -> None:
+    builder_module = (FIXTURES / "builder_visual.py").resolve()
+
+    metrics_root = tmp_path / "metrics"
+    metrics_root.mkdir()
+    (metrics_root / "documents_sent.yaml").write_text(
+        "\n".join(
+            [
+                "schema: draft-1",
+                "key: documents_sent",
+                "display_name: Documents sent",
+                "section: Test",
+                "define: 'COUNTROWS ( \"fact_documents\" )'",
+                "variants:",
+                "  within_4_hours:",
+                "    display_name: Documents sent within 4 hours",
+                "    calculate:",
+                "      - TRUE()",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    visual_yaml_path = tmp_path / "builder_visual.yaml"
+    visual_yaml_path.write_text(
+        dedent(
+            f"""
+            type: "{builder_module.as_posix()}"
+            """
+        ).lstrip(),
+        encoding="utf-8",
+    )
+
+    context_yaml_path = tmp_path / "context.yaml"
+    context_yaml_path.write_text(
+        dedent(
+            """
+            context:
+              lender_id: 199
+            calculate:
+              lender: "'dim_lender'[LenderId] = {{ lender_id }}"
+            """
+        ).lstrip(),
+        encoding="utf-8",
+    )
+
+    dest_png_path = tmp_path / "out.png"
+    argv = [
+        "visual",
+        "run",
+        str(visual_yaml_path),
+        str(dest_png_path),
+        "--context",
+        str(context_yaml_path),
+        "--metrics-root",
+        str(metrics_root),
+        "--print-dax",
+    ]
+
+    with pytest.raises(SystemExit) as exc:
+        cli_main(argv)
+
+    assert exc.value.code == 0
+    captured = capsys.readouterr().out
+    assert "'dim_lender'[LenderId] = 199" in captured

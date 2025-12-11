@@ -14,7 +14,12 @@ from pydantic import Field, TypeAdapter, ValidationError
 from ..models import BaseVisualConfig, CartesianChartConfig, FrameConfig, MatrixConfig
 from ..pipeline import PYTHON_VISUAL_TYPE, register_visual_pipeline
 from ..pipeline.python_visual_loader import load_python_visual_from_yaml
-from ..visuals.registry import _is_python_visual_type, get_visual_registration
+from ..visuals.registry import (
+    _is_python_visual_type,
+    _load_python_visual_placeholder,
+    get_visual_registration,
+    register_visual_type,
+)
 from ..templating import render_template
 
 
@@ -200,6 +205,12 @@ def _finalize_visual(
     if isinstance(payload.get("type"), str) and _is_python_visual_type(str(payload["type"])):
         visual, config = load_python_visual_from_yaml(path, payload)
         register_visual_pipeline(PYTHON_VISUAL_TYPE, visual.to_definition(), overwrite=True)
+        register_visual_type(
+            PYTHON_VISUAL_TYPE,
+            _load_python_visual_placeholder,
+            overwrite=True,
+            context_model=visual.context_model,
+        )
         return config  # type: ignore[return-value]
 
     if visual_type in {"matrix", "frame"}:

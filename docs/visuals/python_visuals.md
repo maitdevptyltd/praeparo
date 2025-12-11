@@ -113,6 +113,7 @@ Refs ending in `.yaml` / `.yml` keep the existing YAML visual behaviour. Packs c
 ## Notes
 
 - The base class auto-registers a transient `python` pipeline definition per run; existing YAML visuals are unaffected.
+- YAML wrappers that point `type` at a `.py` module now apply the Python visual’s declared `context_model` during `praeparo visual run`, so `--context`, `--calculate`, and `--define` filters flow into generated DAX the same way as native YAML visuals.
 - `schema_artifact.value` is `None` by default—override `build_schema` only if your visual needs it.
 - Context models stay strongly typed; re-use `VisualContextModel` fields (metrics root, grain, DAX filters) to stay aligned with YAML execution.
 
