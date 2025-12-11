@@ -12,7 +12,7 @@ from jinja2 import Environment
 
 from praeparo.models import BaseVisualConfig, FiltersType, PackConfig, PackPlaceholder, PackSlide
 from praeparo.pack.filters import merge_calculate_filters, merge_odata_filters
-from praeparo.pack.pbi_queue import PowerBIExportJob, PowerBIExportQueue
+from praeparo.pack.pbi_queue import PowerBIExportJob, PowerBIExportQueue, PowerBIExportResult
 from praeparo.pack.templating import create_pack_jinja_env, render_value
 from praeparo.pack.pptx import assemble_pack_pptx
 from praeparo.pipeline import (
@@ -585,10 +585,28 @@ def run_pack(
             failed_exports=failed_powerbi,
         )
 
-    result_file = base.metadata.get("result_file") if base.metadata else None
+    raw_result_file = base.metadata.get("result_file") if base.metadata else None
+    result_file: Path | None = None
+    if isinstance(raw_result_file, (str, Path)):
+        result_file = Path(raw_result_file)
+    elif raw_result_file is not None:
+        logger.warning(
+            "Skipping PPTX assembly because result_file metadata is not path-like",
+            extra={"pack": str(pack_path), "result_file_type": type(raw_result_file).__name__},
+        )
+
     if result_file:
-        template_override = base.metadata.get("pptx_template") if base.metadata else None
-        template_path = Path(template_override) if template_override else _resolve_default_template(pack_path)
+        raw_template = base.metadata.get("pptx_template") if base.metadata else None
+        if isinstance(raw_template, (str, Path)):
+            template_path: Path | None = Path(raw_template)
+        else:
+            if raw_template is not None:
+                logger.warning(
+                    "Ignoring pptx_template metadata because it is not path-like",
+                    extra={"pack": str(pack_path), "template_type": type(raw_template).__name__},
+                )
+            template_path = _resolve_default_template(pack_path)
+
         if template_path is None:
             logger.warning(
                 "Skipping PPTX assembly because no template was found",
@@ -601,7 +619,7 @@ def run_pack(
                     results=sorted_results,
                     slide_pngs=slide_png_map,
                     placeholder_pngs=placeholder_png_map,
-                    result_path=Path(result_file),
+                    result_path=result_file,
                     template_path=template_path,
                 )
             except Exception:
@@ -624,6 +642,12 @@ def restitch_pack_pptx(
     output_root.mkdir(parents=True, exist_ok=True)
     result_file.parent.mkdir(parents=True, exist_ok=True)
 
+    # Align slide metadata with full runs so slug calculation matches previously
+    # rendered artefacts when titles/notes use Jinja placeholders.
+    jinja_env = create_pack_jinja_env()
+    context_payload: dict[str, object] = dict(pack.context or {})
+    _render_slide_metadata(pack=pack, env=jinja_env, context=context_payload)
+
     slide_png_map: dict[str, Path] = {}
     placeholder_png_map: dict[str, dict[str, Path]] = {}
     pack_root = pack_path.parent
@@ -643,7 +667,15 @@ def restitch_pack_pptx(
         )
 
     template_override = base_options.metadata.get("pptx_template") if base_options.metadata else None
-    template_path = Path(template_override) if template_override else _resolve_default_template(pack_path)
+    if isinstance(template_override, (str, Path)):
+        template_path: Path | None = Path(template_override)
+    else:
+        if template_override is not None:
+            logger.warning(
+                "Ignoring pptx_template metadata because it is not path-like",
+                extra={"pack": str(pack_path), "template_type": type(template_override).__name__},
+            )
+        template_path = _resolve_default_template(pack_path)
     if template_path is None:
         logger.warning(
             "Skipping PPTX assembly because no template was found",

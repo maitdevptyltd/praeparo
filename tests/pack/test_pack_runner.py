@@ -1102,6 +1102,55 @@ def test_pack_models_validate_static_image_rules() -> None:
         PackSlide(title="Image With Visual", template="single", visual=PackVisualRef(ref="one.yaml"), image="logo.png")
 
 
+def test_restitch_pack_pptx_honours_templated_titles(tmp_path: Path) -> None:
+    pack_path = tmp_path / "pack.yaml"
+    pack_path.write_text("", encoding="utf-8")
+
+    template_path = tmp_path / "pack_template.pptx"
+    prs = Presentation()
+    picture_with_caption = prs.slide_layouts[8]
+    single = prs.slides.add_slide(picture_with_caption)
+    image_ph = next(ph for ph in single.placeholders if ph.placeholder_format.type == PP_PLACEHOLDER.PICTURE)
+    image_ph.name = "image"
+    single.notes_slide.notes_text_frame.text = "TEMPLATE_TAG=single_image"
+    prs.save(template_path)
+
+    result_path = tmp_path / "deck" / "restitched.pptx"
+
+    pack = PackConfig(
+        schema="test-pack",
+        context={"customer": "AMP"},
+        slides=[
+            PackSlide(
+                title="{{customer}} Dashboard",
+                template="single_image",
+                visual=PackVisualRef(ref="visual.yaml"),
+            ),
+        ],
+    )
+
+    output_root = tmp_path / "artefacts"
+    output_root.mkdir(parents=True, exist_ok=True)
+
+    slug = slugify("AMP Dashboard")
+    png_path = output_root / f"[01]_{slug}.png"
+    _write_coloured_png(png_path, colour=(0, 0, 255, 255))
+
+    base_options = PipelineOptions(metadata={"pptx_template": template_path, "result_file": result_path})
+    restitch_pack_pptx(
+        pack_path,
+        pack,
+        output_root=output_root,
+        result_file=result_path,
+        base_options=base_options,
+    )
+
+    prs = Presentation(result_path)
+    assert len(prs.slides) == 1
+    blobs = _picture_blobs_by_name(prs.slides[0])
+    assert blobs.get("image") == png_path.read_bytes()
+
+
 def test_restitch_pack_pptx_reuses_existing_assets(tmp_path: Path) -> None:
     pack_path = tmp_path / "pack.yaml"
     pack_path.write_text("", encoding="utf-8")
