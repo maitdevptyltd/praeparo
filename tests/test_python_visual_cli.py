@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Callable
 
+import plotly.graph_objects as go
 import pytest
 
 from praeparo.cli import main as cli_main
@@ -11,6 +12,7 @@ from praeparo import cli
 
 FIXTURE_VISUAL = Path(__file__).parent / "fixtures" / "python_visuals" / "simple_visual.py"
 FIXTURE_BUILDER_VISUAL = Path(__file__).parent / "fixtures" / "python_visuals" / "builder_visual.py"
+FIXTURE_FIGURE_VISUAL = Path(__file__).parent / "fixtures" / "python_visuals" / "figure_visual.py"
 
 
 def _copy_fixture(module_path: Path) -> Path:
@@ -22,6 +24,12 @@ def _copy_fixture(module_path: Path) -> Path:
 def _copy_builder_fixture(module_path: Path) -> Path:
     target = module_path
     target.write_text(FIXTURE_BUILDER_VISUAL.read_text(encoding="utf-8"), encoding="utf-8")
+    return target
+
+
+def _copy_figure_fixture(module_path: Path) -> Path:
+    target = module_path
+    target.write_text(FIXTURE_FIGURE_VISUAL.read_text(encoding="utf-8"), encoding="utf-8")
     return target
 
 
@@ -48,6 +56,48 @@ def test_python_visual_cli_run_writes_outputs(tmp_path) -> None:
     assert png_path.exists()
     assert html_path.exists()
     assert "<h1>Demo</h1>" in html_path.read_text(encoding="utf-8")
+
+
+def test_python_visual_cli_render_can_return_figure(tmp_path, monkeypatch) -> None:
+    module_path = _copy_figure_fixture(tmp_path / "figure_visual.py")
+    png_path = tmp_path / "out.png"
+    html_path = tmp_path / "out.html"
+
+    captured: dict[str, object] = {}
+
+    def fake_write_image(self, output_path, *, scale=2.0, **_: object) -> None:
+        captured["width"] = getattr(self.layout, "width", None)
+        captured["height"] = getattr(self.layout, "height", None)
+        Path(output_path).write_bytes(b"PNG")
+
+    def fake_write_html(self, output_path, **_: object) -> None:
+        Path(output_path).write_text("<div>figure</div>", encoding="utf-8")
+
+    monkeypatch.setattr(go.Figure, "write_image", fake_write_image, raising=False)
+    monkeypatch.setattr(go.Figure, "write_html", fake_write_html, raising=False)
+
+    argv = [
+        "python-visual",
+        "run",
+        str(module_path),
+        "--output-png",
+        str(png_path),
+        "--output-html",
+        str(html_path),
+        "--meta",
+        "width=800",
+        "--meta",
+        "height=600",
+    ]
+
+    with pytest.raises(SystemExit) as exc:
+        cli_main(argv)
+
+    assert exc.value.code == 0
+    assert png_path.exists()
+    assert html_path.exists()
+    assert captured.get("width") == 800
+    assert captured.get("height") == 600
 
 
 def test_python_visual_cli_errors_when_no_visual_found(tmp_path, capsys) -> None:

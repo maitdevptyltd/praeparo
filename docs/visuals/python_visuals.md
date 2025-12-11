@@ -128,3 +128,39 @@ When `artefact_dir` is set (CLI dest or pack run), the pipeline writes:
 
 - `*.data.json` based on `DatasetArtifact.filename` (builder default: `<slug>.data.json`).
 - `*.dax` for each plan in `DatasetArtifact.plans`, including those produced by `MetricDatasetBuilder`.
+
+## Render shorthand (return a Figure)
+
+Renderers can now return a Plotly `go.Figure` directly; the pipeline will emit HTML/PNG for every requested `OutputTarget` and wrap it in a `RenderOutcome`.
+
+```python
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+from praeparo.datasets import MetricDatasetBuilder
+from praeparo.pipeline import PythonVisualBase
+
+class DocumentsSentVisual(PythonVisualBase[..., ReportContext]):
+    context_model = ReportContext
+
+    def build_dataset(self, pipeline, config, schema_artifact, context):
+        builder = MetricDatasetBuilder(context.dataset_context, slug="documents_sent")
+        builder.metric("documents_sent", alias="documents_sent")
+        builder.metric("documents_sent.within_4_hours", alias="pct_in_4h", value_type="ratio")
+        return builder  # shorthand: MetricDatasetBuilder
+
+    def render(self, pipeline, config, schema_artifact, dataset_artifact, context, outputs):
+        fig = make_subplots()
+        fig.add_bar(x=["sent"], y=[dataset_artifact.value[0]["documents_sent"]])
+
+        width = context.options.metadata.get("width")
+        height = context.options.metadata.get("height")
+        if width or height:
+            fig.update_layout(width=width, height=height)  # optional size hints from pack template
+
+        return fig  # shorthand: Figure → pipeline writes HTML/PNG
+```
+
+Accepted return types:
+
+- `build_dataset`: `DatasetArtifact` (explicit) or `MetricDatasetBuilder` (shorthand).
+- `render`: `RenderOutcome` (explicit), `go.Figure` (shorthand; HTML/PNG auto-written), or `None` (no outputs).

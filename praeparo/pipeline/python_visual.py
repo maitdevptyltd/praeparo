@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import plotly.graph_objects as go
 from dataclasses import dataclass
 from typing import Generic, Sequence, Type, TypeVar, cast
 
@@ -10,7 +11,7 @@ from praeparo.models import BaseVisualConfig
 from praeparo.visuals.context_models import VisualContextModel
 
 from .core import ExecutionContext, VisualPipeline
-from .outputs import OutputTarget
+from .outputs import OutputKind, OutputTarget, PipelineOutputArtifact
 from .registry import DatasetArtifact, RenderOutcome, SchemaArtifact, VisualPipelineDefinition
 from .visual_definition import VisualPipelineDefinitionBase
 
@@ -76,7 +77,7 @@ class PythonVisualBase(
         dataset_artifact: DatasetArtifact[DatasetT],
         context: ExecutionContext[ContextT],
         outputs: Sequence[OutputTarget],
-    ) -> RenderOutcome:
+    ) -> RenderOutcome | go.Figure:
         raise NotImplementedError
 
     def to_config(self) -> BaseVisualConfig:
@@ -90,11 +91,13 @@ class PythonVisualBase(
         build_dataset may return either a DatasetArtifact directly or a
         MetricDatasetBuilder. The latter is executed and wrapped so the core
         pipeline can emit JSON datasets and .dax plans without extra visual
-        boilerplate.
+        boilerplate. The render hook may return a RenderOutcome explicitly or
+        a bare Plotly Figure, which will be written to all requested outputs.
         """
 
         base_definition = super().to_definition()
         original_builder = self.build_dataset
+        original_render = self.render
 
         def _dataset_builder_wrapper(
             pipeline: VisualPipeline[ContextT],
@@ -116,10 +119,58 @@ class PythonVisualBase(
                 f"got {type(raw)!r}"
             )
 
+        def _render_wrapper(
+            pipeline: VisualPipeline[ContextT],
+            config: BaseVisualConfig,
+            schema: SchemaArtifact[None],
+            dataset: DatasetArtifact[DatasetT],
+            context: ExecutionContext[ContextT],
+            outputs: Sequence[OutputTarget],
+        ) -> RenderOutcome:
+            raw = original_render(pipeline, config, schema, dataset, context, outputs)
+
+            if isinstance(raw, RenderOutcome):
+                return raw
+
+            if isinstance(raw, go.Figure):
+                # If the visual did not explicitly size the figure, apply any
+                # width/height hints from the execution metadata (for example,
+                # PPTX placeholder geometry from a pack run).
+                meta = context.options.metadata or {}
+                width_meta = meta.get("width")
+                height_meta = meta.get("height")
+                layout_update: dict[str, int] = {}
+                if isinstance(width_meta, (int, float)) and raw.layout.width is None:
+                    layout_update["width"] = int(width_meta)
+                if isinstance(height_meta, (int, float)) and raw.layout.height is None:
+                    layout_update["height"] = int(height_meta)
+                if layout_update:
+                    layout_update.setdefault("autosize", False)
+                    raw.update_layout(**layout_update)
+
+                emitted: list[PipelineOutputArtifact] = []
+                for target in outputs:
+                    target.path.parent.mkdir(parents=True, exist_ok=True)
+                    if target.kind is OutputKind.HTML:
+                        raw.write_html(str(target.path), include_plotlyjs="cdn", full_html=True)
+                    elif target.kind is OutputKind.PNG:
+                        scale = target.scale if target.scale is not None else context.options.png_scale
+                        raw.write_image(str(target.path), scale=scale)
+                    emitted.append(PipelineOutputArtifact(kind=target.kind, path=target.path))
+                return RenderOutcome(figure=raw, outputs=emitted)
+
+            if raw is None:
+                return RenderOutcome()
+
+            raise TypeError(
+                "Python visual render must return RenderOutcome, Figure, or None, "
+                f"got {type(raw)!r}"
+            )
+
         return VisualPipelineDefinition(
             schema_builder=base_definition.schema_builder,
             dataset_builder=_dataset_builder_wrapper,
-            renderer=base_definition.renderer,
+            renderer=_render_wrapper,
         )
 
 
