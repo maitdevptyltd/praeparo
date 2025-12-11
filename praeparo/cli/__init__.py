@@ -253,6 +253,16 @@ def _build_common_parser() -> argparse.ArgumentParser:
 def _build_run_specific_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument(
+        "dest",
+        nargs="?",
+        type=Path,
+        help=(
+            "Optional destination shorthand. A .png or .html path sets default outputs; "
+            "a directory or extension-less path defaults to <dest>/<slug>.png and "
+            "<dest>/<slug>.html with artefacts under <dest>/_artifacts. Flags override."
+        ),
+    )
+    parser.add_argument(
         "--output-html",
         "--out",
         dest="output_html",
@@ -306,6 +316,42 @@ def _derive_pack_dest_defaults(pack_path: Path, dest: Path | None) -> tuple[Path
     artefact_dir = destination / "_artifacts"
     result_file = destination / f"{pack_slug}.pptx"
     return artefact_dir, result_file
+
+
+def _derive_visual_dest_defaults(
+    config_path: Path,
+    dest: Path | None,
+) -> tuple[Path | None, Path | None, Path | None]:
+    """
+    Interpret the optional positional `dest` for visual and python-visual runs.
+
+    Returns (artefact_dir, html_output, png_output) defaults derived from the shorthand,
+    leaving explicit flags to override later.
+    """
+
+    if dest is None:
+        return None, None, None
+
+    dest_str = str(dest).strip()
+    if not dest_str:
+        raise ValueError("Destination path cannot be empty.")
+
+    destination = Path(dest_str).expanduser()
+    suffix = destination.suffix.lower()
+
+    if suffix == ".png":
+        artefact_dir = destination.parent / destination.stem / "_artifacts"
+        return artefact_dir, None, destination
+
+    if suffix == ".html":
+        artefact_dir = destination.parent / destination.stem / "_artifacts"
+        return artefact_dir, destination, None
+
+    visual_slug = slugify(config_path.stem)
+    artefact_dir = destination / "_artifacts"
+    html_output = destination / f"{visual_slug}.html"
+    png_output = destination / f"{visual_slug}.png"
+    return artefact_dir, html_output, png_output
 
 
 def _register_pack_parsers(parent: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
@@ -1119,6 +1165,17 @@ def _execute_pipeline(
 def _handle_python_visual_run(args: argparse.Namespace) -> int:
     """Execute a PythonVisualBase subclass using the standard pipeline."""
 
+    artefact_default, html_default, png_default = _derive_visual_dest_defaults(
+        args.config,
+        getattr(args, "dest", None),
+    )
+    if artefact_default is not None and args.artefact_dir is None:
+        args.artefact_dir = artefact_default
+    if html_default is not None and getattr(args, "output_html", None) is None:
+        args.output_html = html_default
+    if png_default is not None and getattr(args, "output_png", None) is None:
+        args.output_png = png_default
+
     visual = _load_python_visual(args.config, getattr(args, "visual_class", None))
     metadata = _prepare_metadata(args, cli=None)
     options = _build_pipeline_options(args, metadata, include_outputs=True)
@@ -1308,6 +1365,17 @@ def _handle_pack_run(args: argparse.Namespace) -> int:
 
 def _handle_visual_run(args: argparse.Namespace) -> int:
     cli_options: VisualCLIOptions | None = getattr(args, "_cli_options", None)
+    artefact_default, html_default, png_default = _derive_visual_dest_defaults(
+        args.config,
+        getattr(args, "dest", None),
+    )
+    if artefact_default is not None and args.artefact_dir is None:
+        args.artefact_dir = artefact_default
+    if html_default is not None and getattr(args, "output_html", None) is None:
+        args.output_html = html_default
+    if png_default is not None and getattr(args, "output_png", None) is None:
+        args.output_png = png_default
+
     visual = _load_visual(args.config)
 
     if args._visual_type == "auto":
@@ -1468,11 +1536,15 @@ def _normalise_argv(
         return list(argv)
     commands = {"visual", "pack", "python-visual"}
     if argv[0] not in commands and not argv[0].startswith("-"):
+        if argv[0].endswith(".py"):
+            return ["python-visual", "run", *argv]
         return ["visual", "run", "auto", *argv]
     if len(argv) >= 3 and argv[0] == "visual" and argv[1] in {"run", "artifacts", "dax"}:
         candidate = argv[2]
         if candidate.startswith("-"):
             return list(argv)
+        if argv[1] == "run" and candidate.endswith(".py"):
+            return ["python-visual", "run", candidate, *argv[3:]]
         if argv[1] == "dax":
             registered = {name for name, _ in dax_registrations}
         else:

@@ -70,6 +70,25 @@ CLI behaviour matches YAML visuals:
 - The pipeline still discovers datasources/metrics roots and populates `ExecutionContext.dataset_context`, so you can plug in `MetricDatasetBuilder` if desired.
 - When a module exports multiple visuals, pick one with `--visual-class MyVisual`.
 
+## Destination shorthand
+
+The `run` command now accepts an optional positional `dest` to cut down on flags:
+
+- `praeparo python-visual run visuals/my_visual.py report.png`  
+  Sets `--output-png report.png`, defaults HTML to `build/my_visual.html`, and uses `report/_artifacts` for artefacts unless overridden.
+- `praeparo python-visual run visuals/my_visual.py ./exports/`  
+  Slugifies the module name (`my_visual`) and writes `./exports/my_visual.html`, `./exports/my_visual.png`, and artefacts under `./exports/_artifacts` by default.
+
+Flagged outputs (`--output-html`, `--output-png`, `--artefact-dir`) still win over anything derived from `dest`.
+
+You can also skip the explicit subcommand—`.py` files are auto-detected:
+
+```bash
+praeparo visuals/my_visual.py ./exports/
+# or
+praeparo visual run visuals/my_visual.py ./exports/report.png
+```
+
 ## Notes
 
 - The base class auto-registers a transient `python` pipeline definition per run; existing YAML visuals are unaffected.

@@ -127,7 +127,7 @@ subcommands.
 ## Python-Backed Visuals
 
 - Use `PythonVisualBase` for code-first visuals; override `build_dataset` and `render`.
-- Run them with `praeparo python-visual run path/to/module.py --output-png ...`.
+- Run them with `praeparo python-visual run path/to/module.py [dest]` (or simply `praeparo path/to/module.py [dest]`), keeping `dest` optional for shorthand HTML/PNG placement.
 - Context models stay typed (re-use `VisualContextModel` fields plus your own), and the pipeline still discovers metrics/datasources for you.
 - See [python_visuals.md](python_visuals.md) for the full quickstart.
 
