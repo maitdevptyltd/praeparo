@@ -12,6 +12,7 @@ from __future__ import annotations
 import copy
 import io
 import logging
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Mapping, Sequence
 
@@ -36,6 +37,19 @@ def _slug_for_slide(slide: PackSlide, index: int) -> str:
     return f"slide_{index}"
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class PlaceholderSize:
+    width_px: int
+    height_px: int
+
+
+def _emu_to_px(value) -> int:
+    """Convert English Metric Units to pixels assuming 96 DPI."""
+
+    # 1 inch = 914400 EMUs, 96 DPI
+    return int(round((int(value) / 914400) * 96))
 
 
 def _clear_slides(presentation: Presentation) -> None:
@@ -146,6 +160,51 @@ def _notes_template_tags(presentation: Presentation) -> dict[str, object]:
         if token:
             tags[token] = slide
     return tags
+
+
+def resolve_template_geometry(template_path: Path) -> tuple[dict[str, PlaceholderSize], dict[tuple[str, str], PlaceholderSize]]:
+    """Inspect a pack PPTX template and extract placeholder geometry.
+
+    Returns a pair of dictionaries:
+    - slide_sizes: template_tag -> PlaceholderSize for slides with a single
+      picture placeholder.
+    - placeholder_sizes: (template_tag, placeholder_name) -> PlaceholderSize
+      for named picture shapes/placeholders on multi-visual templates.
+    """
+
+    slide_sizes: dict[str, PlaceholderSize] = {}
+    placeholder_sizes: dict[tuple[str, str], PlaceholderSize] = {}
+
+    presentation = Presentation(template_path)
+    tags = _notes_template_tags(presentation)
+
+    for tag, slide in tags.items():
+        try:
+            placeholders = _picture_placeholder_shapes(slide)
+
+            # Single-visual case: exactly one picture placeholder.
+            if len(placeholders) == 1:
+                shape = placeholders[0]
+                slide_sizes[tag] = PlaceholderSize(width_px=_emu_to_px(shape.width), height_px=_emu_to_px(shape.height))
+
+            # Named placeholders and picture shapes.
+            for shape in slide.shapes:
+                is_picture = shape.shape_type == MSO_SHAPE_TYPE.PICTURE
+                is_placeholder = getattr(shape, "is_placeholder", False)
+                has_name = bool(getattr(shape, "name", None))
+                if (is_picture or is_placeholder) and has_name:
+                    placeholder_sizes[(tag, shape.name)] = PlaceholderSize(
+                        width_px=_emu_to_px(shape.width),
+                        height_px=_emu_to_px(shape.height),
+                    )
+        except Exception:
+            logger.exception(
+                "Failed to resolve geometry for template slide; continuing",
+                extra={"template_tag": tag, "template_path": str(template_path)},
+            )
+            continue
+
+    return slide_sizes, placeholder_sizes
 
 
 def _delete_template_slides(presentation: Presentation) -> None:
@@ -338,4 +397,4 @@ def assemble_pack_pptx(
     )
 
 
-__all__ = ["assemble_pack_pptx"]
+__all__ = ["assemble_pack_pptx", "PlaceholderSize", "resolve_template_geometry"]

@@ -14,7 +14,7 @@ from praeparo.models import BaseVisualConfig, FiltersType, PackConfig, PackPlace
 from praeparo.pack.filters import merge_calculate_filters, merge_odata_filters
 from praeparo.pack.pbi_queue import PowerBIExportJob, PowerBIExportQueue, PowerBIExportResult
 from praeparo.pack.templating import create_pack_jinja_env, render_value
-from praeparo.pack.pptx import assemble_pack_pptx
+from praeparo.pack.pptx import PlaceholderSize, assemble_pack_pptx, resolve_template_geometry
 from praeparo.pipeline import (
     ExecutionContext,
     OutputKind,
@@ -337,6 +337,21 @@ def run_pack(
     placeholder_png_map: dict[str, dict[str, Path]] = {}
     pack_root = pack_path.parent
 
+    # Resolve PPTX template geometry once per pack so visuals can size their canvases.
+    template_geometry_by_template: dict[str, PlaceholderSize] = {}
+    template_geometry_by_placeholder: dict[tuple[str, str], PlaceholderSize] = {}
+    template_for_geometry = _resolve_default_template(pack_path)
+    if template_for_geometry is not None:
+        try:
+            slide_geom, placeholder_geom = resolve_template_geometry(template_for_geometry)
+            template_geometry_by_template = slide_geom
+            template_geometry_by_placeholder = placeholder_geom
+        except Exception:
+            logger.exception(
+                "Failed to resolve PPTX template geometry; continuing without width/height hints",
+                extra={"template_path": str(template_for_geometry)},
+            )
+
     def _render_filters(value: object | None) -> FiltersType:
         return render_value(value, env=jinja_env, context=context_payload)
 
@@ -390,6 +405,25 @@ def run_pack(
             metadata_update: dict[str, object] = {}
             if visual_context_base:
                 metadata_update["context"] = visual_context_base
+
+            width_px: int | None = None
+            height_px: int | None = None
+
+            template_name = slide.template
+            if placeholder_id is not None and template_name:
+                geom = template_geometry_by_placeholder.get((template_name, placeholder_id))
+                if geom:
+                    width_px, height_px = geom.width_px, geom.height_px
+            elif template_name:
+                geom = template_geometry_by_template.get(template_name)
+                if geom:
+                    width_px, height_px = geom.width_px, geom.height_px
+
+            base_meta = base.metadata or {}
+            if width_px is not None and "width" not in base_meta:
+                metadata_update.setdefault("width", width_px)
+            if height_px is not None and "height" not in base_meta:
+                metadata_update.setdefault("height", height_px)
             options, slide_dir = _prepare_slide_options(
                 base,
                 slide_slug=artifact_label,

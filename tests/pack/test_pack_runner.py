@@ -183,13 +183,14 @@ class _PngPipeline(_StubPipeline):
 def _build_pack_template(path: Path) -> None:
     prs = Presentation()
     blank = prs.slide_layouts[6]
+    picture_with_caption = prs.slide_layouts[8]
 
     tmp_img = path.parent / "tmp.png"
     _write_png(tmp_img)
 
-    single = prs.slides.add_slide(blank)
-    pic = single.shapes.add_picture(str(tmp_img), Inches(1), Inches(1), width=Inches(4), height=Inches(3))
-    pic.name = "image"
+    single = prs.slides.add_slide(picture_with_caption)
+    image_ph = next(ph for ph in single.placeholders if ph.placeholder_format.type == PP_PLACEHOLDER.PICTURE)
+    image_ph.name = "image"
     single.notes_slide.notes_text_frame.text = "TEMPLATE_TAG=single_image"
 
     two_up = prs.slides.add_slide(blank)
@@ -209,6 +210,172 @@ def _build_title_template(path: Path, template_tag: str = "title_only") -> None:
     title_slide.shapes.title.text = "Template Title"
     title_slide.notes_slide.notes_text_frame.text = f"TEMPLATE_TAG={template_tag}"
     prs.save(path)
+
+
+def test_run_pack_attaches_geometry_to_slide_metadata(tmp_path: Path) -> None:
+    pack_path = tmp_path / "pack.yaml"
+    pack_path.write_text("", encoding="utf-8")
+
+    template_path = pack_path.parent / "pack_template.pptx"
+    _build_pack_template(template_path)
+
+    pack = PackConfig(
+        schema="test-pack",
+        slides=[
+            PackSlide(title="Deck Slide", id="deck-slide", template="single_image", visual=PackVisualRef(ref="one.yaml")),
+        ],
+    )
+
+    visuals: Dict[str, BaseVisualConfig] = {"one.yaml": BaseVisualConfig(type="matrix")}
+
+    def _loader(path: Path, payload: Mapping[str, object] | None = None, stack: tuple[Path, ...] = ()) -> BaseVisualConfig:
+        return visuals[path.name]
+
+    pipeline = _PngPipeline()
+    run_pack(
+        pack_path,
+        pack,
+        output_root=tmp_path / "artefacts",
+        base_options=PipelineOptions(),
+        visual_loader=_loader,
+        pipeline=cast(VisualPipeline[Any], pipeline),
+        env=create_pack_jinja_env(),
+    )
+
+    assert pipeline.contexts, "Pipeline should capture at least one context"
+    slide_meta = pipeline.contexts[0].options.metadata
+    assert isinstance(slide_meta.get("width"), int) and slide_meta["width"] > 0
+    assert isinstance(slide_meta.get("height"), int) and slide_meta["height"] > 0
+
+
+def test_run_pack_attaches_placeholder_geometry(tmp_path: Path) -> None:
+    pack_path = tmp_path / "pack.yaml"
+    pack_path.write_text("", encoding="utf-8")
+
+    template_path = pack_path.parent / "pack_template.pptx"
+    prs = Presentation()
+    blank = prs.slide_layouts[6]
+
+    tmp_img = tmp_path / "tmp.png"
+    _write_png(tmp_img)
+
+    two_up = prs.slides.add_slide(blank)
+    left = two_up.shapes.add_picture(str(tmp_img), Inches(0.5), Inches(1), width=Inches(3), height=Inches(2))
+    left.name = "left_chart"
+    right = two_up.shapes.add_picture(str(tmp_img), Inches(4), Inches(1), width=Inches(2), height=Inches(3))
+    right.name = "right_chart"
+    two_up.notes_slide.notes_text_frame.text = "TEMPLATE_TAG=two_up"
+    prs.save(template_path)
+    tmp_img.unlink(missing_ok=True)
+
+    pack = PackConfig(
+        schema="test-pack",
+        slides=[
+            PackSlide(
+                title="Two Up",
+                id="two-up",
+                template="two_up",
+                placeholders={
+                    "left_chart": PackPlaceholder(visual=PackVisualRef(ref="left.yaml")),
+                    "right_chart": PackPlaceholder(visual=PackVisualRef(ref="right.yaml")),
+                },
+            )
+        ],
+    )
+
+    visuals: Dict[str, BaseVisualConfig] = {
+        "left.yaml": BaseVisualConfig(type="matrix"),
+        "right.yaml": BaseVisualConfig(type="matrix"),
+    }
+
+    def _loader(path: Path, payload: Mapping[str, object] | None = None, stack: tuple[Path, ...] = ()) -> BaseVisualConfig:
+        return visuals[path.name]
+
+    pipeline = _PngPipeline()
+    run_pack(
+        pack_path,
+        pack,
+        output_root=tmp_path / "artefacts",
+        base_options=PipelineOptions(),
+        visual_loader=_loader,
+        pipeline=cast(VisualPipeline[Any], pipeline),
+        env=create_pack_jinja_env(),
+    )
+
+    meta_by_case = {context.case_key: context.options.metadata for context in pipeline.contexts}
+    left_meta = next((meta for key, meta in meta_by_case.items() if "left_chart" in key), None)
+    right_meta = next((meta for key, meta in meta_by_case.items() if "right_chart" in key), None)
+    assert left_meta and right_meta
+    assert left_meta["width"] != right_meta["width"] or left_meta["height"] != right_meta["height"]
+    assert left_meta["width"] > 0 and right_meta["width"] > 0
+    assert left_meta["height"] > 0 and right_meta["height"] > 0
+
+
+def test_run_pack_respects_cli_width_height_override(tmp_path: Path) -> None:
+    pack_path = tmp_path / "pack.yaml"
+    pack_path.write_text("", encoding="utf-8")
+
+    template_path = pack_path.parent / "pack_template.pptx"
+    _build_pack_template(template_path)
+
+    pack = PackConfig(
+        schema="test-pack",
+        slides=[PackSlide(title="Deck Slide", id="deck-slide", template="single_image", visual=PackVisualRef(ref="one.yaml"))],
+    )
+
+    visuals: Dict[str, BaseVisualConfig] = {"one.yaml": BaseVisualConfig(type="matrix")}
+
+    def _loader(path: Path, payload: Mapping[str, object] | None = None, stack: tuple[Path, ...] = ()) -> BaseVisualConfig:
+        return visuals[path.name]
+
+    pipeline = _PngPipeline()
+    overrides = PipelineOptions(metadata={"width": 1234, "height": 567})
+    run_pack(
+        pack_path,
+        pack,
+        output_root=tmp_path / "artefacts",
+        base_options=overrides,
+        visual_loader=_loader,
+        pipeline=cast(VisualPipeline[Any], pipeline),
+        env=create_pack_jinja_env(),
+    )
+
+    assert pipeline.contexts
+    slide_meta = pipeline.contexts[0].options.metadata
+    assert slide_meta["width"] == 1234
+    assert slide_meta["height"] == 567
+
+
+def test_run_pack_without_template_skips_geometry(tmp_path: Path) -> None:
+    pack_path = tmp_path / "nested" / "packs" / "pack.yaml"
+    pack_path.parent.mkdir(parents=True, exist_ok=True)
+    pack_path.write_text("", encoding="utf-8")
+
+    pack = PackConfig(
+        schema="test-pack",
+        slides=[PackSlide(title="Deck Slide", id="deck-slide", template="single_image", visual=PackVisualRef(ref="one.yaml"))],
+    )
+
+    visuals: Dict[str, BaseVisualConfig] = {"one.yaml": BaseVisualConfig(type="matrix")}
+
+    def _loader(path: Path, payload: Mapping[str, object] | None = None, stack: tuple[Path, ...] = ()) -> BaseVisualConfig:
+        return visuals[path.name]
+
+    pipeline = _PngPipeline()
+    run_pack(
+        pack_path,
+        pack,
+        output_root=tmp_path / "artefacts",
+        base_options=PipelineOptions(),
+        visual_loader=_loader,
+        pipeline=cast(VisualPipeline[Any], pipeline),
+        env=create_pack_jinja_env(),
+    )
+
+    assert pipeline.contexts
+    slide_meta = pipeline.contexts[0].options.metadata
+    assert "width" not in slide_meta
+    assert "height" not in slide_meta
 
 
 def test_run_pack_templates_slide_metadata(tmp_path: Path) -> None:
