@@ -111,9 +111,10 @@ Key flags:
 - `pack run <path>` – path to the pack YAML. Can be absolute or relative to the
   current working directory.
 - `--artefact-dir` – root directory for pack artefacts:
-  - PNGs are written as `<artefact-dir>/<slide-slug>.png`.
+  - PNGs are written as `<artefact-dir>/[NN]_<slide-slug>.png` where `NN` is
+    the 1-based slide position padded to two digits.
   - Visual-specific artefacts (for example Power BI exports) land under
-    `<artefact-dir>/<slide-slug>/`.
+    `<artefact-dir>/[NN]_<slide-slug>/`.
 - `--slides` – optional list of slide ids/titles/slugified titles to restrict
   execution:
 
@@ -199,8 +200,8 @@ At a high level, `praeparo pack run` does the following:
      to select the correct pipeline.
 6. **Execute and persist**:
    - Each slide’s visual is executed with per-slide options:
-     - PNG outputs are targeted at `<artefact-dir>/<slide-slug>.png`.
-     - `options.artefact_dir` is set to `<artefact-dir>/<slide-slug>/` so
+     - PNG outputs are targeted at `<artefact-dir>/[NN]_<slide-slug>.png`.
+     - `options.artefact_dir` is set to `<artefact-dir>/[NN]_<slide-slug>/` so
        visual-specific artefacts (Power BI exports, datasets) remain grouped.
    - The pack run prints a summary of how many PNGs were written.
 
@@ -229,8 +230,10 @@ poetry run praeparo pack run projects/example/pack.yaml \
   --max-pbi-concurrency 3
 ```
 
-Artefact paths remain unchanged: `<artefact-dir>/<slide-slug>.png` for the main
-PNG plus per-slide artefacts under `<artefact-dir>/<slide-slug>/`.
+Artefact layout: `<artefact-dir>/[NN]_<slide-slug>.png` for the main PNG plus
+per-slide artefacts under `<artefact-dir>/[NN]_<slide-slug>/`. The ordinal
+prefix is only used for filenames/directories; `--slides` continues to match
+ids/titles/unprefixed slugs.
 
 ### Debugging failing pack slides
 

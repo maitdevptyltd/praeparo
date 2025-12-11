@@ -261,6 +261,8 @@ def run_pack(
         calculate_filters = merge_calculate_filters(rendered_global_calculate, slide_calculate)
 
         slide_slug = _slug_for_slide(slide, index)
+        ordinal = f"{index:02d}"
+        artifact_label = f"[{ordinal}]_{slide_slug}"
         logger.info(
             "Processing slide",
             extra={
@@ -281,7 +283,7 @@ def run_pack(
             metadata_update["context"] = visual_context_base
         options, slide_dir = _prepare_slide_options(
             base,
-            slide_slug=slide_slug,
+            slide_slug=artifact_label,
             artefact_root=output_root,
             metadata_update=metadata_update,
             png_scale=base.png_scale,

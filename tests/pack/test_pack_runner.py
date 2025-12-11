@@ -121,6 +121,46 @@ class _ConcurrentStubPipeline:
         return VisualExecutionResult(config=visual, outputs=outputs)
 
 
+def test_run_pack_names_outputs_with_ordinal_prefix(tmp_path: Path) -> None:
+    pack_path = tmp_path / "pack.yaml"
+    pack_path.write_text("", encoding="utf-8")
+
+    pack = PackConfig(
+        schema="test-pack",
+        slides=[
+            PackSlide(title="Alpha", id="alpha", visual=PackVisualRef(ref="one.yaml")),
+            PackSlide(title="Beta Slide", visual=PackVisualRef(ref="two.yaml")),
+        ],
+    )
+
+    visuals: Dict[str, BaseVisualConfig] = {
+        "one.yaml": BaseVisualConfig(type="matrix"),
+        "two.yaml": BaseVisualConfig(type="matrix"),
+    }
+
+    def _loader(path: Path, payload: Mapping[str, object] | None = None, stack: tuple[Path, ...] = ()) -> BaseVisualConfig:
+        return visuals[path.name]
+
+    pipeline = _StubPipeline()
+    results = run_pack(
+        pack_path,
+        pack,
+        output_root=tmp_path / "artefacts",
+        base_options=PipelineOptions(),
+        visual_loader=_loader,
+        pipeline=cast(VisualPipeline[Any], pipeline),
+        env=create_pack_jinja_env(),
+    )
+
+    png_paths = {result.png_path for result in results if result.png_path}
+    assert (tmp_path / "artefacts" / "[01]_alpha.png") in png_paths
+    assert (tmp_path / "artefacts" / "[02]_beta_slide.png") in png_paths
+
+    slide_dirs = {call[1].artefact_dir for call in pipeline.calls}
+    assert (tmp_path / "artefacts" / "[01]_alpha") in slide_dirs
+    assert (tmp_path / "artefacts" / "[02]_beta_slide") in slide_dirs
+
+
 def test_run_pack_routes_visuals_and_emits_pngs(tmp_path: Path) -> None:
     pack_path = tmp_path / "pack.yaml"
     pack_path.write_text("", encoding="utf-8")
@@ -173,8 +213,8 @@ def test_run_pack_routes_visuals_and_emits_pngs(tmp_path: Path) -> None:
     )
 
     png_paths = {result.png_path for result in results if result.png_path}
-    assert (tmp_path / "artefacts" / f"{slugify('pbi-slide')}.png") in png_paths
-    assert (tmp_path / "artefacts" / "matrix_visual.png") in png_paths
+    assert (tmp_path / "artefacts" / f"[01]_{slugify('pbi-slide')}.png") in png_paths
+    assert (tmp_path / "artefacts" / "[02]_matrix_visual.png") in png_paths
 
     # Frame visual produces no PNG but should not error.
     assert any(result.result.outputs == [] for result in results if result.result.config.type == "frame")
@@ -426,9 +466,9 @@ def test_run_pack_honours_only_slides(tmp_path: Path) -> None:
     assert called_visuals == {"powerbi", "matrix"}
 
     expected_pngs = {
-        tmp_path / "artefacts" / "keep_1.png",
-        tmp_path / "artefacts" / "also_keep.png",
-        tmp_path / "artefacts" / "slug_id.png",
+        tmp_path / "artefacts" / "[01]_keep_1.png",
+        tmp_path / "artefacts" / "[02]_also_keep.png",
+        tmp_path / "artefacts" / "[04]_slug_id.png",
     }
     emitted_pngs = {result.png_path for result in results if result.png_path}
     assert expected_pngs == emitted_pngs
@@ -470,9 +510,9 @@ def test_run_pack_queues_powerbi_and_respects_concurrency(tmp_path: Path) -> Non
 
     png_paths = {result.png_path for result in results if result.png_path}
     expected_pngs = {
-        tmp_path / "artefacts" / f"{slugify('pbi-one')}.png",
-        tmp_path / "artefacts" / f"{slugify('pbi-two')}.png",
-        tmp_path / "artefacts" / f"{slugify('Matrix Slide')}.png",
+        tmp_path / "artefacts" / f"[01]_{slugify('pbi-one')}.png",
+        tmp_path / "artefacts" / f"[03]_{slugify('pbi-two')}.png",
+        tmp_path / "artefacts" / "[02]_matrix_slide.png",
     }
     assert expected_pngs == png_paths
     assert pipeline.max_running_powerbi <= 2
@@ -518,5 +558,5 @@ def test_run_pack_raises_when_powerbi_job_fails(tmp_path: Path) -> None:
     assert "Power BI slide(s) failed" in message
     assert failing_slug in message
     assert "RuntimeError" in message
-    ok_png = tmp_path / "artefacts" / f"{slugify('ok-pbi')}.png"
+    ok_png = tmp_path / "artefacts" / f"[01]_{slugify('ok-pbi')}.png"
     assert ok_png.exists()
