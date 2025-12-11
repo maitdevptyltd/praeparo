@@ -169,6 +169,7 @@ def assemble_pack_pptx(
 
         has_placeholders = bool(slide.placeholders)
         has_visual = slide.visual is not None
+        has_image = bool(slide.image)
 
         if has_placeholders:
             placeholders = slide.placeholders or {}
@@ -186,7 +187,7 @@ def assemble_pack_pptx(
                     raise ValueError(f"Placeholder '{placeholder_id}' not found on template '{slide.template}'")
 
                 _replace_picture(picture_shapes[0], image_path)
-        elif has_visual:
+        elif has_visual or has_image:
             image_path = slide_pngs.get(slide_slug)
             if image_path is None:
                 raise ValueError(f"Missing PNG for slide '{slide_slug}'")
@@ -195,7 +196,8 @@ def assemble_pack_pptx(
             if len(picture_shapes) != 1:
                 raise ValueError(
                     f"Slide '{slide_slug}' uses single-visual shorthand but template '{slide.template}' "
-                    f"has {len(picture_shapes)} picture placeholders."
+                    f"has {len(picture_shapes)} picture placeholders: "
+                    f"{[getattr(shape, 'name', None) for shape in picture_shapes]}"
                 )
             _replace_picture(picture_shapes[0], image_path)
         else:

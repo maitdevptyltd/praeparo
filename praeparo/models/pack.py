@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Mapping, Sequence
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 FiltersType = str | Sequence[str] | Mapping[str, str] | None
@@ -40,7 +40,32 @@ class PackPlaceholder(BaseModel):
 
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
-    visual: PackVisualRef = Field(..., description="Visual rendered for this placeholder.")
+    visual: PackVisualRef | None = Field(
+        default=None,
+        description="Visual rendered for this placeholder.",
+    )
+    image: str | None = Field(
+        default=None,
+        description="Optional static image path for this placeholder, relative to the pack file.",
+    )
+
+    @field_validator("image")
+    @classmethod
+    def _normalise_image(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = value.strip()
+        return cleaned or None
+
+    @model_validator(mode="after")
+    def _validate_image_or_visual(self) -> "PackPlaceholder":
+        if self.visual is None and not self.image:
+            msg = "placeholder must define either visual or image"
+            raise ValueError(msg)
+        if self.visual is not None and self.image:
+            msg = "placeholder cannot define both visual and image"
+            raise ValueError(msg)
+        return self
 
 
 class PackSlide(BaseModel):
@@ -63,6 +88,10 @@ class PackSlide(BaseModel):
         default=None,
         description="Optional placeholder map when a slide template contains multiple picture placeholders.",
     )
+    image: str | None = Field(
+        default=None,
+        description="Optional static image path when using a PPTX template without a visual.",
+    )
 
     @field_validator("title")
     @classmethod
@@ -80,6 +109,24 @@ class PackSlide(BaseModel):
             return None
         cleaned = value.strip()
         return cleaned or None
+
+    @field_validator("image")
+    @classmethod
+    def _normalise_image(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = value.strip()
+        return cleaned or None
+
+    @model_validator(mode="after")
+    def _validate_image_with_visual_and_template(self) -> "PackSlide":
+        if self.image and self.visual is not None:
+            msg = "slide cannot define both visual and image"
+            raise ValueError(msg)
+        if self.image and not self.template:
+            msg = "slide-level image requires a template"
+            raise ValueError(msg)
+        return self
 
 
 class PackConfig(BaseModel):

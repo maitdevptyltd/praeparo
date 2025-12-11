@@ -270,6 +270,8 @@ def _parse_retry_after(response) -> float | None:
         header = response.headers.get("Retry-After")
         if header is None:
             return None
-        return float(header)
+        
+        # Retry a bit faster
+        return float(header) / 3
     except Exception:
         return None

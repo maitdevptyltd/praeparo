@@ -276,6 +276,7 @@ def run_pack(
     ordered_results: list[tuple[int, PackSlideResult]] = []
     slide_png_map: dict[str, Path] = {}
     placeholder_png_map: dict[str, dict[str, Path]] = {}
+    pack_root = pack_path.parent
 
     def _render_filters(value: object | None) -> FiltersType:
         return render_value(value, env=jinja_env, context=context_payload)
@@ -442,6 +443,18 @@ def run_pack(
             placeholder_map = placeholder_png_map.setdefault(slide_slug, {})
             for placeholder_id, placeholder in slide.placeholders.items():
                 placeholder_slug = f"{slide_slug}__{slugify(placeholder_id)}"
+                if placeholder.image:
+                    image_path = (pack_root / placeholder.image).expanduser().resolve(strict=False)
+                    if not image_path.exists():
+                        raise ValueError(
+                            f"Static placeholder image not found for '{placeholder_id}' on slide '{slide_slug}': {image_path}"
+                        )
+                    placeholder_map[placeholder_slug] = image_path
+                    continue
+
+                if placeholder.visual is None:
+                    raise ValueError(f"Placeholder '{placeholder_id}' on slide '{slide_slug}' is missing both visual and image")
+
                 _execute_visual(
                     visual_ref=placeholder.visual.ref,
                     slide_label=placeholder_slug,
@@ -450,6 +463,17 @@ def run_pack(
                     placeholder_id=placeholder_id,
                     target_map=placeholder_map,
                 )
+
+    for index, slide in enumerate(pack.slides, start=1):
+        slide_slug = _slug_for_slide(slide, index)
+        if slide_slug in slide_png_map:
+            continue
+        if not slide.image:
+            continue
+        image_path = (pack_root / slide.image).expanduser().resolve(strict=False)
+        if not image_path.exists():
+            raise ValueError(f"Static slide image not found for '{slide_slug}': {image_path}")
+        slide_png_map[slide_slug] = image_path
 
     powerbi_results = powerbi_queue.drain()
     failed_powerbi = [item for item in powerbi_results if item.exception]

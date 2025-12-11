@@ -9,10 +9,11 @@ from pathlib import Path
 from typing import Any, Dict, Mapping, Tuple, cast
 
 import pytest
-from pydantic import model_validator
+from pydantic import ValidationError, model_validator
 from pptx import Presentation
 from pptx.enum.shapes import MSO_SHAPE_TYPE
 from pptx.util import Inches
+from PIL import Image
 
 from praeparo.models import BaseVisualConfig, PackConfig, PackPlaceholder, PackSlide, PackVisualRef
 from praeparo.pack.filters import merge_odata_filters
@@ -131,6 +132,40 @@ def _write_png(path: Path) -> None:
         "AAL/AXx5lXcAAAAASUVORK5CYII="
     )
     path.write_bytes(data)
+
+
+def _write_coloured_png(path: Path, colour: tuple[int, int, int, int] = (255, 0, 0, 255)) -> None:
+    Image.new("RGBA", (1, 1), colour).save(path, format="PNG")
+
+
+def _picture_filenames_by_name(slide) -> dict[str, str]:
+    names: dict[str, str] = {}
+    for shape in slide.shapes:
+        if shape.shape_type != MSO_SHAPE_TYPE.PICTURE:
+            continue
+        name = getattr(shape, "name", None)
+        if not name:
+            continue
+        try:
+            names[name] = Path(shape.image.filename).name
+        except Exception:
+            continue
+    return names
+
+
+def _picture_blobs_by_name(slide) -> dict[str, bytes]:
+    blobs: dict[str, bytes] = {}
+    for shape in slide.shapes:
+        if shape.shape_type != MSO_SHAPE_TYPE.PICTURE:
+            continue
+        name = getattr(shape, "name", None)
+        if not name:
+            continue
+        try:
+            blobs[name] = bytes(shape.image.blob)
+        except Exception:
+            continue
+    return blobs
 
 
 class _PngPipeline(_StubPipeline):
@@ -789,3 +824,158 @@ def test_run_pack_builds_pptx_with_template_only_slide(tmp_path: Path) -> None:
     template_only_slide = deck.slides[2]
     pictures = [shape for shape in template_only_slide.shapes if shape.shape_type == MSO_SHAPE_TYPE.PICTURE]
     assert pictures
+
+
+def test_run_pack_binds_static_slide_image(tmp_path: Path) -> None:
+    pack_path = tmp_path / "pack.yaml"
+    pack_path.write_text("", encoding="utf-8")
+
+    template_path = tmp_path / "pack_template.pptx"
+    _build_pack_template(template_path)
+    result_path = tmp_path / "deck" / "static_home.pptx"
+
+    logo_path = pack_path.parent / "logo.png"
+    _write_coloured_png(logo_path, colour=(0, 255, 0, 255))
+
+    pack = PackConfig(
+        schema="test-pack",
+        slides=[
+            PackSlide(
+                title="Static Home",
+                id="home",
+                template="single_image",
+                image="logo.png",
+            )
+        ],
+    )
+
+    base_options = PipelineOptions(metadata={"result_file": result_path, "pptx_template": template_path})
+    run_pack(
+        pack_path,
+        pack,
+        output_root=tmp_path / "artefacts",
+        base_options=base_options,
+        pipeline=cast(VisualPipeline[Any], _PngPipeline()),
+        env=create_pack_jinja_env(),
+    )
+
+    deck = Presentation(result_path)
+    assert len(deck.slides) == 1
+    pictures = _picture_blobs_by_name(deck.slides[0])
+    assert pictures.get("image") == logo_path.read_bytes()
+
+
+def test_run_pack_binds_static_placeholder_image(tmp_path: Path) -> None:
+    pack_path = tmp_path / "pack.yaml"
+    pack_path.write_text("", encoding="utf-8")
+
+    template_path = tmp_path / "pack_template.pptx"
+    _build_pack_template(template_path)
+    result_path = tmp_path / "deck" / "static_placeholder.pptx"
+
+    logo_path = pack_path.parent / "logo.png"
+    _write_coloured_png(logo_path, colour=(0, 0, 255, 255))
+
+    pack = PackConfig(
+        schema="test-pack",
+        slides=[
+            PackSlide(
+                title="Two Up",
+                id="two-up",
+                template="two_up",
+                placeholders={
+                    "left_chart": PackPlaceholder(visual=PackVisualRef(ref="left.yaml")),
+                    "right_chart": PackPlaceholder(image="logo.png"),
+                },
+            )
+        ],
+    )
+
+    visuals: Dict[str, BaseVisualConfig] = {"left.yaml": BaseVisualConfig(type="matrix")}
+
+    def _loader(path: Path, payload: Mapping[str, object] | None = None, stack: tuple[Path, ...] = ()) -> BaseVisualConfig:
+        return visuals[path.name]
+
+    pipeline = _PngPipeline()
+    base_options = PipelineOptions(metadata={"result_file": result_path, "pptx_template": template_path})
+    run_pack(
+        pack_path,
+        pack,
+        output_root=tmp_path / "artefacts",
+        base_options=base_options,
+        visual_loader=_loader,
+        pipeline=cast(VisualPipeline[Any], pipeline),
+        env=create_pack_jinja_env(),
+    )
+
+    deck = Presentation(result_path)
+    assert len(deck.slides) == 1
+    pictures = _picture_blobs_by_name(deck.slides[0])
+    left_png = (tmp_path / "artefacts" / f"[01]_{slugify('two-up')}__{slugify('left_chart')}.png").read_bytes()
+    assert pictures.get("left_chart") == left_png
+    assert pictures.get("right_chart") == logo_path.read_bytes()
+
+
+def test_run_pack_errors_on_missing_static_images(tmp_path: Path) -> None:
+    pack_path = tmp_path / "pack.yaml"
+    pack_path.write_text("", encoding="utf-8")
+
+    slide_only_pack = PackConfig(
+        schema="test-pack",
+        slides=[
+            PackSlide(
+                title="Broken Slide",
+                id="broken",
+                template="single_image",
+                image="missing.png",
+            ),
+        ],
+    )
+
+    with pytest.raises(ValueError, match="Static slide image not found"):
+        run_pack(
+            pack_path,
+            slide_only_pack,
+            output_root=tmp_path / "artefacts",
+            base_options=PipelineOptions(),
+            pipeline=cast(VisualPipeline[Any], _PngPipeline()),
+            env=create_pack_jinja_env(),
+        )
+
+    placeholder_pack = PackConfig(
+        schema="test-pack",
+        slides=[
+            PackSlide(
+                title="Broken Placeholder",
+                id="broken-placeholder",
+                template="two_up",
+                placeholders={
+                    "logo": PackPlaceholder(image="missing_logo.png"),
+                },
+            )
+        ],
+    )
+
+    with pytest.raises(ValueError, match="Static placeholder image not found"):
+        run_pack(
+            pack_path,
+            placeholder_pack,
+            output_root=tmp_path / "artefacts",
+            base_options=PipelineOptions(),
+            pipeline=cast(VisualPipeline[Any], _PngPipeline()),
+            env=create_pack_jinja_env(),
+        )
+
+
+def test_pack_models_validate_static_image_rules() -> None:
+    with pytest.raises(ValidationError):
+        PackPlaceholder(visual=PackVisualRef(ref="one.yaml"), image="logo.png")
+
+    with pytest.raises(ValidationError):
+        PackPlaceholder()
+
+    with pytest.raises(ValidationError):
+        PackSlide(title="Image Missing Template", image="logo.png")
+
+    with pytest.raises(ValidationError):
+        PackSlide(title="Image With Visual", template="single", visual=PackVisualRef(ref="one.yaml"), image="logo.png")
