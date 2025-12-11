@@ -62,13 +62,22 @@ class MetricDatasetBuilder:
         metrics_root: str | Path | None = None,
         slug: str | None = None,
         name_strategy: NameStrategy | None = None,
+        ignore_placeholders: bool | None = None,
     ) -> None:
         # Resolve context eagerly so subsequent operations stay lightweight.
         # Resolve project context immediately so subsequent calls only mutate in-memory state.
-        self._context = context or MetricDatasetBuilderContext.discover(
-            project_root=project_root,
-            metrics_root=metrics_root,
-        )
+        if context is None:
+            self._context = MetricDatasetBuilderContext.discover(
+                project_root=project_root,
+                metrics_root=metrics_root,
+                ignore_placeholders=bool(ignore_placeholders),
+            )
+            self._ignore_placeholders = self._context.ignore_placeholders
+        else:
+            self._context = context
+            self._ignore_placeholders = (
+                ignore_placeholders if ignore_placeholders is not None else context.ignore_placeholders
+            )
 
         # Builder state: track declarative inputs until plan() compiles them into DAX.
         self._series: list[_MetricDatasetSeries] = []
@@ -78,7 +87,6 @@ class MetricDatasetBuilder:
         self._datasource_name: str | None = self._context.default_datasource
         self._resolved_datasource: ResolvedDataSource | None = None
         self._use_mock = self._context.use_mock
-        self._ignore_placeholders = self._context.ignore_placeholders
         self._slug = slugify(slug or self._context.project_root.name or "metric_dataset")
         self._name_strategy = name_strategy or default_name_strategy
         self._plan_cache: MetricDatasetPlan | None = None
@@ -104,7 +112,7 @@ class MetricDatasetBuilder:
         alias: str | None = None,
         label: str | None = None,
         calculate: Sequence[str] | str | None = None,
-        allow_placeholder: bool = False,
+        allow_placeholder: bool | None = None,
         value_type: str | None = None,
         ratio_to: bool | str | None = None,
     ) -> "MetricDatasetBuilder":
@@ -128,12 +136,13 @@ class MetricDatasetBuilder:
             value_type = "percent"
 
         identifier = self._allocate_series_id(alias or key)
+        effective_allow_placeholder = allow_placeholder if allow_placeholder is not None else self._ignore_placeholders
         series = _MetricDatasetSeries(
             series_id=identifier,
             reference=key,
             label=label or alias or key,
             filters=normalise_filters(calculate),
-            allow_placeholder=allow_placeholder,
+            allow_placeholder=bool(effective_allow_placeholder),
             source="metric",
             value_type=value_type,
             ratio_to_ref=ratio_to_ref,
@@ -153,12 +162,13 @@ class MetricDatasetBuilder:
         value_type: str | None = None,
     ) -> "MetricDatasetBuilder":
         series_id = self._allocate_series_id(alias or identifier)
+        effective_allow_placeholder = self._ignore_placeholders
         series = _MetricDatasetSeries(
             series_id=series_id,
             reference=identifier,
             label=label or alias or identifier,
             filters=normalise_filters(calculate),
-            allow_placeholder=False,
+            allow_placeholder=bool(effective_allow_placeholder),
             source="expression",
             expression=expression,
             value_type=value_type,

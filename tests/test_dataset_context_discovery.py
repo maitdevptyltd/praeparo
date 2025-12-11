@@ -58,3 +58,22 @@ def test_discover_dataset_context_without_visual_context(tmp_path: Path) -> None
     assert dataset_context.global_filters == ()
     assert dataset_context.define_blocks == ()
     assert dataset_context.use_mock is False
+
+
+def test_discover_dataset_context_uses_metadata_ignore_placeholders(tmp_path: Path) -> None:
+    metrics_root = (tmp_path / "metrics").resolve()
+    metrics_root.mkdir()
+
+    options = PipelineOptions()
+    options.metadata["ignore_placeholders"] = True
+
+    execution = ExecutionContext(
+        project_root=tmp_path,
+        options=options,
+        visual_context=None,
+    )
+
+    dataset_context = discover_dataset_context(execution, default_metrics_root=metrics_root)
+
+    assert dataset_context.metrics_root == metrics_root
+    assert dataset_context.ignore_placeholders is True

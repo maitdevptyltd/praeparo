@@ -1,0 +1,5 @@
+schema: draft-1
+type: ./simple_yaml_visual.py
+
+title: Sample YAML-driven Python Visual
+message: hello world

@@ -1,0 +1,18 @@
+schema: draft-1
+type: ./cartesian_python_visual.py
+
+title: Test Cartesian Python Visual
+category:
+  field: "'dim_calendar'[month]"
+  label: Month
+  data_type: date
+value_axes:
+  primary:
+    label: Volume
+    format: number:0
+series:
+  - id: s1
+    label: S1
+    type: column
+    metric:
+      key: some_metric

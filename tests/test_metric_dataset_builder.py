@@ -124,6 +124,100 @@ def test_placeholder_series_when_allowed(tmp_path: Path) -> None:
     assert "placeholder" in plan.placeholders
 
 
+def test_ignore_placeholders_from_context_defaults_series(tmp_path: Path) -> None:
+    metrics_root = tmp_path / "metrics"
+    metrics_root.mkdir()
+    _write_metric(metrics_root / "documents_sent.yaml")
+
+    context = MetricDatasetBuilderContext.discover(
+        project_root=tmp_path,
+        metrics_root=metrics_root,
+        ignore_placeholders=True,
+    )
+    builder = MetricDatasetBuilder(context)
+    builder.metric("documents_sent", alias="total")
+    builder.metric("missing.series", alias="missing_default")
+
+    plan = builder.plan()
+
+    assert "missing_default" in plan.placeholders
+
+
+def test_global_ignore_overrides_explicit_allow_placeholder_false(tmp_path: Path) -> None:
+    metrics_root = tmp_path / "metrics"
+    metrics_root.mkdir()
+    _write_metric(metrics_root / "documents_sent.yaml")
+
+    context = MetricDatasetBuilderContext.discover(
+        project_root=tmp_path,
+        metrics_root=metrics_root,
+        ignore_placeholders=True,
+    )
+    builder = MetricDatasetBuilder(context)
+    builder.metric("documents_sent", alias="total")
+    builder.metric("missing.series", alias="missing_explicit", allow_placeholder=False)
+
+    plan = builder.plan()
+
+    assert "missing_explicit" in plan.placeholders
+
+
+def test_per_series_allow_placeholder_without_global_flag(tmp_path: Path) -> None:
+    builder = _builder(tmp_path)
+    builder.metric("documents_sent", alias="total")
+    builder.metric("missing.series", alias="missing", allow_placeholder=True)
+
+    plan = builder.plan()
+
+    assert "missing" in plan.placeholders
+
+
+def test_missing_metric_raises_without_allowance(tmp_path: Path) -> None:
+    builder = _builder(tmp_path)
+    builder.metric("documents_sent", alias="total")
+    builder.metric("missing.series", alias="missing")
+
+    with pytest.raises(KeyError):
+        builder.plan()
+
+
+def test_expression_inherits_global_ignore_placeholders(tmp_path: Path) -> None:
+    metrics_root = tmp_path / "metrics"
+    metrics_root.mkdir()
+    _write_metric(metrics_root / "documents_sent.yaml")
+
+    context = MetricDatasetBuilderContext.discover(
+        project_root=tmp_path,
+        metrics_root=metrics_root,
+        ignore_placeholders=True,
+    )
+    builder = MetricDatasetBuilder(context)
+    builder.metric("documents_sent", alias="total")
+    builder.expression("share", "missing.metric")
+
+    plan = builder.plan()
+
+    assert "share" in plan.placeholders
+
+
+def test_ignore_placeholder_override_without_context(tmp_path: Path) -> None:
+    metrics_root = tmp_path / "metrics"
+    metrics_root.mkdir()
+    _write_metric(metrics_root / "documents_sent.yaml")
+
+    builder = MetricDatasetBuilder(
+        project_root=tmp_path,
+        metrics_root=metrics_root,
+        ignore_placeholders=True,
+    )
+    builder.metric("documents_sent", alias="total")
+    builder.metric("missing.series", alias="missing")
+
+    plan = builder.plan()
+
+    assert "missing" in plan.placeholders
+
+
 def test_execute_mock_returns_alias_columns(tmp_path: Path) -> None:
     builder = _builder(tmp_path)
     builder.use_mock(True)

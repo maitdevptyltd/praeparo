@@ -335,19 +335,14 @@ class CartesianSeriesConfig(BaseModel):
         return self
 
 
-class CartesianChartConfig(BaseVisualConfig):
-    """Top-level configuration for column/bar visuals."""
+class CartesianChartConfigBase(BaseVisualConfig):
+    """Shared cartesian chart configuration without a visual type discriminator."""
 
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
-    type: Literal["column", "bar"] = Field(
-        description="Visual type discriminator.",
-    )
-    schema_version: str | None = Field(
-        default=None,
-        alias="schema",
-        description="Optional schema version identifier for the visual document.",
-    )
+    # The base config intentionally omits the visual type discriminator so Python-backed
+    # visuals can reuse this model without conflicting with the YAML `type` meta field.
+    type: str | None = Field(default=None, description="Visual type discriminator.", exclude=True)
     title: str | None = Field(default=None, description="Optional chart title.")
     description: str | None = Field(default=None, description="Helper copy for editors.")
     datasource: str | None = Field(
@@ -410,7 +405,7 @@ class CartesianChartConfig(BaseVisualConfig):
         return tuple(normalise_str_sequence(value))
 
     @model_validator(mode="after")
-    def _ensure_unique_series(self) -> "CartesianChartConfig":
+    def _ensure_unique_series(self) -> "CartesianChartConfigBase":
         if not self.series:
             raise ValueError("At least one series must be defined for a cartesian chart.")
 
@@ -421,9 +416,30 @@ class CartesianChartConfig(BaseVisualConfig):
         return self
 
 
+class CartesianChartConfig(CartesianChartConfigBase):
+    """Top-level configuration for registered column/bar visuals."""
+
+    type: Literal["column", "bar"] = Field(
+        description="Visual type discriminator.",
+    )
+    schema_version: str | None = Field(
+        default=None,
+        alias="schema",
+        description="Optional schema version identifier for the visual document.",
+    )
+
+
+class PythonCartesianChartConfig(CartesianChartConfigBase):
+    """Config model for Python-backed cartesian visuals referenced via type: ./visual.py."""
+
+    # Reserved for potential Python-only extensions in future.
+    pass
+
+
 __all__ = [
     "AxisConfig",
     "CartesianChartConfig",
+    "CartesianChartConfigBase",
     "CartesianSeriesConfig",
     "CategoryConfig",
     "CategoryDataType",
@@ -440,4 +456,5 @@ __all__ = [
     "SeriesTransformConfig",
     "SeriesTransformMode",
     "ValueAxesConfig",
+    "PythonCartesianChartConfig",
 ]

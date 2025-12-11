@@ -92,7 +92,7 @@ class MetricDiscoveryError(Exception):
     """Raised when metric discovery encounters parsing or validation issues."""
 
     def __init__(self, errors: Sequence[str], catalog: MetricCatalog | None = None):
-        message = f"Encountered {len(errors)} error(s) while loading metric definitions."
+        message = f"Encountered {len(errors)} error(s) while loading metric definitions. {errors}"
         super().__init__(message)
         self.errors = list(errors)
         self.catalog = catalog

@@ -11,11 +11,18 @@ FiltersType = str | Sequence[str] | Mapping[str, str] | None
 
 
 class PackVisualRef(BaseModel):
-    """Reference to a visual plus optional slide-level overrides."""
+    """Reference to a visual or an inline visual config plus optional slide-level overrides."""
 
-    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
 
-    ref: str = Field(..., description="Path to the visual definition relative to the pack file.")
+    ref: str | None = Field(
+        default=None,
+        description="Optional path to the visual definition relative to the pack file.",
+    )
+    type: str | None = Field(
+        default=None,
+        description="Optional inline visual type or Python module path when embedding a config directly.",
+    )
     filters: FiltersType = Field(
         default=None,
         description="Optional OData filters applied on top of pack-level defaults.",
@@ -27,12 +34,22 @@ class PackVisualRef(BaseModel):
 
     @field_validator("ref")
     @classmethod
-    def _normalise_ref(cls, value: str) -> str:
+    def _normalise_ref(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
         cleaned = value.strip()
         if not cleaned:
             msg = "visual.ref cannot be empty"
             raise ValueError(msg)
         return cleaned
+
+    @model_validator(mode="after")
+    def _validate_ref_or_type(self) -> "PackVisualRef":
+        has_ref = bool(self.ref)
+        has_type = bool(self.type)
+        if has_ref == has_type:
+            raise ValueError("visual must define exactly one of 'ref' or 'type'")
+        return self
 
 
 class PackPlaceholder(BaseModel):

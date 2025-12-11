@@ -7,8 +7,12 @@ import inspect
 import sys
 from pathlib import Path
 from types import ModuleType
+from typing import Mapping
 
-from praeparo.pipeline.python_visual import PythonVisualBase
+from pydantic import BaseModel, ConfigDict
+
+from praeparo.models import BaseVisualConfig
+from praeparo.pipeline.python_visual import PYTHON_VISUAL_TYPE, PythonVisualBase
 
 
 def load_python_module(path: Path) -> ModuleType:
@@ -74,4 +78,69 @@ def load_python_visual(path: Path, class_name: str | None = None) -> PythonVisua
     return instance
 
 
-__all__ = ["discover_python_visual", "load_python_module", "load_python_visual"]
+def load_python_visual_module(path: Path, class_name: str | None = None) -> type[PythonVisualBase]:
+    """Import *path* and return the declared Python visual class."""
+
+    module = load_python_module(path)
+    return discover_python_visual(module, class_name=class_name)
+
+
+def _default_python_visual_config_model() -> type[BaseVisualConfig]:
+    """Fallback config model that accepts arbitrary fields."""
+
+    class _DefaultConfig(BaseVisualConfig):
+        model_config = ConfigDict(extra="allow", populate_by_name=True)
+        type: str | None = None
+
+    return _DefaultConfig
+
+
+def load_python_visual_from_yaml(
+    context_path: Path,
+    payload: Mapping[str, object] | None,
+) -> tuple[PythonVisualBase, BaseModel]:
+    """Instantiate a Python visual and validate YAML payload against its config model.
+
+    Reserved meta keys (type/schema) are stripped before validation so visuals
+    can reuse config models without embedding the YAML discriminator.
+    """
+
+    raw_type = str(payload.get("type") or "").strip() if payload is not None else ""
+    module_path = (context_path.parent / raw_type).resolve()
+
+    visual_cls = load_python_visual_module(module_path)
+    try:
+        visual_instance = visual_cls()
+    except Exception as exc:  # pragma: no cover - surfaced to CLI users
+        raise RuntimeError(f"Failed to instantiate visual '{visual_cls.__name__}': {exc}") from exc
+
+    if getattr(visual_instance, "context_model", None) is None:
+        raise ValueError(f"Python visual '{visual_cls.__name__}' must declare a context_model attribute.")
+
+    config_model = getattr(visual_cls, "config_model", None) or _default_python_visual_config_model()
+    if not issubclass(config_model, BaseModel):
+        raise TypeError(f"config_model on '{visual_cls.__name__}' must extend BaseModel.")
+
+    reserved_keys = {"type", "schema", "schema_version"}
+    config_payload = {k: v for k, v in (payload or {}).items() if k not in reserved_keys}
+    config_instance = config_model.model_validate(config_payload)
+    try:
+        config_instance = config_instance.model_copy(update={"type": PYTHON_VISUAL_TYPE})
+    except Exception:
+        try:
+            object.__setattr__(config_instance, "type", PYTHON_VISUAL_TYPE)
+        except Exception as exc:  # pragma: no cover - defensive fallback
+            raise TypeError(
+                f"Unable to assign pipeline type '{PYTHON_VISUAL_TYPE}' to config model '{config_model.__name__}'."
+            ) from exc
+
+    return visual_instance, config_instance
+
+
+__all__ = [
+    "discover_python_visual",
+    "load_python_module",
+    "load_python_visual",
+    "load_python_visual_from_yaml",
+    "load_python_visual_module",
+]

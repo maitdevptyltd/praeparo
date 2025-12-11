@@ -902,7 +902,7 @@ def _prepare_metadata(args: argparse.Namespace, cli: VisualCLIOptions | None) ->
     return metadata
 
 
-def _prepare_pack_metadata(args: argparse.Namespace) -> Dict[str, object]:
+def _prepare_pack_metadata(args: argparse.Namespace, *, pack_path: Path | None = None) -> Dict[str, object]:
     metadata: Dict[str, object] = {}
     metadata.update(_parse_metadata_pairs(args.meta or []))
     metadata["data_mode"] = _normalise_data_mode(getattr(args, "data_mode", None))
@@ -925,6 +925,11 @@ def _prepare_pack_metadata(args: argparse.Namespace) -> Dict[str, object]:
     revision_minor = getattr(args, "revision_minor", None)
     if revision_minor is not None:
         metadata["revision_minor"] = revision_minor
+
+    if "metrics_root" not in metadata and pack_path is not None:
+        from praeparo.datasets.context import resolve_default_metrics_root_for_pack
+
+        metadata["metrics_root"] = resolve_default_metrics_root_for_pack(pack_path)
     return metadata
 
 
@@ -1231,7 +1236,7 @@ def _handle_pack_run(args: argparse.Namespace) -> int:
     if getattr(args, "pptx_only", False):
         if args.result_file is None:
             raise ValueError("PPTX-only restitch requires a result file; provide dest or --result-file.")
-        metadata = _prepare_pack_metadata(args)
+        metadata = _prepare_pack_metadata(args, pack_path=pack_path)
         options = _build_pipeline_options(args, metadata, include_outputs=False)
         if args.png_scale is not None:
             options.png_scale = args.png_scale
@@ -1245,7 +1250,7 @@ def _handle_pack_run(args: argparse.Namespace) -> int:
         print(f"[ok] Restitched PPTX to {args.result_file}")
         return 0
 
-    metadata = _prepare_pack_metadata(args)
+    metadata = _prepare_pack_metadata(args, pack_path=pack_path)
     jinja_env = create_pack_jinja_env()
 
     options = _build_pipeline_options(args, metadata, include_outputs=False)

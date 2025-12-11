@@ -44,6 +44,8 @@ df = dataset.to_df()          # pandas.DataFrame (requires pandas installed)
 
 # Shortcut: calling `MetricDatasetBuilder()` without the `context` argument triggers
 # the same discovery logic based on your current working directory.
+# For CLI or pack runs, prefer passing `context.dataset_context` from the pipeline so
+# flags like `--ignore-placeholders` flow into the builder automatically.
 ```
 
 Feed either `rows` or `df` into Plotly:
@@ -66,8 +68,8 @@ fig.show()
 
 | Method | Description |
 | --- | --- |
-| `.metric(key, *, alias=None, label=None, calculate=None, allow_placeholder=False, value_type=None, ratio_to=None)` | Adds a registry metric or variant. Filters are merged with the metric’s own inheritance chain. `ratio_to=True` infers the base key from the dotted metric (e.g., `metric.variant → metric`), or pass `ratio_to="base.metric"` explicitly. When `ratio_to` is set and `value_type` is omitted, the builder infers `value_type="percent"`. |
-| `.expression(identifier, expression, *, label=None, value_type="number")` | Declares an inline expression built from existing metrics (`documents_sent.automated / documents_sent`). |
+| `.metric(key, *, alias=None, label=None, calculate=None, allow_placeholder=None, value_type=None, ratio_to=None)` | Adds a registry metric or variant. Filters are merged with the metric’s own inheritance chain. `allow_placeholder=None` inherits the builder/context-level `ignore_placeholders` flag (default `False`); override with `True`/`False` per series when you need to diverge. `ratio_to=True` infers the base key from the dotted metric (e.g., `metric.variant → metric`), or pass `ratio_to="base.metric"` explicitly. When `ratio_to` is set and `value_type` is omitted, the builder infers `value_type="percent"`. |
+| `.expression(identifier, expression, *, label=None, value_type="number")` | Declares an inline expression built from existing metrics (`documents_sent.automated / documents_sent`). Expressions inherit the builder’s `ignore_placeholders` flag when referenced metrics are missing. |
 | `.calculate(filters)` | Appends global filters (string or list) that wrap every measure via `CALCULATE`. |
 | `.define(blocks)` | Adds additional DEFINE blocks rendered before SUMMARIZECOLUMNS (useful for session-level calculations). |
 | `.grain(*columns)` | Overrides the SUMMARIZECOLUMNS grain (defaults to a single column). |
@@ -167,9 +169,9 @@ Because the builder returns standard tabular data, any analytics library that un
 
 ## Placeholder Handling
 
-- Use `allow_placeholder=True` inside `.metric(...)` to keep experimental notebooks running when a metric is missing from the catalog. Placeholder metrics resolve to `0` and are listed under `MetricDatasetResult.placeholders`.
-- Globally ignoring placeholders is also possible: `MetricDatasetBuilder(context, ignore_placeholders=True)`.
-- Production notebooks should keep placeholders disabled so missing metrics are surfaced early.
+- Use `allow_placeholder=True` inside `.metric(...)` for ad-hoc experiments. When `allow_placeholder` is omitted, the builder inherits the context-level `ignore_placeholders` flag (default `False`).
+- Enable the global switch with either `MetricDatasetBuilder(context, ignore_placeholders=True)` or by running CLI/pack commands with `--ignore-placeholders`. Pipeline-provided contexts (including pack runs) carry this flag into Python visuals as long as you instantiate the builder with `context.dataset_context`.
+- Placeholder metrics resolve to `0` and are listed under `MetricDatasetResult.placeholders`. Keep the flag off in production so missing metrics surface early.
 
 ## Relationship to YAML Visuals
 

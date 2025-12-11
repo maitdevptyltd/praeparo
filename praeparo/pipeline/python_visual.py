@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
-import plotly.graph_objects as go
 from dataclasses import dataclass
 from typing import Generic, Sequence, Type, TypeVar, cast
 
+import plotly.graph_objects as go
+
 from praeparo.datasets import MetricDatasetBuilder
 from praeparo.models import BaseVisualConfig
+from pydantic import BaseModel
 from praeparo.visuals.context_models import VisualContextModel
 
 from .core import ExecutionContext, VisualPipeline
@@ -35,6 +37,8 @@ class PythonVisualBase(
 
     # Implementers must declare which VisualContextModel they expect.
     context_model: Type[ContextT] = cast(Type[ContextT], VisualContextModel)
+    # Optional config model used when validating YAML-driven Python visuals.
+    config_model: Type[BaseModel] | None = None
 
     # Optional human-friendly name used when building default configs.
     name: str | None = None
@@ -45,6 +49,10 @@ class PythonVisualBase(
         declared_model = getattr(type(self), "context_model", None)
         if declared_model is not None and self.context_model is VisualContextModel:
             self.context_model = declared_model
+
+        declared_config = getattr(type(self), "config_model", None)
+        if declared_config is not None and self.config_model is None:
+            self.config_model = declared_config
 
         if self.name is None:
             declared_name = getattr(type(self), "name", None)

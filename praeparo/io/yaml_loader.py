@@ -12,7 +12,9 @@ import yaml
 from pydantic import Field, TypeAdapter, ValidationError
 
 from ..models import BaseVisualConfig, CartesianChartConfig, FrameConfig, MatrixConfig
-from ..visuals.registry import get_visual_registration
+from ..pipeline import PYTHON_VISUAL_TYPE, register_visual_pipeline
+from ..pipeline.python_visual_loader import load_python_visual_from_yaml
+from ..visuals.registry import _is_python_visual_type, get_visual_registration
 from ..templating import render_template
 
 
@@ -195,6 +197,11 @@ def _finalize_visual(
     payload.setdefault("type", "matrix")
     visual_type = str(payload.get("type") or "").strip().lower()
 
+    if isinstance(payload.get("type"), str) and _is_python_visual_type(str(payload["type"])):
+        visual, config = load_python_visual_from_yaml(path, payload)
+        register_visual_pipeline(PYTHON_VISUAL_TYPE, visual.to_definition(), overwrite=True)
+        return config  # type: ignore[return-value]
+
     if visual_type in {"matrix", "frame"}:
         try:
             visual = VISUAL_ADAPTER.validate_python(payload)
@@ -239,6 +246,28 @@ def _finalize_visual(
     return visual.resolve(load_visual=_load_child, path=path, stack=stack)
 
 
+def load_visual_from_payload(
+    config_path: Path,
+    payload: Mapping[str, Any],
+    *,
+    stack: ComposeStack | None = None,
+    preprocess: bool = False,
+) -> BaseVisualConfig:
+    """Instantiate a visual config from an already-parsed payload."""
+
+    if preprocess:
+        prepared = _prepare_payload(
+            config_path,
+            payload,
+            overrides=None,
+            parameters_override=None,
+        )
+    else:
+        prepared = dict(payload)
+    compose_stack: ComposeStack = stack or ()
+    return _finalize_visual(config_path, prepared, stack=compose_stack)
+
+
 def load_visual_config(
     path: Path,
     *,
@@ -259,7 +288,7 @@ def load_visual_config(
         parameters_override=parameters_override,
     )
 
-    return _finalize_visual(resolved, payload, stack=compose_stack)
+    return load_visual_from_payload(resolved, payload, stack=compose_stack, preprocess=False)
 
 
 def load_matrix_config(
@@ -283,4 +312,4 @@ def load_matrix_config(
     return visual
 
 
-__all__ = ["ConfigLoadError", "load_matrix_config", "load_visual_config"]
+__all__ = ["ConfigLoadError", "load_matrix_config", "load_visual_config", "load_visual_from_payload"]

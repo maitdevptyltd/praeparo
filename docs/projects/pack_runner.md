@@ -176,6 +176,10 @@ Key flags:
 > Tip: use `--plugin` whenever packs rely on project-specific registrations; the
 > flag works both at the top level and on the `pack run` command.
 
+**Placeholder handling**
+
+- `--ignore-placeholders` flows into each slide’s visual context. YAML DAX visuals and Python visuals that build datasets via `MetricDatasetBuilder(context.dataset_context, ...)` will treat missing metrics as placeholders without needing per-series flags.
+
 ### Data mode examples
 
 ```bash

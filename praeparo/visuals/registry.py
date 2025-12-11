@@ -62,6 +62,13 @@ class VisualTypeRegistration:
 _VISUAL_REGISTRY: Dict[str, VisualTypeRegistration] = {}
 
 
+def _is_python_visual_type(value: str) -> bool:
+    candidate = value.strip()
+    if not candidate.endswith(".py"):
+        return False
+    return "/" in candidate or "\\" in candidate or candidate.startswith((".", "/", "\\"))
+
+
 def register_visual_type(
     type_name: str,
     loader: VisualLoader,
@@ -115,6 +122,15 @@ def load_visual_definition(
     visual_type = payload.get("type")
     if not isinstance(visual_type, str) or not visual_type.strip():
         raise ValueError(f"Visual YAML at {target} must define a non-empty 'type' field")
+
+    if _is_python_visual_type(visual_type):
+        from praeparo.pipeline import PYTHON_VISUAL_TYPE, register_visual_pipeline
+        from praeparo.pipeline.python_visual_loader import load_python_visual_from_yaml
+
+        visual, config = load_python_visual_from_yaml(target, payload)
+        register_visual_pipeline(PYTHON_VISUAL_TYPE, visual.to_definition(), overwrite=True)
+        return config
+
     key = visual_type.strip().lower()
     registration = _VISUAL_REGISTRY.get(key)
     if registration is None:
@@ -151,6 +167,7 @@ __all__ = [
     "VisualCLIHooks",
     "VisualLoader",
     "VisualTypeRegistration",
+    "_is_python_visual_type",
     "get_visual_cli_options",
     "get_visual_registration",
     "iter_visual_registrations",

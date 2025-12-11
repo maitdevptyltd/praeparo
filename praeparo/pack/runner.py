@@ -10,7 +10,7 @@ from typing import Callable, Iterable, Mapping, Sequence
 
 from jinja2 import Environment
 
-from praeparo.models import BaseVisualConfig, FiltersType, PackConfig, PackPlaceholder, PackSlide
+from praeparo.models import BaseVisualConfig, FiltersType, PackConfig, PackPlaceholder, PackSlide, PackVisualRef
 from praeparo.pack.filters import merge_calculate_filters, merge_odata_filters
 from praeparo.pack.pbi_queue import PowerBIExportJob, PowerBIExportQueue, PowerBIExportResult
 from praeparo.pack.templating import create_pack_jinja_env, render_value
@@ -29,9 +29,9 @@ from praeparo.pipeline import (
 )
 from praeparo.pipeline.python_visual_loader import load_python_visual
 from praeparo.visuals.dax.planner_core import slugify
-from praeparo.io.yaml_loader import load_visual_config
+from praeparo.io.yaml_loader import load_visual_config, load_visual_from_payload
 from praeparo.visuals.context import merge_context_payload, resolve_dax_context
-from praeparo.visuals.registry import VisualTypeRegistration, get_visual_registration
+from praeparo.visuals.registry import VisualTypeRegistration, get_visual_registration, _is_python_visual_type
 from praeparo.visuals.context_models import VisualContextModel
 
 
@@ -405,24 +405,43 @@ def run_pack(
 
         def _execute_visual(
             *,
-            visual_ref: str,
+            visual_ref: PackVisualRef,
             slide_label: str,
             filters: FiltersType,
             calculate: FiltersType,
             placeholder_id: str | None = None,
             target_map: dict[str, Path],
         ) -> None:
-            visual_path = (pack_path.parent / visual_ref).resolve()
-            is_python_visual = visual_path.suffix.lower() == ".py"
-
             python_visual: PythonVisualBase | None = None
-            if is_python_visual:
-                python_visual = load_python_visual(visual_path, class_name=None)
-                definition = python_visual.to_definition()
-                register_visual_pipeline(PYTHON_VISUAL_TYPE, definition, overwrite=True)
-                visual = python_visual.to_config()
+            visual_path: Path
+
+            if visual_ref.ref:
+                visual_path = (pack_path.parent / visual_ref.ref).resolve()
+                is_python_visual = visual_path.suffix.lower() == ".py"
+
+                if is_python_visual:
+                    python_visual = load_python_visual(visual_path, class_name=None)
+                    definition = python_visual.to_definition()
+                    register_visual_pipeline(PYTHON_VISUAL_TYPE, definition, overwrite=True)
+                    visual = python_visual.to_config()
+                else:
+                    visual = visual_loader(visual_path)
             else:
-                visual = visual_loader(visual_path)
+                visual_path = pack_path
+                payload = visual_ref.model_dump()
+                payload.pop("ref", None)
+                payload.pop("filters", None)
+                payload.pop("calculate", None)
+
+                visual = load_visual_from_payload(visual_path, payload, preprocess=True)
+
+                raw_type = payload.get("type")
+                is_python_visual = isinstance(raw_type, str) and _is_python_visual_type(raw_type)
+
+                if is_python_visual:
+                    module_path = (pack_path.parent / str(raw_type)).resolve()
+                    python_visual = load_python_visual(module_path, class_name=None)
+                    register_visual_pipeline(PYTHON_VISUAL_TYPE, python_visual.to_definition(), overwrite=True)
 
             merged_filters = merge_odata_filters(rendered_global_filters, _render_filters(filters))
             calculate_filters = merge_calculate_filters(rendered_global_calculate, _render_filters(calculate))
@@ -581,7 +600,7 @@ def run_pack(
 
         if slide.visual is not None:
             _execute_visual(
-                visual_ref=slide.visual.ref,
+                visual_ref=slide.visual,
                 slide_label=slide_slug,
                 filters=slide.visual.filters,
                 calculate=slide.visual.calculate,
@@ -605,7 +624,7 @@ def run_pack(
                     raise ValueError(f"Placeholder '{placeholder_id}' on slide '{slide_slug}' is missing both visual and image")
 
                 _execute_visual(
-                    visual_ref=placeholder.visual.ref,
+                    visual_ref=placeholder.visual,
                     slide_label=placeholder_slug,
                     filters=placeholder.visual.filters,
                     calculate=placeholder.visual.calculate,

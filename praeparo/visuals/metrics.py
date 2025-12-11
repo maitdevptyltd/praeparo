@@ -120,12 +120,31 @@ class VisualMetricConfig(BaseModel):
         default_factory=list,
         description="Additional predicates applied when resolving this metric for the visual.",
     )
+    ratio_to: str | bool | None = Field(
+        default=None,
+        description=(
+            "Optional ratio hint for this metric. "
+            "Use true to ratio against the inferred base metric (trimmed variant), "
+            "or provide an explicit metric key."
+        ),
+    )
     mock: VisualMetricMock | None = Field(
         default=None,
         description="Optional mock configuration specific to this metric.",
     )
 
     _normalise_calculate = field_validator("calculate", mode="before")(normalise_str_sequence)
+    @field_validator("ratio_to", mode="before")
+    @classmethod
+    def _normalise_ratio_to(cls, value: object) -> str | bool | None:
+        if value is None or value is False:
+            return None
+        if value is True:
+            return True
+        if isinstance(value, str):
+            candidate = value.strip()
+            return candidate or None
+        raise TypeError("ratio_to must be true, false, or a string metric key.")
 
 
 class VisualGroupConfig(BaseModel):

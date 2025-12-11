@@ -1272,6 +1272,14 @@ def test_pack_models_validate_static_image_rules() -> None:
         PackSlide(title="Image With Visual", template="single", visual=PackVisualRef(ref="one.yaml"), image="logo.png")
 
 
+def test_pack_visual_ref_requires_ref_or_type() -> None:
+    with pytest.raises(ValidationError):
+        PackVisualRef()
+
+    with pytest.raises(ValidationError):
+        PackVisualRef(ref="one.yaml", type="two.yaml")
+
+
 def test_run_pack_supports_python_visual_ref(tmp_path: Path, monkeypatch) -> None:
     fixture_path = Path(__file__).parent.parent / "fixtures" / "python_visuals" / "pack_python_visual.py"
     python_visual_path = tmp_path / "visuals" / "pack_python_visual.py"
@@ -1319,6 +1327,68 @@ def test_run_pack_supports_python_visual_ref(tmp_path: Path, monkeypatch) -> Non
     assert expected_png.exists()
     assert results[0].png_path == expected_png
     assert captured.get("scale") == 2.0
+
+
+def test_default_metrics_root_prefers_registry_metrics(tmp_path: Path) -> None:
+    metrics_dir = tmp_path / "repo" / "registry" / "metrics"
+    metrics_dir.mkdir(parents=True)
+    pack_path = metrics_dir.parent.parent / "customers" / "amp" / "pack.yaml"
+    pack_path.parent.mkdir(parents=True)
+    pack_path.write_text("{}", encoding="utf-8")
+
+    from praeparo.datasets.context import resolve_default_metrics_root_for_pack
+
+    resolved = resolve_default_metrics_root_for_pack(pack_path)
+    assert resolved == metrics_dir.resolve()
+
+
+def test_run_pack_supports_inline_visual_config(tmp_path: Path, monkeypatch) -> None:
+    fixture_path = Path(__file__).parent.parent / "fixtures" / "python_visuals" / "pack_python_visual.py"
+    python_visual_path = tmp_path / "visuals" / "pack_python_visual.py"
+    python_visual_path.parent.mkdir(parents=True, exist_ok=True)
+    python_visual_path.write_text(fixture_path.read_text(encoding="utf-8"), encoding="utf-8")
+
+    pack_path = tmp_path / "pack.yaml"
+    pack_path.write_text("", encoding="utf-8")
+
+    pack = PackConfig(
+        schema="test-pack",
+        context={"title": "Inline Demo"},
+        slides=[
+            PackSlide(
+                title="Inline Visual Slide",
+                template="full_page_image",
+                visual=PackVisualRef(type=str(python_visual_path)),
+            )
+        ],
+    )
+
+    captured: dict[str, object] = {}
+
+    def fake_write_image(self, output_path, *, scale=2.0, **_: object) -> None:
+        Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+        Path(output_path).write_bytes(b"PNG")
+        captured["path"] = output_path
+
+    monkeypatch.setattr(go.Figure, "write_image", fake_write_image, raising=False)
+
+    output_root = tmp_path / "artefacts"
+    pipeline = VisualPipeline(planner_provider=build_default_query_planner_provider())
+
+    results = run_pack(
+        pack_path,
+        pack,
+        output_root=output_root,
+        base_options=PipelineOptions(),
+        pipeline=pipeline,
+        env=create_pack_jinja_env(),
+    )
+
+    assert results
+    expected_png = output_root / "[01]_inline_visual_slide.png"
+    assert expected_png.exists()
+    assert results[0].png_path == expected_png
+    assert captured.get("path") == expected_png
 
 
 def test_restitch_pack_pptx_honours_templated_titles(tmp_path: Path) -> None:

@@ -32,6 +32,24 @@ def _discover_metrics_root(project_root: Path) -> Path:
     return project_root
 
 
+def resolve_default_metrics_root_for_pack(pack_path: Path) -> Path:
+    """Return a sensible default metrics_root for a pack file."""
+
+    current = pack_path.parent
+    for _ in range(5):
+        candidate = current / "registry" / "metrics"
+        if candidate.is_dir():
+            return candidate.resolve()
+        candidate = current / "metrics"
+        if candidate.is_dir():
+            return candidate.resolve()
+        if current.parent == current:
+            break
+        current = current.parent
+
+    return _discover_metrics_root(pack_path.parent).resolve()
+
+
 def _discover_datasources_root(project_root: Path) -> Path | None:
     """Return the first datasources folder under *project_root*, if any."""
 
@@ -176,6 +194,7 @@ def discover_dataset_context(
 
     project_root = execution.project_root or (execution.config_path.parent if execution.config_path else Path.cwd())
     visual_context = execution.visual_context
+    metadata = execution.options.metadata or {}
 
     # Prefer the visual-provided metrics root; otherwise fall back to caller hints or discovery.
     if visual_context is not None:
@@ -186,7 +205,14 @@ def discover_dataset_context(
         metrics_root = _discover_metrics_root(project_root)
 
     use_mock = _resolve_provider_key(execution) == "mock"
-    ignore_placeholders = bool(getattr(visual_context, "ignore_placeholders", False)) if visual_context else False
+    # The CLI/pack flag (--ignore-placeholders) flows via metadata for YAML-wrapped Python visuals
+    # that do not declare a typed visual context. Prefer the typed context when present; otherwise
+    # fall back to metadata so pack runs still honour the flag.
+    ignore_placeholders = False
+    if visual_context is not None:
+        ignore_placeholders = bool(getattr(visual_context, "ignore_placeholders", False))
+    if not ignore_placeholders:
+        ignore_placeholders = bool(metadata.get("ignore_placeholders", False))
 
     return MetricDatasetBuilderContext.discover(
         project_root=project_root,
@@ -195,7 +221,7 @@ def discover_dataset_context(
         case_key=execution.case_key,
         ignore_placeholders=ignore_placeholders,
         visual_context=visual_context,
-        metadata=execution.options.metadata,
+        metadata=metadata,
         use_mock=use_mock,
     )
 
