@@ -352,8 +352,8 @@ def _register_pack_parsers(parent: argparse._SubParsersAction[argparse.ArgumentP
     run_parser.add_argument(
         "--data-mode",
         dest="data_mode",
-        default="mock",
-        help="Datasource mode (e.g. mock, live).",
+        default=None,
+        help="Datasource mode (e.g. mock, live). Defaults to live for pack runs when omitted.",
     )
     run_parser.add_argument(
         "--max-pbi-concurrency",
@@ -1149,6 +1149,9 @@ def _handle_pack_run(args: argparse.Namespace) -> int:
 
     args.artefact_dir = artefact_dir
     args.result_file = result_file
+
+    if getattr(args, "data_mode", None) is None:
+        args.data_mode = "live"
 
     try:
         pack = load_pack_config(pack_path)

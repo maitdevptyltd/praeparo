@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import builtins
+import argparse
 from pathlib import Path
 import sys
 from typing import Any, Dict, Mapping, cast
 
 import pytest
 
+import praeparo.cli as cli
 from praeparo.cli import main as cli_main
 from praeparo.dax import DaxQueryPlan
 from praeparo.models import BaseVisualConfig, PackConfig, PackSlide, PackVisualRef
@@ -285,6 +287,26 @@ def test_cli_run_prefers_last_named_calculate(monkeypatch, tmp_path) -> None:
     assert ctx.dax.calculate == ("'dim_lender'[LenderId] = 301",)
     context_payload = cast(Mapping[str, Any], captured_metadata.get("context"))
     assert context_payload["calculate"] == ["'dim_lender'[LenderId] = 301"]
+
+
+def test_visual_defaults_to_mock_when_data_mode_unspecified() -> None:
+    args = argparse.Namespace(
+        data_mode=None,
+        datasource=None,
+        dataset_id=None,
+        workspace_id=None,
+        artefact_dir=None,
+        print_dax=False,
+        validate_define=False,
+        sort_rows=False,
+    )
+
+    metadata = {"data_mode": "mock"}
+    options = cli._build_pipeline_options(args, metadata, include_outputs=False)
+
+    assert options.data.provider_key == "mock"
+    assert options.data.datasource_override is None
+    assert options.metadata["data_mode"] == "mock"
 
 
 def test_cli_live_mode_defaults_datasource(monkeypatch, tmp_path) -> None:
@@ -747,6 +769,144 @@ def test_pack_cli_dest_allows_flag_overrides(monkeypatch, tmp_path, capsys) -> N
     assert base_options.metadata.get("result_file") == explicit_result
     out = capsys.readouterr().out
     assert explicit_artefact_dir.as_posix() in out
+
+
+def test_pack_run_defaults_to_live_data_mode(monkeypatch, tmp_path, capsys) -> None:
+    pack_path = tmp_path / "pack.yaml"
+    pack_path.write_text("contents", encoding="utf-8")
+
+    captured: Dict[str, object] = {}
+
+    def fake_load_pack_config(path: Path) -> PackConfig:
+        return PackConfig(
+            schema="test-pack",
+            slides=[PackSlide(title="Slide One", id="slide-id-1", visual=PackVisualRef(ref="one.yaml"))],
+        )
+
+    def fake_run_pack(
+        pack_path_arg,
+        pack,
+        *,
+        output_root,
+        max_powerbi_concurrency=None,
+        base_options=None,
+        visual_loader=None,
+        pipeline=None,
+        env=None,
+        only_slides=(),
+    ):
+        captured["base_options"] = base_options
+        slide = pack.slides[0]
+        png_path = output_root / "slide-id-1.png"
+        png_path.parent.mkdir(parents=True, exist_ok=True)
+        png_path.write_text("png", encoding="utf-8")
+        return [
+            PackSlideResult(
+                slide=slide,
+                visual_path=pack_path_arg,
+                result=VisualExecutionResult(config=BaseVisualConfig(type="powerbi"), outputs=[]),
+                png_path=png_path,
+            )
+        ]
+
+    class FakePipeline:
+        def __init__(self, *_, **__):
+            pass
+
+    monkeypatch.setattr("praeparo.cli.load_pack_config", fake_load_pack_config)
+    monkeypatch.setattr("praeparo.cli.run_pack", fake_run_pack)
+    monkeypatch.setattr("praeparo.cli.VisualPipeline", FakePipeline)
+    monkeypatch.setattr("praeparo.cli.build_default_query_planner_provider", lambda: None)
+
+    artefacts_dir = tmp_path / "artefacts"
+    argv = [
+        "pack",
+        "run",
+        str(pack_path),
+        "--artefact-dir",
+        str(artefacts_dir),
+    ]
+
+    with pytest.raises(SystemExit) as exc:
+        cli_main(argv)
+
+    assert exc.value.code == 0
+    base_options = cast(PipelineOptions, captured["base_options"])
+    assert base_options.metadata["data_mode"] == "live"
+    assert base_options.data.provider_key is None
+    assert base_options.data.datasource_override == "default"
+    out = capsys.readouterr().out
+    assert "[ok] Wrote 1 PNG" in out
+
+
+def test_pack_run_respects_mock_data_mode_override(monkeypatch, tmp_path, capsys) -> None:
+    pack_path = tmp_path / "pack.yaml"
+    pack_path.write_text("contents", encoding="utf-8")
+
+    captured: Dict[str, object] = {}
+
+    def fake_load_pack_config(path: Path) -> PackConfig:
+        return PackConfig(
+            schema="test-pack",
+            slides=[PackSlide(title="Slide One", id="slide-id-1", visual=PackVisualRef(ref="one.yaml"))],
+        )
+
+    def fake_run_pack(
+        pack_path_arg,
+        pack,
+        *,
+        output_root,
+        max_powerbi_concurrency=None,
+        base_options=None,
+        visual_loader=None,
+        pipeline=None,
+        env=None,
+        only_slides=(),
+    ):
+        captured["base_options"] = base_options
+        slide = pack.slides[0]
+        png_path = output_root / "slide-id-1.png"
+        png_path.parent.mkdir(parents=True, exist_ok=True)
+        png_path.write_text("png", encoding="utf-8")
+        return [
+            PackSlideResult(
+                slide=slide,
+                visual_path=pack_path_arg,
+                result=VisualExecutionResult(config=BaseVisualConfig(type="powerbi"), outputs=[]),
+                png_path=png_path,
+            )
+        ]
+
+    class FakePipeline:
+        def __init__(self, *_, **__):
+            pass
+
+    monkeypatch.setattr("praeparo.cli.load_pack_config", fake_load_pack_config)
+    monkeypatch.setattr("praeparo.cli.run_pack", fake_run_pack)
+    monkeypatch.setattr("praeparo.cli.VisualPipeline", FakePipeline)
+    monkeypatch.setattr("praeparo.cli.build_default_query_planner_provider", lambda: None)
+
+    artefacts_dir = tmp_path / "artefacts"
+    argv = [
+        "pack",
+        "run",
+        str(pack_path),
+        "--artefact-dir",
+        str(artefacts_dir),
+        "--data-mode",
+        "mock",
+    ]
+
+    with pytest.raises(SystemExit) as exc:
+        cli_main(argv)
+
+    assert exc.value.code == 0
+    base_options = cast(PipelineOptions, captured["base_options"])
+    assert base_options.metadata["data_mode"] == "mock"
+    assert base_options.data.provider_key == "mock"
+    assert base_options.data.datasource_override is None
+    out = capsys.readouterr().out
+    assert "[ok] Wrote 1 PNG" in out
 
 
 def test_pack_cli_run_warns_when_no_pngs(monkeypatch, tmp_path, capsys) -> None:

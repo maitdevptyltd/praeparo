@@ -144,6 +144,11 @@ Key flags:
   once. Defaults to `5` when not supplied; can also be set via
   `PRAEPARO_PBI_MAX_CONCURRENCY` (the CLI flag wins when both are provided).
 
+- `--data-mode` – datasource mode (`mock`, `live`, etc.). `praeparo pack run`
+  defaults to **live** when omitted so DAX-backed visuals hit real datasets by
+  default; pass `--data-mode mock` to force mock providers. Visual and
+  python-visual commands remain mock-first.
+
 - `--plugin MODULE` – import one or more modules before resolving registrations
   so custom visuals, pipelines, or DAX compilers become available:
 
@@ -159,11 +164,24 @@ Key flags:
   poetry run praeparo --plugin your_project pack run projects/example/pack.yaml --artefact-dir .tmp/example/pack_png
   ```
 
-- `--png-scale`, `--data-mode`, `--datasource`, and other global options – share
-  semantics with `praeparo visual run` via `PipelineOptions`.
+- `--png-scale`, `--datasource`, and other global options – share semantics with
+  `praeparo visual run` via `PipelineOptions`.
 
 > Tip: use `--plugin` whenever packs rely on project-specific registrations; the
 > flag works both at the top level and on the `pack run` command.
+
+### Data mode examples
+
+```bash
+# Live by default when omitted
+poetry run praeparo pack run projects/example/pack.yaml \
+  --artefact-dir .tmp/example/pack_live
+
+# Force mock providers for every slide in the pack
+poetry run praeparo pack run projects/example/pack.yaml \
+  --artefact-dir .tmp/example/pack_mock \
+  --data-mode mock
+```
 
 ### Logging
 
