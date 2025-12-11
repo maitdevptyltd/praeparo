@@ -10,11 +10,18 @@ from praeparo import cli
 
 
 FIXTURE_VISUAL = Path(__file__).parent / "fixtures" / "python_visuals" / "simple_visual.py"
+FIXTURE_BUILDER_VISUAL = Path(__file__).parent / "fixtures" / "python_visuals" / "builder_visual.py"
 
 
 def _copy_fixture(module_path: Path) -> Path:
     target = module_path
     target.write_text(FIXTURE_VISUAL.read_text(encoding="utf-8"), encoding="utf-8")
+    return target
+
+
+def _copy_builder_fixture(module_path: Path) -> Path:
+    target = module_path
+    target.write_text(FIXTURE_BUILDER_VISUAL.read_text(encoding="utf-8"), encoding="utf-8")
     return target
 
 
@@ -163,3 +170,41 @@ def test_visual_run_py_invocation_redirects(tmp_path) -> None:
     assert exc.value.code == 0
     assert dest.exists()
     assert expected_html.exists()
+
+
+def test_python_visual_can_return_metric_builder(tmp_path) -> None:
+    module_path = _copy_builder_fixture(tmp_path / "builder_visual.py")
+    dest = tmp_path / "builder.png"
+    artefact_dir = dest.parent / dest.stem / "_artifacts"
+
+    metrics_root = tmp_path / "metrics"
+    metrics_root.mkdir()
+    (metrics_root / "documents_sent.yaml").write_text(
+        "\n".join(
+            [
+                "schema: draft-1",
+                "key: documents_sent",
+                "display_name: Documents sent",
+                "section: Test",
+                "define: 'COUNTROWS ( \"fact_documents\" )'",
+                "variants:",
+                "  within_4_hours:",
+                "    display_name: Documents sent within 4 hours",
+                "    calculate:",
+                "      - TRUE()",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    argv = ["python-visual", "run", str(module_path), str(dest), "--metrics-root", str(metrics_root)]
+
+    with pytest.raises(SystemExit) as exc:
+        cli_main(argv)
+
+    assert exc.value.code == 0
+    assert dest.exists()
+    data_files = list(artefact_dir.glob("*.json"))
+    dax_files = list(artefact_dir.glob("*.dax"))
+    assert data_files
+    assert dax_files

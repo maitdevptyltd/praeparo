@@ -5,12 +5,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Generic, Sequence, Type, TypeVar, cast
 
+from praeparo.datasets import MetricDatasetBuilder
 from praeparo.models import BaseVisualConfig
 from praeparo.visuals.context_models import VisualContextModel
 
 from .core import ExecutionContext, VisualPipeline
 from .outputs import OutputTarget
-from .registry import DatasetArtifact, RenderOutcome, SchemaArtifact
+from .registry import DatasetArtifact, RenderOutcome, SchemaArtifact, VisualPipelineDefinition
 from .visual_definition import VisualPipelineDefinitionBase
 
 DatasetT = TypeVar("DatasetT")
@@ -64,7 +65,7 @@ class PythonVisualBase(
         config: BaseVisualConfig,
         schema_artifact: SchemaArtifact[None],
         context: ExecutionContext[ContextT],
-    ) -> DatasetArtifact[DatasetT]:
+    ) -> DatasetArtifact[DatasetT] | MetricDatasetBuilder:
         raise NotImplementedError
 
     def render(
@@ -82,6 +83,44 @@ class PythonVisualBase(
         """Return a minimal config stub compatible with the visual pipeline."""
 
         return BaseVisualConfig(type=PYTHON_VISUAL_TYPE, title=self.name)
+
+    def to_definition(self) -> VisualPipelineDefinition[None, DatasetT, BaseVisualConfig, ContextT]:
+        """Normalise Python visual dataset builders.
+
+        build_dataset may return either a DatasetArtifact directly or a
+        MetricDatasetBuilder. The latter is executed and wrapped so the core
+        pipeline can emit JSON datasets and .dax plans without extra visual
+        boilerplate.
+        """
+
+        base_definition = super().to_definition()
+        original_builder = self.build_dataset
+
+        def _dataset_builder_wrapper(
+            pipeline: VisualPipeline[ContextT],
+            config: BaseVisualConfig,
+            schema: SchemaArtifact[None],
+            context: ExecutionContext[ContextT],
+        ) -> DatasetArtifact[DatasetT]:
+            raw = original_builder(pipeline, config, schema, context)
+
+            if isinstance(raw, DatasetArtifact):
+                return raw
+
+            if isinstance(raw, MetricDatasetBuilder):
+                artifact = raw.to_dataset_artifact()
+                return cast(DatasetArtifact[DatasetT], artifact)
+
+            raise TypeError(
+                "Python visual build_dataset must return DatasetArtifact or MetricDatasetBuilder, "
+                f"got {type(raw)!r}"
+            )
+
+        return VisualPipelineDefinition(
+            schema_builder=base_definition.schema_builder,
+            dataset_builder=_dataset_builder_wrapper,
+            renderer=base_definition.renderer,
+        )
 
 
 __all__ = ["PythonVisualBase", "PYTHON_VISUAL_TYPE"]

@@ -94,3 +94,37 @@ praeparo visual run visuals/my_visual.py ./exports/report.png
 - The base class auto-registers a transient `python` pipeline definition per run; existing YAML visuals are unaffected.
 - `schema_artifact.value` is `None` by default—override `build_schema` only if your visual needs it.
 - Context models stay strongly typed; re-use `VisualContextModel` fields (metrics root, grain, DAX filters) to stay aligned with YAML execution.
+
+## Metric dataset builder shortcuts
+
+Python visuals can now return a `MetricDatasetBuilder` directly. The pipeline will execute it, persist the dataset JSON, and emit any DAX plans declared by the builder.
+
+```python
+from praeparo.datasets import MetricDatasetBuilder
+
+class DocumentsSentVisual(PythonVisualBase[list[dict[str, object]], ReportContext]):
+    context_model = ReportContext
+
+    def build_dataset(self, pipeline, config, schema_artifact, context):
+        builder = MetricDatasetBuilder(context.dataset_context, slug="documents_sent")
+        builder.metric("documents_sent", alias="documents_sent")
+        builder.metric("documents_sent.within_4_hours", alias="pct_in_4h", value_type="ratio")
+        return builder  # pipeline executes and emits JSON + .dax under artefact_dir
+```
+
+The explicit form still works when you need full control:
+
+```python
+from praeparo.pipeline.registry import DatasetArtifact
+
+def build_dataset(self, pipeline, config, schema_artifact, context):
+    rows = [
+        {"Month": "Jan-25", "documents_sent": 120, "pct_in_4h": 0.92},
+    ]
+    return DatasetArtifact(value=rows, filename="documents_sent.data.json")
+```
+
+When `artefact_dir` is set (CLI dest or pack run), the pipeline writes:
+
+- `*.data.json` based on `DatasetArtifact.filename` (builder default: `<slug>.data.json`).
+- `*.dax` for each plan in `DatasetArtifact.plans`, including those produced by `MetricDatasetBuilder`.

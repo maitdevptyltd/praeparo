@@ -13,6 +13,8 @@ from praeparo.models.cartesian import AxisConfig, CartesianSeriesConfig, Categor
 from praeparo.visuals.context_models import VisualContextModel
 from praeparo.visuals.dax_context import DAXContextModel
 from praeparo.visuals.metrics import VisualMetricConfig
+from praeparo.pipeline.registry import DatasetArtifact
+from praeparo.dax import DaxQueryPlan
 
 
 def _write_metric(path: Path) -> None:
@@ -223,3 +225,18 @@ def test_mock_series_profiles_affect_values(tmp_path: Path) -> None:
             values.append(float(raw))
     assert values
     assert values[0] > values[-1]
+
+
+def test_builder_to_dataset_artifact_wraps_plan_and_rows(tmp_path: Path) -> None:
+    builder = _builder(tmp_path)
+    builder.use_mock(True)
+    builder.metric("documents_sent", alias="total")
+
+    artifact = builder.to_dataset_artifact()
+
+    assert isinstance(artifact, DatasetArtifact)
+    assert isinstance(artifact.value, list)
+    assert artifact.value
+    assert artifact.plans
+    assert isinstance(artifact.plans[0], DaxQueryPlan)
+    assert isinstance(artifact.plans[0].statement, str)

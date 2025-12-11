@@ -8,9 +8,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Mapping, MutableMapping, Sequence
 
+from praeparo.dax import DaxQueryPlan
 from praeparo.datasources import DataSourceConfigError, ResolvedDataSource, resolve_datasource
 from praeparo.metrics import MetricDaxBuilder, load_metric_catalog
 from praeparo.powerbi import PowerBIClient, PowerBISettings
+from praeparo.pipeline.registry import DatasetArtifact
 from praeparo.visuals.dax import expressions as dax_expressions
 from praeparo.visuals.dax import (
     DEFAULT_MEASURE_TABLE,
@@ -269,6 +271,37 @@ class MetricDatasetBuilder:
     async def ato_df(self):  # pragma: no cover
         result = await self.aexecute()
         return result.to_dataframe()
+
+    def to_dataset_artifact(
+        self,
+        filename: str | None = None,
+    ) -> DatasetArtifact[list[dict[str, object]]]:
+        """Execute the builder plan and wrap it as a DatasetArtifact.
+
+        Python visuals can return a MetricDatasetBuilder directly; this helper
+        converts the compiled plan and executed rows into the artifact shape
+        expected by the visual pipeline so JSON datasets and .dax plans are
+        emitted alongside other outputs.
+        """
+
+        plan = self.plan()
+        rows = self.execute()
+
+        define_block = "\n".join(plan.define_blocks) if plan.define_blocks else None
+        dax_plan = DaxQueryPlan(
+            statement=plan.statement,
+            rows=tuple(),
+            values=tuple(),
+            define=define_block,
+        )
+
+        dataset_filename = filename or f"{plan.slug}.data.json"
+
+        return DatasetArtifact(
+            value=rows,
+            filename=dataset_filename,
+            plans=[dax_plan],
+        )
 
     # ------------------------------------------------------------------
     # Internal helpers
