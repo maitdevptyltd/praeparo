@@ -6,6 +6,7 @@ from pathlib import Path
 import sys
 from typing import Any, Dict, Mapping, cast
 
+import plotly.graph_objects as go
 import pytest
 
 import praeparo.cli as cli
@@ -1151,7 +1152,8 @@ def test_pack_cli_pptx_only_restitch(monkeypatch, tmp_path, capsys) -> None:
     assert captured["run_pack_called"] is False
     assert captured["output_root"] == artefacts_dir
     assert captured["result_file"] == result_path
-    assert captured["metadata"].get("result_file") == result_path
+    metadata = cast(Mapping[str, object], captured["metadata"])
+    assert metadata.get("result_file") == result_path
     assert captured["revision_strategy"] == "minor"
     out = capsys.readouterr().out
     assert "Restitched PPTX" in out
@@ -1293,3 +1295,44 @@ def test_pack_cli_without_partial_re_raises(monkeypatch, tmp_path, capsys) -> No
     assert exc.value.code == 2
     err = capsys.readouterr().err
     assert "Power BI slide(s) failed" in err
+
+
+def test_pack_cli_runs_python_visual(tmp_path: Path, monkeypatch) -> None:
+    fixture_path = Path(__file__).parent / "fixtures" / "python_visuals" / "pack_python_visual.py"
+    visual_path = tmp_path / "visuals" / "pack_python_visual.py"
+    visual_path.parent.mkdir(parents=True, exist_ok=True)
+    visual_path.write_text(fixture_path.read_text(encoding="utf-8"), encoding="utf-8")
+
+    pack_path = tmp_path / "pack.yaml"
+    pack_path.write_text(
+        "\n".join(
+            [
+                "schema: test-pack",
+                "context:",
+                "  title: Demo",
+                "slides:",
+                "  - title: Python Visual Slide",
+                "    template: full_page_image",
+                f"    visual:",
+                f"      ref: visuals/pack_python_visual.py",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    def fake_write_image(self, output_path, *, scale=2.0, **_: object) -> None:
+        Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+        Path(output_path).write_bytes(b"PNG")
+
+    monkeypatch.setattr(go.Figure, "write_image", fake_write_image, raising=False)
+
+    dest = tmp_path / "outputs"
+    argv = ["pack", "run", str(pack_path), str(dest), "--data-mode", "mock"]
+
+    with pytest.raises(SystemExit) as exc:
+        cli_main(argv)
+
+    assert exc.value.code == 0
+    artefact_dir = dest / "_artifacts"
+    expected_png = artefact_dir / "[01]_python_visual_slide.png"
+    assert expected_png.exists()

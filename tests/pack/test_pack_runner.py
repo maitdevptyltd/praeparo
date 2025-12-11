@@ -8,10 +8,11 @@ import time
 from pathlib import Path
 from typing import Any, Dict, Mapping, Tuple, cast
 
+import plotly.graph_objects as go
 import pytest
 from pydantic import ValidationError, model_validator
 from pptx import Presentation
-from pptx.enum.shapes import MSO_SHAPE_TYPE, PP_PLACEHOLDER
+from pptx.enum.shapes import MSO_SHAPE_TYPE, PP_PLACEHOLDER  # type: ignore[attr-defined]
 from pptx.util import Inches
 from PIL import Image
 
@@ -20,7 +21,7 @@ from praeparo.pack.filters import merge_odata_filters
 from praeparo.pack.loader import load_pack_config
 from praeparo.pack.runner import PackPowerBIFailure, restitch_pack_pptx, run_pack
 from praeparo.pack.templating import create_pack_jinja_env, render_value
-from praeparo.pipeline import PipelineOptions, VisualExecutionResult, VisualPipeline
+from praeparo.pipeline import PipelineOptions, VisualExecutionResult, VisualPipeline, build_default_query_planner_provider
 from praeparo.pipeline.outputs import OutputKind, PipelineOutputArtifact
 from praeparo.visuals.dax.planner_core import slugify
 from praeparo.visuals import VisualContextModel, register_visual_type
@@ -141,7 +142,7 @@ def _write_coloured_png(path: Path, colour: tuple[int, int, int, int] = (255, 0,
 def _picture_filenames_by_name(slide) -> dict[str, str]:
     names: dict[str, str] = {}
     for shape in slide.shapes:
-        if shape.shape_type != MSO_SHAPE_TYPE.PICTURE:
+        if shape.shape_type != MSO_SHAPE_TYPE.PICTURE:  # type: ignore[attr-defined]
             continue
         name = getattr(shape, "name", None)
         if not name:
@@ -156,7 +157,7 @@ def _picture_filenames_by_name(slide) -> dict[str, str]:
 def _picture_blobs_by_name(slide) -> dict[str, bytes]:
     blobs: dict[str, bytes] = {}
     for shape in slide.shapes:
-        if shape.shape_type != MSO_SHAPE_TYPE.PICTURE:
+        if shape.shape_type != MSO_SHAPE_TYPE.PICTURE:  # type: ignore[attr-defined]
             continue
         name = getattr(shape, "name", None)
         if not name:
@@ -1092,7 +1093,9 @@ def test_run_pack_builds_pptx_with_template_only_slide(tmp_path: Path) -> None:
     deck = Presentation(result_path)
     assert len(deck.slides) == 3
     template_only_slide = deck.slides[2]
-    pictures = [shape for shape in template_only_slide.shapes if shape.shape_type == MSO_SHAPE_TYPE.PICTURE]
+    pictures = [
+        shape for shape in template_only_slide.shapes if shape.shape_type == MSO_SHAPE_TYPE.PICTURE  # type: ignore[attr-defined]
+    ]
     assert pictures
 
 
@@ -1267,6 +1270,55 @@ def test_pack_models_validate_static_image_rules() -> None:
 
     with pytest.raises(ValidationError):
         PackSlide(title="Image With Visual", template="single", visual=PackVisualRef(ref="one.yaml"), image="logo.png")
+
+
+def test_run_pack_supports_python_visual_ref(tmp_path: Path, monkeypatch) -> None:
+    fixture_path = Path(__file__).parent.parent / "fixtures" / "python_visuals" / "pack_python_visual.py"
+    python_visual_path = tmp_path / "visuals" / "pack_python_visual.py"
+    python_visual_path.parent.mkdir(parents=True, exist_ok=True)
+    python_visual_path.write_text(fixture_path.read_text(encoding="utf-8"), encoding="utf-8")
+
+    pack_path = tmp_path / "pack.yaml"
+    pack_path.write_text("", encoding="utf-8")
+
+    pack = PackConfig(
+        schema="test-pack",
+        context={"title": "Demo"},
+        slides=[
+            PackSlide(
+                title="Python Visual Slide",
+                template="full_page_image",
+                visual=PackVisualRef(ref=str(python_visual_path)),
+            )
+        ],
+    )
+
+    captured: dict[str, object] = {}
+
+    def fake_write_image(self, output_path, *, scale=2.0, **_: object) -> None:
+        Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+        Path(output_path).write_bytes(b"PNG")
+        captured["scale"] = scale
+
+    monkeypatch.setattr(go.Figure, "write_image", fake_write_image, raising=False)
+
+    output_root = tmp_path / "artefacts"
+    pipeline = VisualPipeline(planner_provider=build_default_query_planner_provider())
+
+    results = run_pack(
+        pack_path,
+        pack,
+        output_root=output_root,
+        base_options=PipelineOptions(),
+        pipeline=pipeline,
+        env=create_pack_jinja_env(),
+    )
+
+    assert results
+    expected_png = output_root / "[01]_python_visual_slide.png"
+    assert expected_png.exists()
+    assert results[0].png_path == expected_png
+    assert captured.get("scale") == 2.0
 
 
 def test_restitch_pack_pptx_honours_templated_titles(tmp_path: Path) -> None:

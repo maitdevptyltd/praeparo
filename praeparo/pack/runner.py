@@ -20,10 +20,14 @@ from praeparo.pipeline import (
     OutputKind,
     OutputTarget,
     PipelineOptions,
+    PythonVisualBase,
     VisualExecutionResult,
     VisualPipeline,
+    PYTHON_VISUAL_TYPE,
     build_default_query_planner_provider,
+    register_visual_pipeline,
 )
+from praeparo.pipeline.python_visual_loader import load_python_visual
 from praeparo.visuals.dax.planner_core import slugify
 from praeparo.io.yaml_loader import load_visual_config
 from praeparo.visuals.context import merge_context_payload, resolve_dax_context
@@ -164,6 +168,34 @@ def _instantiate_slide_context(
     raw_context["dax"] = {"calculate": calculate_filters, "define": define_blocks}
 
     return context_model.model_validate(raw_context)
+
+
+def _instantiate_python_visual_context(
+    *,
+    visual: PythonVisualBase,
+    metadata: Mapping[str, object],
+) -> VisualContextModel:
+    """Instantiate the declared Python visual context model from pack metadata."""
+
+    raw_context: dict[str, object] = dict(metadata or {})
+
+    metrics_root = raw_context.get("metrics_root")
+    if isinstance(metrics_root, (str, Path)):
+        resolved_root = Path(metrics_root)
+        raw_context["metrics_root"] = resolved_root.expanduser().resolve(strict=False)
+
+    context_payload = raw_context.get("context")
+    if isinstance(context_payload, Mapping):
+        raw_context["context"] = dict(context_payload)
+
+    calculate_filters, define_blocks = resolve_dax_context(
+        base=context_payload if isinstance(context_payload, Mapping) else None,
+        calculate=None,
+        define=None,
+    )
+    raw_context["dax"] = {"calculate": calculate_filters, "define": define_blocks}
+
+    return visual.context_model.model_validate(raw_context)
 
 
 def _should_run_slide(slide: PackSlide, *, only: set[str] | None) -> bool:
@@ -381,7 +413,16 @@ def run_pack(
             target_map: dict[str, Path],
         ) -> None:
             visual_path = (pack_path.parent / visual_ref).resolve()
-            visual = visual_loader(visual_path)
+            is_python_visual = visual_path.suffix.lower() == ".py"
+
+            python_visual: PythonVisualBase | None = None
+            if is_python_visual:
+                python_visual = load_python_visual(visual_path, class_name=None)
+                definition = python_visual.to_definition()
+                register_visual_pipeline(PYTHON_VISUAL_TYPE, definition, overwrite=True)
+                visual = python_visual.to_config()
+            else:
+                visual = visual_loader(visual_path)
 
             merged_filters = merge_odata_filters(rendered_global_filters, _render_filters(filters))
             calculate_filters = merge_calculate_filters(rendered_global_calculate, _render_filters(calculate))
@@ -454,12 +495,18 @@ def run_pack(
                     },
                 )
 
-            registration = get_visual_registration(visual.type)
-            visual_context = _instantiate_slide_context(
-                registration=registration,
-                metadata=options.metadata,
-                project_root=pack_path.parent,
-            )
+            if is_python_visual and python_visual is not None:
+                visual_context = _instantiate_python_visual_context(
+                    visual=python_visual,
+                    metadata=options.metadata,
+                )
+            else:
+                registration = get_visual_registration(visual.type)
+                visual_context = _instantiate_slide_context(
+                    registration=registration,
+                    metadata=options.metadata,
+                    project_root=pack_path.parent,
+                )
 
             execution_context = ExecutionContext(
                 config_path=visual_path,

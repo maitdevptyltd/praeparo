@@ -89,6 +89,27 @@ praeparo visuals/my_visual.py ./exports/
 praeparo visual run visuals/my_visual.py ./exports/report.png
 ```
 
+## Using Python visuals in packs
+
+Pack slides can point `visual.ref` directly at a Python module:
+
+```yaml
+slides:
+  - title: "Documents Sent"
+    template: "full_page_image"
+    visual:
+      ref: ./visuals/dashboard/documents_sent.py
+```
+
+When a `visual.ref` ends with `.py`, Praeparo:
+
+- Imports the module and locates the first (or specified) `PythonVisualBase` subclass.
+- Registers its `python` pipeline definition via `visual.to_definition()`.
+- Builds a `BaseVisualConfig` with `visual.to_config()` and executes it through the standard `VisualPipeline`.
+- Instantiates the visual’s `context_model` from the pack metadata (including merged `context`/`calculate`/`define` payloads) so size hints and DAX filters flow through unchanged.
+
+Refs ending in `.yaml` / `.yml` keep the existing YAML visual behaviour. Packs can mix YAML and Python visuals freely on different slides and placeholders.
+
 ## Notes
 
 - The base class auto-registers a transient `python` pipeline definition per run; existing YAML visuals are unaffected.
