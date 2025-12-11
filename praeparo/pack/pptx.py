@@ -73,10 +73,28 @@ def _picture_shapes(slide) -> list:
 
 def _replace_picture(shape, image_path: Path) -> None:
     slide = shape.part.slide
-    left, top, width, height = shape.left, shape.top, shape.width, shape.height
+    box_left, box_top, box_width, box_height = shape.left, shape.top, shape.width, shape.height
     name = getattr(shape, "name", None)
     shape._element.getparent().remove(shape._element)
-    pic = slide.shapes.add_picture(str(image_path), left, top, width=width, height=height)
+
+    pic = slide.shapes.add_picture(str(image_path), box_left, box_top)
+
+    img_width, img_height = pic.width, pic.height
+    if not img_width or not img_height or not box_width or not box_height:
+        pic.left = box_left
+        pic.top = box_top
+        pic.width = box_width
+        pic.height = box_height
+    else:
+        scale = min(box_width / img_width, box_height / img_height)
+        new_width = int(img_width * scale)
+        new_height = int(img_height * scale)
+
+        pic.width = new_width
+        pic.height = new_height
+        pic.left = box_left + (box_width - new_width) // 2
+        pic.top = box_top + (box_height - new_height) // 2
+
     if name:
         pic.name = name
 

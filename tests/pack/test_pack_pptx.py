@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-import base64
 from pathlib import Path
+import struct
+import zlib
 
 from pptx import Presentation
 from pptx.enum.shapes import MSO_SHAPE_TYPE
@@ -12,13 +13,22 @@ from praeparo.models import PackConfig, PackPlaceholder, PackSlide, PackVisualRe
 from praeparo.visuals.dax.planner_core import slugify
 
 
-def _write_png(path: Path) -> None:
-    # 1x1 transparent PNG
-    data = base64.b64decode(
-        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAE"
-        "AAL/AXx5lXcAAAAASUVORK5CYII="
-    )
-    path.write_bytes(data)
+def _write_png(path: Path, width: int = 1, height: int = 1) -> None:
+    """Write a solid-colour PNG of the requested dimensions (no external deps)."""
+
+    raw_rows = [b"\x00" + b"\x00" * (width * 3) for _ in range(height)]
+    raw = b"".join(raw_rows)
+    compressed = zlib.compress(raw)
+
+    def chunk(tag: bytes, payload: bytes) -> bytes:
+        return struct.pack(">I", len(payload)) + tag + payload + struct.pack(">I", zlib.crc32(tag + payload) & 0xFFFFFFFF)
+
+    signature = b"\x89PNG\r\n\x1a\n"
+    ihdr = chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
+    idat = chunk(b"IDAT", compressed)
+    iend = chunk(b"IEND", b"")
+
+    path.write_bytes(signature + ihdr + idat + iend)
 
 
 def _build_template(path: Path) -> None:
@@ -82,6 +92,63 @@ def test_assemble_pptx_single_placeholder_shorthand(tmp_path: Path) -> None:
     picture_shapes = [s for s in prs.slides[0].shapes if s.shape_type == MSO_SHAPE_TYPE.PICTURE]
     assert picture_shapes  # image placed
     assert prs.slides[0].slide_layout.name == template_layout_name
+
+
+def test_replace_picture_fits_and_centers(tmp_path: Path) -> None:
+    template_path = tmp_path / "template.pptx"
+    _build_template(template_path)
+
+    template_prs = Presentation(template_path)
+    placeholder = next(shape for shape in template_prs.slides[0].shapes if shape.name == "image")
+    box_left, box_top, box_width, box_height = placeholder.left, placeholder.top, placeholder.width, placeholder.height
+
+    pack = PackConfig(
+        schema="test-pack",
+        slides=[
+            PackSlide(
+                title="With Template",
+                id="with_template",
+                template="single_image",
+                visual=PackVisualRef(ref="vis.yaml"),
+            )
+        ],
+    )
+
+    slide_slug = slugify("with_template")
+    png_path = tmp_path / f"{slide_slug}.png"
+    _write_png(png_path, width=400, height=100)  # wide image to test fitting
+
+    out = tmp_path / "deck.pptx"
+    assemble_pack_pptx(
+        pack=pack,
+        results=[],
+        slide_pngs={slide_slug: png_path},
+        placeholder_pngs={},
+        result_path=out,
+        template_path=template_path,
+    )
+
+    prs = Presentation(out)
+    picture_shapes = [s for s in prs.slides[0].shapes if s.shape_type == MSO_SHAPE_TYPE.PICTURE]
+    assert len(picture_shapes) == 1
+
+    pic = picture_shapes[0]
+    ratio = pic.width / pic.height
+    original_ratio = 400 / 100
+    assert abs(ratio / original_ratio - 1.0) < 0.01
+
+    assert pic.width <= box_width
+    assert pic.height <= box_height
+
+    left_gap = pic.left - box_left
+    top_gap = pic.top - box_top
+    right_gap = box_left + box_width - (pic.left + pic.width)
+    bottom_gap = box_top + box_height - (pic.top + pic.height)
+
+    assert left_gap >= 0 and top_gap >= 0
+    assert right_gap >= 0 and bottom_gap >= 0
+    assert abs(left_gap - right_gap) <= 10
+    assert abs(top_gap - bottom_gap) <= 10
 
 
 def test_assemble_pptx_multi_placeholder_and_skip_no_template(tmp_path: Path) -> None:
