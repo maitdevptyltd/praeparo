@@ -205,6 +205,16 @@ def _resolve_default_template(pack_path: Path) -> Path | None:
     return None
 
 
+def _render_slide_metadata(*, pack: PackConfig, env: Environment, context: Mapping[str, object]) -> None:
+    """Apply Jinja templating to slide-level metadata so downstream consumers see rendered text."""
+
+    for slide in pack.slides:
+        if slide.title:
+            slide.title = render_value(slide.title, env=env, context=context)
+        if slide.notes:
+            slide.notes = render_value(slide.notes, env=env, context=context)
+
+
 def run_pack(
     pack_path: Path,
     pack: PackConfig,
@@ -227,6 +237,7 @@ def run_pack(
     rendered_global_filters = render_value(pack.filters, env=jinja_env, context=context_payload)
     rendered_global_calculate = render_value(pack.calculate, env=jinja_env, context=context_payload)
     rendered_define = render_value(pack.define, env=jinja_env, context=context_payload)
+    _render_slide_metadata(pack=pack, env=jinja_env, context=context_payload)
     visual_context_base: dict[str, object] = {}
     if context_payload:
         for key, value in context_payload.items():

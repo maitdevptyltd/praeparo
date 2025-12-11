@@ -203,6 +203,89 @@ def _build_pack_template(path: Path) -> None:
     tmp_img.unlink(missing_ok=True)
 
 
+def _build_title_template(path: Path, template_tag: str = "title_only") -> None:
+    prs = Presentation()
+    title_slide = prs.slides.add_slide(prs.slide_layouts[0])
+    title_slide.shapes.title.text = "Template Title"
+    title_slide.notes_slide.notes_text_frame.text = f"TEMPLATE_TAG={template_tag}"
+    prs.save(path)
+
+
+def test_run_pack_templates_slide_metadata(tmp_path: Path) -> None:
+    pack_path = tmp_path / "pack.yaml"
+    pack_path.write_text("", encoding="utf-8")
+
+    pack = PackConfig(
+        schema="test-pack",
+        context={"customer": "AMP"},
+        slides=[
+            PackSlide(
+                title="{{customer}} Dashboard",
+                notes="Welcome, {{customer}}",
+                visual=PackVisualRef(ref="one.yaml"),
+            )
+        ],
+    )
+
+    visuals: Dict[str, BaseVisualConfig] = {"one.yaml": BaseVisualConfig(type="matrix")}
+
+    def _loader(path: Path, payload: Mapping[str, object] | None = None, stack: tuple[Path, ...] = ()) -> BaseVisualConfig:
+        return visuals[path.name]
+
+    pipeline = _StubPipeline()
+    results = run_pack(
+        pack_path,
+        pack,
+        output_root=tmp_path / "artefacts",
+        base_options=PipelineOptions(),
+        visual_loader=_loader,
+        pipeline=cast(VisualPipeline[Any], pipeline),
+        env=create_pack_jinja_env(),
+    )
+
+    slide = pack.slides[0]
+    assert slide.title == "AMP Dashboard"
+    assert slide.notes == "Welcome, AMP"
+
+    png_paths = {result.png_path for result in results if result.png_path}
+    assert (tmp_path / "artefacts" / "[01]_amp_dashboard.png") in png_paths
+
+
+def test_run_pack_templates_slide_title_for_pptx(tmp_path: Path) -> None:
+    pack_path = tmp_path / "pack.yaml"
+    pack_path.write_text("", encoding="utf-8")
+
+    template_path = tmp_path / "title_template.pptx"
+    _build_title_template(template_path, template_tag="title_only")
+    result_path = tmp_path / "deck" / "rendered_title.pptx"
+
+    pack = PackConfig(
+        schema="test-pack",
+        context={"customer": "AMP"},
+        slides=[
+            PackSlide(
+                title="{{customer}} Dashboard",
+                template="title_only",
+            )
+        ],
+    )
+
+    pipeline = _StubPipeline()
+    base_options = PipelineOptions(metadata={"result_file": result_path, "pptx_template": template_path})
+    run_pack(
+        pack_path,
+        pack,
+        output_root=tmp_path / "artefacts",
+        base_options=base_options,
+        pipeline=cast(VisualPipeline[Any], pipeline),
+        env=create_pack_jinja_env(),
+    )
+
+    deck = Presentation(result_path)
+    assert deck.slides
+    assert deck.slides[0].shapes.title.text == "AMP Dashboard"
+
+
 def test_run_pack_names_outputs_with_ordinal_prefix(tmp_path: Path) -> None:
     pack_path = tmp_path / "pack.yaml"
     pack_path.write_text("", encoding="utf-8")
