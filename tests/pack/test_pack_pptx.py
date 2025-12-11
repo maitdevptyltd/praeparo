@@ -49,6 +49,8 @@ def test_assemble_pptx_single_placeholder_shorthand(tmp_path: Path) -> None:
     template_path = tmp_path / "template.pptx"
     _build_template(template_path)
 
+    template_layout_name = Presentation(template_path).slides[0].slide_layout.name
+
     pack = PackConfig(
         schema="test-pack",
         slides=[
@@ -79,6 +81,7 @@ def test_assemble_pptx_single_placeholder_shorthand(tmp_path: Path) -> None:
     assert len(prs.slides) == 1
     picture_shapes = [s for s in prs.slides[0].shapes if s.shape_type == MSO_SHAPE_TYPE.PICTURE]
     assert picture_shapes  # image placed
+    assert prs.slides[0].slide_layout.name == template_layout_name
 
 
 def test_assemble_pptx_multi_placeholder_and_skip_no_template(tmp_path: Path) -> None:

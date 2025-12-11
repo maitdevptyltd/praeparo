@@ -43,10 +43,9 @@ def _clear_slides(presentation: Presentation) -> None:
 def _clone_slide(presentation: Presentation, template_slide) -> object:
     """Clone *template_slide* into *presentation* preserving shapes."""
 
-    blank_layout = presentation.slide_layouts[0]
-    new_slide = presentation.slides.add_slide(blank_layout)
+    new_slide = presentation.slides.add_slide(template_slide.slide_layout)
 
-    # Drop any shapes added by the blank layout so the clone matches the template.
+    # Drop any shapes added by the layout so the clone matches the template.
     for shape in list(new_slide.shapes):
         new_slide.shapes._spTree.remove(shape._element)  # type: ignore[attr-defined]
 
@@ -99,6 +98,21 @@ def _notes_template_tags(presentation: Presentation) -> dict[str, object]:
     return tags
 
 
+def _delete_template_slides(presentation: Presentation) -> None:
+    """Remove slides tagged as templates using the private slide id list."""
+
+    xml_slides = presentation.slides._sldIdLst  # type: ignore[attr-defined]
+    slides = list(presentation.slides)
+
+    for index, slide in reversed(list(enumerate(slides))):
+        try:
+            text = slide.notes_slide.notes_text_frame.text
+        except Exception:
+            continue
+        if text and "TEMPLATE_TAG=" in text:
+            xml_slides.remove(xml_slides[index])
+
+
 def assemble_pack_pptx(
     *,
     pack: PackConfig,
@@ -115,12 +129,12 @@ def assemble_pack_pptx(
 
     placeholder_pngs = placeholder_pngs or {}
 
-    presentation = Presentation()
-
-    template_lookup: Mapping[str, object] = {}
-    template_source = Presentation(template_path) if template_path else None
-    if template_source:
-        template_lookup = _notes_template_tags(template_source)
+    if template_path:
+        presentation = Presentation(template_path)
+        template_lookup: Mapping[str, object] = _notes_template_tags(presentation)
+    else:
+        presentation = Presentation()
+        template_lookup = {}
 
     def _lookup_placeholder(slide_slug: str, placeholder_id: str) -> Path | None:
         placeholders = placeholder_pngs.get(slide_slug, {})
@@ -191,6 +205,8 @@ def assemble_pack_pptx(
             )
 
     result_path.parent.mkdir(parents=True, exist_ok=True)
+    if template_path:
+        _delete_template_slides(presentation)
     presentation.save(result_path)
     logger.info(
         "Wrote PPTX",
