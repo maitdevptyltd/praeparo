@@ -15,11 +15,16 @@ import logging
 from pathlib import Path
 from typing import Iterable, Mapping, Sequence
 
+from jinja2 import Environment
+
 from pptx import Presentation
 from pptx.enum.shapes import MSO_SHAPE_TYPE, PP_PLACEHOLDER
+from pptx.shapes.group import GroupShape
 import pptx.shapes.picture as pptx_picture
+from pptx.text.text import _Run
 
 from praeparo.models import PackConfig, PackSlide
+from praeparo.pack.templating import create_pack_jinja_env
 from praeparo.visuals.dax.planner_core import slugify
 
 
@@ -158,6 +163,63 @@ def _delete_template_slides(presentation: Presentation) -> None:
             xml_slides.remove(xml_slides[index])
 
 
+def _iter_shapes(shapes) -> Iterable[object]:
+    """Yield every shape in *shapes*, descending into nested group shapes."""
+
+    for shape in shapes:
+        yield shape
+        if isinstance(shape, GroupShape):
+            yield from _iter_shapes(shape.shapes)
+
+
+def _render_jinja_in_slide(
+    slide,
+    env: Environment,
+    context: Mapping[str, object],
+) -> None:
+    """Render any Jinja placeholders found in text runs across the slide.
+
+    The rendering is deliberately conservative: only runs containing ``{{`` are
+    touched, runs outside a template remain unchanged, and multi-run templates
+    are recombined before rendering to preserve formatting for surrounding text.
+    """
+
+    for shape in _iter_shapes(slide.shapes):
+        if not getattr(shape, "has_text_frame", False):
+            continue
+
+        text_frame = shape.text_frame
+        if text_frame is None:
+            continue
+
+        for paragraph in text_frame.paragraphs:
+            runs: list[_Run] = list(paragraph.runs)
+            i = 0
+            while i < len(runs):
+                text = runs[i].text
+                if "{{" not in text:
+                    i += 1
+                    continue
+
+                fragment = text
+                j = i
+                while "}}" not in fragment and j + 1 < len(runs):
+                    j += 1
+                    fragment += runs[j].text
+
+                if "}}" not in fragment:
+                    i = j + 1
+                    continue
+
+                rendered = env.from_string(fragment).render(**context)
+                runs[i].text = rendered
+
+                for k in range(i + 1, j + 1):
+                    runs[k].text = ""
+
+                i = j + 1
+
+
 def assemble_pack_pptx(
     *,
     pack: PackConfig,
@@ -173,6 +235,11 @@ def assemble_pack_pptx(
     """
 
     placeholder_pngs = placeholder_pngs or {}
+
+    jinja_env = create_pack_jinja_env()
+    context_payload: dict[str, object] = {}
+    if pack.context:
+        context_payload.update(dict(pack.context))
 
     if template_path:
         presentation = Presentation(template_path)
@@ -211,6 +278,17 @@ def assemble_pack_pptx(
                         break
                 except ValueError:
                     continue
+
+        slide_context: dict[str, object] = dict(context_payload)
+        slide_context.update(
+            {
+                "title": slide.title,
+                "slide_index": index,
+                "slide_id": slide.id,
+                "slide_slug": slide_slug,
+            }
+        )
+        _render_jinja_in_slide(cloned, jinja_env, slide_context)
 
         has_placeholders = bool(slide.placeholders)
         has_visual = slide.visual is not None
