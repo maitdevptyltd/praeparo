@@ -124,6 +124,9 @@ Key flags:
 
 - `pack run <path>` – path to the pack YAML. Can be absolute or relative to the
   current working directory.
+- `--project-root` – override the project root used for metrics/datasources discovery
+  and default build paths. Defaults to the current working directory. When a slide’s
+  visual declares a typed context model, its `metrics_root` still takes precedence.
 - `--artefact-dir` – root directory for pack artefacts:
   - PNGs are written as `<artefact-dir>/[NN]_<slide-slug>.png` where `NN` is
     the 1-based slide position padded to two digits.

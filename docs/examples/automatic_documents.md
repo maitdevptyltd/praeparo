@@ -81,7 +81,7 @@ poetry run praeparo examples/automatic_documents/visuals/automatic_documents.yam
 
 - Loader + resolver now handle standalone Power BI datasource YAML files.
 - Converted the former integration visual into an example project with a single `default` Power BI descriptor.
-- CLI discovers project roots, defaults HTML output paths, and honours per-visual datasource references.
+- CLI defaults project roots to the current working directory (override with `--project-root`), defaults HTML output paths, and honours per-visual datasource references.
 - VS Code launch profile wires the CLI into the example workflow.
 - Example visual demonstrates the `calculate:` block with a default trailing 12-month reporting window.
 

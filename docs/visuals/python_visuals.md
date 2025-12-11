@@ -66,6 +66,7 @@ praeparo python-visual run visuals/my_visual.py \
 CLI behaviour matches YAML visuals:
 
 - Context flags (`--context`, `--calculate`, `--define`, `--metrics-root`, `--grain`, `--seed`, `--scenario`) populate the typed `ReportContext`.
+- `--project-root` overrides the project root used for fallback discovery and default build paths when running from outside a project. Typed context models still prefer their own `metrics_root` (defaulting to `<cwd>/registry/metrics`) unless you pass `--metrics-root`.
 - Outputs are driven by `--output-html` / `--output-png` (HTML defaults to `build/<module>.html` if omitted).
 - The pipeline still discovers datasources/metrics roots and populates `ExecutionContext.dataset_context`, so you can plug in `MetricDatasetBuilder` if desired.
 - When a module exports multiple visuals, pick one with `--visual-class MyVisual`.

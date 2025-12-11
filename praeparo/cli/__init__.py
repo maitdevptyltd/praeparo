@@ -87,16 +87,17 @@ def _configure_logging(log_level: str | None) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _project_root_for(path: Path) -> Path | None:
-    current = path.parent
-    while True:
-        if current.name == "visuals":
-            return current.parent
-        if (current / "visuals").is_dir():
-            return current
-        if current.parent == current:
-            return None
-        current = current.parent
+def _resolve_project_root(override: Path | None) -> Path:
+    """Resolve the project root for discovery and default outputs.
+
+    Prefer explicit overrides supplied via the CLI; otherwise default to the
+    current working directory. Callers rely on this to keep pack and visual
+    execution consistent.
+    """
+
+    if override is not None:
+        return override.expanduser().resolve(strict=False)
+    return Path.cwd().resolve()
 
 
 def _default_output_path(config_path: Path, project_root: Path | None, extension: str) -> Path:
@@ -120,6 +121,15 @@ def _build_common_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("config", type=Path, help="Path to the visual YAML file.")
     _add_plugin_argument(parser)
+    parser.add_argument(
+        "--project-root",
+        dest="project_root",
+        type=Path,
+        help=(
+            "Override the project root used for metrics/datasources discovery and default build paths. "
+            "Defaults to the current working directory."
+        ),
+    )
     parser.add_argument(
         "--artefact-dir",
         type=Path,
@@ -464,6 +474,15 @@ def _register_pack_parsers(parent: argparse._SubParsersAction[argparse.ArgumentP
         "--scenario",
         dest="scenario",
         help="Mock scenario key defined in the visual configuration.",
+    )
+    run_parser.add_argument(
+        "--project-root",
+        dest="project_root",
+        type=Path,
+        help=(
+            "Override the project root used for metrics/datasources discovery and default build paths. "
+            "Defaults to the current working directory."
+        ),
     )
     run_parser.add_argument(
         "--metrics-root",
@@ -1007,7 +1026,7 @@ def _build_pipeline_options(args: argparse.Namespace, metadata: Mapping[str, obj
 
 def _collect_output_targets(args: argparse.Namespace) -> list[OutputTarget]:
     targets: list[OutputTarget] = []
-    project_root = _project_root_for(args.config)
+    project_root = _resolve_project_root(getattr(args, "project_root", None))
     html_path = args.output_html or _default_output_path(args.config, project_root, "html")
     targets.append(OutputTarget.html(html_path))
     if args.output_png is not None:
@@ -1070,7 +1089,7 @@ def _execute_pipeline(
     options: PipelineOptions,
     registration: VisualTypeRegistration | None,
 ) -> VisualExecutionResult:
-    project_root = _project_root_for(args.config)
+    project_root = _resolve_project_root(getattr(args, "project_root", None))
     planner_provider = build_default_query_planner_provider()
     visual_context = _instantiate_visual_context(
         args=args,
@@ -1122,7 +1141,7 @@ def _handle_python_visual_run(args: argparse.Namespace) -> int:
     metadata = _prepare_metadata(args, cli=None)
     options = _build_pipeline_options(args, metadata, include_outputs=True)
 
-    project_root = _project_root_for(args.config)
+    project_root = _resolve_project_root(getattr(args, "project_root", None))
     visual_context = _instantiate_context_model(
         args=args,
         context_model=visual.context_model,
@@ -1261,11 +1280,14 @@ def _handle_pack_run(args: argparse.Namespace) -> int:
     pipeline = VisualPipeline(planner_provider=build_default_query_planner_provider())
     slide_filter = tuple(args.slides or [])
 
+    project_root = _resolve_project_root(getattr(args, "project_root", None))
+
     partial_failure = False
     try:
         results = run_pack(
             args.pack,
             pack,
+            project_root=project_root,
             output_root=args.artefact_dir,
             max_powerbi_concurrency=max_pbi_concurrency,
             base_options=options,
@@ -1410,7 +1432,7 @@ def _handle_visual_dax(args: argparse.Namespace) -> int:
     metadata = _prepare_metadata(args, cli_options)
     options = _build_pipeline_options(args, metadata, include_outputs=False)
 
-    project_root = _project_root_for(args.config)
+    project_root = _resolve_project_root(getattr(args, "project_root", None))
     visual_context = _instantiate_visual_context(
         args=args,
         registration=visual_registration,

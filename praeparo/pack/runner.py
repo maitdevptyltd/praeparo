@@ -299,6 +299,7 @@ def run_pack(
     pack_path: Path,
     pack: PackConfig,
     *,
+    project_root: Path,
     output_root: Path,
     max_powerbi_concurrency: int | None = None,
     base_options: PipelineOptions | None = None,
@@ -310,6 +311,7 @@ def run_pack(
     """Execute a pack and export PNGs for each visual slide."""
 
     output_root.mkdir(parents=True, exist_ok=True)
+    resolved_project_root = project_root.expanduser().resolve(strict=False)
 
     jinja_env = env or create_pack_jinja_env()
     context_payload = dict(pack.context or {})
@@ -524,12 +526,12 @@ def run_pack(
                 visual_context = _instantiate_slide_context(
                     registration=registration,
                     metadata=options.metadata,
-                    project_root=pack_path.parent,
+                    project_root=resolved_project_root,
                 )
 
             execution_context = ExecutionContext(
                 config_path=visual_path,
-                project_root=pack_path.parent,
+                project_root=resolved_project_root,
                 case_key=slide_label,
                 options=options,
                 visual_context=visual_context,

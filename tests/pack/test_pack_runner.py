@@ -71,6 +71,76 @@ def test_merge_odata_filters_supports_dict_list_and_string() -> None:
     assert inherit_global == ["base"]
 
 
+def test_run_pack_uses_project_root_for_discovery(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "registry" / "metrics").mkdir(parents=True)
+
+    config_dir = tmp_path / "configs"
+    config_dir.mkdir()
+    pack_path = config_dir / "pack.yaml"
+    pack_path.write_text("{}", encoding="utf-8")
+    visual_path = config_dir / "visual.yaml"
+    visual_path.write_text("type: dummy_pack_noctx\n", encoding="utf-8")
+
+    pack = PackConfig(
+        schema="test-pack",
+        slides=[
+            PackSlide(title="Dummy Slide", visual=PackVisualRef(ref="visual.yaml")),
+        ],
+    )
+
+    captured: Dict[str, object] = {}
+
+    def dummy_loader(path: Path, payload=None, stack=()):
+        return BaseVisualConfig(type="dummy_pack_noctx")
+
+    from praeparo.pipeline.registry import (
+        SchemaArtifact,
+        DatasetArtifact,
+        RenderOutcome,
+        VisualPipelineDefinition,
+        register_visual_pipeline,
+    )
+
+    def schema_builder(pipeline, config, context):
+        assert context.dataset_context is not None
+        captured["project_root"] = context.project_root
+        captured["metrics_root"] = context.dataset_context.metrics_root
+        return SchemaArtifact(value={})
+
+    def dataset_builder(pipeline, config, schema_artifact, context):
+        return DatasetArtifact(value={}, filename="data.json")
+
+    def renderer(pipeline, config, schema_artifact, dataset_artifact, context, outputs):
+        return RenderOutcome(outputs=[])
+
+    register_visual_type("dummy_pack_noctx", dummy_loader, overwrite=True, context_model=None)
+    register_visual_pipeline(
+        "dummy_pack_noctx",
+        VisualPipelineDefinition(
+            schema_builder=schema_builder,
+            dataset_builder=dataset_builder,
+            renderer=renderer,
+        ),
+        overwrite=True,
+    )
+
+    pipeline = VisualPipeline(planner_provider=build_default_query_planner_provider())
+    results = run_pack(
+        pack_path,
+        pack,
+        project_root=tmp_path,
+        output_root=tmp_path / "artefacts",
+        base_options=PipelineOptions(),
+        pipeline=pipeline,
+        env=create_pack_jinja_env(),
+    )
+
+    assert results
+    assert captured["project_root"] == tmp_path.resolve()
+    assert captured["metrics_root"] == (tmp_path / "registry" / "metrics").resolve()
+
+
 class _StubPipeline:
     def __init__(self) -> None:
         self.calls: list[Tuple[BaseVisualConfig, PipelineOptions]] = []
@@ -236,6 +306,7 @@ def test_run_pack_attaches_geometry_to_slide_metadata(tmp_path: Path) -> None:
     run_pack(
         pack_path,
         pack,
+        project_root=pack_path.parent,
         output_root=tmp_path / "artefacts",
         base_options=PipelineOptions(),
         visual_loader=_loader,
@@ -296,6 +367,7 @@ def test_run_pack_attaches_placeholder_geometry(tmp_path: Path) -> None:
     run_pack(
         pack_path,
         pack,
+        project_root=pack_path.parent,
         output_root=tmp_path / "artefacts",
         base_options=PipelineOptions(),
         visual_loader=_loader,
@@ -334,6 +406,7 @@ def test_run_pack_respects_cli_width_height_override(tmp_path: Path) -> None:
     run_pack(
         pack_path,
         pack,
+        project_root=pack_path.parent,
         output_root=tmp_path / "artefacts",
         base_options=overrides,
         visual_loader=_loader,
@@ -366,6 +439,7 @@ def test_run_pack_without_template_skips_geometry(tmp_path: Path) -> None:
     run_pack(
         pack_path,
         pack,
+        project_root=pack_path.parent,
         output_root=tmp_path / "artefacts",
         base_options=PipelineOptions(),
         visual_loader=_loader,
@@ -404,6 +478,7 @@ def test_run_pack_templates_slide_metadata(tmp_path: Path) -> None:
     results = run_pack(
         pack_path,
         pack,
+        project_root=pack_path.parent,
         output_root=tmp_path / "artefacts",
         base_options=PipelineOptions(),
         visual_loader=_loader,
@@ -443,6 +518,7 @@ def test_run_pack_templates_slide_title_for_pptx(tmp_path: Path) -> None:
     run_pack(
         pack_path,
         pack,
+        project_root=pack_path.parent,
         output_root=tmp_path / "artefacts",
         base_options=base_options,
         pipeline=cast(VisualPipeline[Any], pipeline),
@@ -478,6 +554,7 @@ def test_run_pack_names_outputs_with_ordinal_prefix(tmp_path: Path) -> None:
     results = run_pack(
         pack_path,
         pack,
+        project_root=pack_path.parent,
         output_root=tmp_path / "artefacts",
         base_options=PipelineOptions(),
         visual_loader=_loader,
@@ -538,6 +615,7 @@ def test_run_pack_routes_visuals_and_emits_pngs(tmp_path: Path) -> None:
     results = run_pack(
         pack_path,
         pack,
+        project_root=pack_path.parent,
         output_root=tmp_path / "artefacts",
         base_options=PipelineOptions(),
         visual_loader=_loader,
@@ -602,6 +680,7 @@ def test_run_pack_populates_typed_dax_context(tmp_path: Path) -> None:
     results = run_pack(
         pack_path,
         pack,
+        project_root=pack_path.parent,
         output_root=tmp_path / "artefacts",
         base_options=PipelineOptions(metadata={"metrics_root": "registry/metrics"}),
         visual_loader=_loader,
@@ -667,6 +746,7 @@ def test_run_pack_forwards_pack_context_into_visual_context(tmp_path: Path) -> N
     results = run_pack(
         pack_path,
         pack,
+        project_root=pack_path.parent,
         output_root=tmp_path / "artefacts",
         base_options=PipelineOptions(metadata={"metrics_root": "registry/metrics"}),
         visual_loader=_loader,
@@ -723,6 +803,7 @@ def test_run_pack_named_calculate_overrides_global(tmp_path: Path) -> None:
     run_pack(
         pack_path,
         pack,
+        project_root=pack_path.parent,
         output_root=tmp_path / "artefacts",
         base_options=PipelineOptions(),
         visual_loader=_loader,
@@ -785,6 +866,7 @@ def test_run_pack_honours_only_slides(tmp_path: Path) -> None:
     results = run_pack(
         pack_path,
         pack,
+        project_root=pack_path.parent,
         output_root=tmp_path / "artefacts",
         base_options=PipelineOptions(),
         visual_loader=_loader,
@@ -833,6 +915,7 @@ def test_run_pack_queues_powerbi_and_respects_concurrency(tmp_path: Path) -> Non
     results = run_pack(
         pack_path,
         pack,
+        project_root=pack_path.parent,
         output_root=tmp_path / "artefacts",
         base_options=PipelineOptions(),
         visual_loader=_loader,
@@ -879,6 +962,7 @@ def test_run_pack_raises_when_powerbi_job_fails(tmp_path: Path) -> None:
         run_pack(
             pack_path,
             pack,
+            project_root=pack_path.parent,
             output_root=tmp_path / "artefacts",
             base_options=PipelineOptions(),
             visual_loader=_loader,
@@ -919,6 +1003,7 @@ def test_run_pack_renders_slides_without_template(tmp_path: Path) -> None:
     results = run_pack(
         pack_path,
         pack,
+        project_root=pack_path.parent,
         output_root=tmp_path / "artefacts",
         base_options=PipelineOptions(),
         visual_loader=_loader,
@@ -962,6 +1047,7 @@ def test_run_pack_renders_placeholder_visuals(tmp_path: Path) -> None:
     results = run_pack(
         pack_path,
         pack,
+        project_root=pack_path.parent,
         output_root=tmp_path / "artefacts",
         base_options=PipelineOptions(),
         visual_loader=_loader,
@@ -1010,6 +1096,7 @@ def test_run_pack_invokes_pptx_when_result_file(monkeypatch, tmp_path: Path) -> 
     run_pack(
         pack_path,
         pack,
+        project_root=pack_path.parent,
         output_root=tmp_path / "artefacts",
         base_options=base_options,
         visual_loader=_loader,
@@ -1083,6 +1170,7 @@ def test_run_pack_builds_pptx_with_template_only_slide(tmp_path: Path) -> None:
     run_pack(
         pack_path,
         pack,
+        project_root=pack_path.parent,
         output_root=tmp_path / "artefacts",
         base_options=base_options,
         visual_loader=_loader,
@@ -1093,10 +1181,16 @@ def test_run_pack_builds_pptx_with_template_only_slide(tmp_path: Path) -> None:
     deck = Presentation(result_path)
     assert len(deck.slides) == 3
     template_only_slide = deck.slides[2]
-    pictures = [
-        shape for shape in template_only_slide.shapes if shape.shape_type == MSO_SHAPE_TYPE.PICTURE  # type: ignore[attr-defined]
-    ]
-    assert pictures
+    picture_placeholders = []
+    for shape in template_only_slide.shapes:
+        if not getattr(shape, "is_placeholder", False):
+            continue
+        try:
+            if shape.placeholder_format.type == PP_PLACEHOLDER.PICTURE:
+                picture_placeholders.append(shape)
+        except ValueError:
+            continue
+    assert picture_placeholders
 
 
 def test_run_pack_binds_static_slide_image(tmp_path: Path) -> None:
@@ -1145,6 +1239,7 @@ def test_run_pack_binds_static_slide_image(tmp_path: Path) -> None:
     run_pack(
         pack_path,
         pack,
+        project_root=pack_path.parent,
         output_root=tmp_path / "artefacts",
         base_options=base_options,
         pipeline=cast(VisualPipeline[Any], _PngPipeline()),
@@ -1163,6 +1258,8 @@ def test_run_pack_binds_static_placeholder_image(tmp_path: Path) -> None:
 
     template_path = tmp_path / "pack_template.pptx"
     result_path = tmp_path / "deck" / "static_placeholder.pptx"
+
+    _build_pack_template(template_path)
 
     logo_path = pack_path.parent / "logo.png"
     _write_coloured_png(logo_path, colour=(0, 0, 255, 255))
@@ -1192,6 +1289,7 @@ def test_run_pack_binds_static_placeholder_image(tmp_path: Path) -> None:
     run_pack(
         pack_path,
         pack,
+        project_root=pack_path.parent,
         output_root=tmp_path / "artefacts",
         base_options=base_options,
         visual_loader=_loader,
@@ -1227,6 +1325,7 @@ def test_run_pack_errors_on_missing_static_images(tmp_path: Path) -> None:
         run_pack(
             pack_path,
             slide_only_pack,
+            project_root=pack_path.parent,
             output_root=tmp_path / "artefacts",
             base_options=PipelineOptions(),
             pipeline=cast(VisualPipeline[Any], _PngPipeline()),
@@ -1251,6 +1350,7 @@ def test_run_pack_errors_on_missing_static_images(tmp_path: Path) -> None:
         run_pack(
             pack_path,
             placeholder_pack,
+            project_root=pack_path.parent,
             output_root=tmp_path / "artefacts",
             base_options=PipelineOptions(),
             pipeline=cast(VisualPipeline[Any], _PngPipeline()),
@@ -1316,6 +1416,7 @@ def test_run_pack_supports_python_visual_ref(tmp_path: Path, monkeypatch) -> Non
     results = run_pack(
         pack_path,
         pack,
+        project_root=pack_path.parent,
         output_root=output_root,
         base_options=PipelineOptions(),
         pipeline=pipeline,
@@ -1378,6 +1479,7 @@ def test_run_pack_supports_inline_visual_config(tmp_path: Path, monkeypatch) -> 
     results = run_pack(
         pack_path,
         pack,
+        project_root=pack_path.parent,
         output_root=output_root,
         base_options=PipelineOptions(),
         pipeline=pipeline,

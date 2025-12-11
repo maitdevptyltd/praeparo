@@ -159,6 +159,68 @@ def test_cli_run_populates_metadata(monkeypatch, tmp_path) -> None:
         delattr(builtins, "__praeparo_test_plugin_loaded__")
 
 
+def test_yaml_visual_without_typed_context_defaults_metrics_root_to_cwd(monkeypatch, tmp_path) -> None:
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "registry" / "metrics").mkdir(parents=True)
+
+    config_dir = tmp_path / "configs"
+    config_dir.mkdir()
+    config_path = config_dir / "visual.yaml"
+    config_path.write_text("type: dummy_noctx\n", encoding="utf-8")
+
+    captured: Dict[str, object] = {}
+
+    def dummy_loader(path: Path, payload, stack):
+        return BaseVisualConfig(type="dummy_noctx")
+
+    from praeparo.pipeline.registry import (
+        SchemaArtifact,
+        DatasetArtifact,
+        RenderOutcome,
+        VisualPipelineDefinition,
+        register_visual_pipeline,
+    )
+
+    def schema_builder(pipeline, config, context):
+        assert context.dataset_context is not None
+        captured["project_root"] = context.project_root
+        captured["metrics_root"] = context.dataset_context.metrics_root
+        return SchemaArtifact(value={})
+
+    def dataset_builder(pipeline, config, schema_artifact, context):
+        return DatasetArtifact(value={}, filename="data.json")
+
+    def renderer(pipeline, config, schema_artifact, dataset_artifact, context, outputs):
+        return RenderOutcome(outputs=[])
+
+    register_visual_type("dummy_noctx", dummy_loader, overwrite=True, context_model=None)
+    register_visual_pipeline(
+        "dummy_noctx",
+        VisualPipelineDefinition(
+            schema_builder=schema_builder,
+            dataset_builder=dataset_builder,
+            renderer=renderer,
+        ),
+        overwrite=True,
+    )
+
+    dest_png = tmp_path / "out.png"
+    argv = [
+        "visual",
+        "run",
+        "dummy_noctx",
+        str(config_path),
+        str(dest_png),
+    ]
+
+    with pytest.raises(SystemExit) as exc:
+        cli_main(argv)
+
+    assert exc.value.code == 0
+    assert captured["project_root"] == tmp_path.resolve()
+    assert captured["metrics_root"] == (tmp_path / "registry" / "metrics").resolve()
+
+
 def test_cli_run_accepts_pack_context(monkeypatch, tmp_path) -> None:
     config_path = tmp_path / "visual.yaml"
     config_path.write_text("type: cli_example\n", encoding="utf-8")
@@ -430,6 +492,7 @@ def test_pack_cli_loads_plugin_module(monkeypatch, tmp_path) -> None:
         pack_path_arg,
         pack,
         *,
+        project_root=None,
         output_root,
         max_powerbi_concurrency=None,
         base_options=None,
@@ -500,6 +563,7 @@ def test_pack_cli_run_invokes_runner(monkeypatch, tmp_path, capsys) -> None:
         pack_path_arg,
         pack,
         *,
+        project_root=None,
         output_root,
         max_powerbi_concurrency=None,
         base_options,
@@ -573,6 +637,7 @@ def test_pack_cli_dest_directory_sets_defaults(monkeypatch, tmp_path, capsys) ->
         pack_path_arg,
         pack,
         *,
+        project_root=None,
         output_root,
         max_powerbi_concurrency=None,
         base_options=None,
@@ -621,7 +686,7 @@ def test_pack_cli_dest_directory_sets_defaults(monkeypatch, tmp_path, capsys) ->
     base_options = cast(PipelineOptions, captured["base_options"])
     assert base_options is not None
     assert base_options.artefact_dir == artefact_dir
-    expected_result = dest / f"{slugify(pack_path.stem)}.pptx"
+    expected_result = dest / f"{slugify(pack_path.stem)}_r1.pptx"
     assert base_options.metadata.get("result_file") == expected_result
     out = capsys.readouterr().out
     assert artefact_dir.as_posix() in out
@@ -644,6 +709,7 @@ def test_pack_cli_dest_pptx_sets_result_and_artifacts(monkeypatch, tmp_path, cap
         pack_path_arg,
         pack,
         *,
+        project_root=None,
         output_root,
         max_powerbi_concurrency=None,
         base_options=None,
@@ -692,7 +758,8 @@ def test_pack_cli_dest_pptx_sets_result_and_artifacts(monkeypatch, tmp_path, cap
     base_options = cast(PipelineOptions, captured["base_options"])
     assert base_options is not None
     assert base_options.artefact_dir == artefact_dir
-    assert base_options.metadata.get("result_file") == dest
+    expected_result = dest.parent / f"{slugify(pack_path.stem)}_r1.pptx"
+    assert base_options.metadata.get("result_file") == expected_result
     out = capsys.readouterr().out
     assert artefact_dir.as_posix() in out
 
@@ -716,6 +783,7 @@ def test_pack_cli_dest_allows_flag_overrides(monkeypatch, tmp_path, capsys) -> N
         pack_path_arg,
         pack,
         *,
+        project_root=None,
         output_root,
         max_powerbi_concurrency=None,
         base_options=None,
@@ -790,6 +858,7 @@ def test_pack_cli_revision_updates_default_result(monkeypatch, tmp_path, capsys)
         pack_path_arg,
         pack,
         *,
+        project_root=None,
         output_root,
         max_powerbi_concurrency=None,
         base_options=None,
@@ -862,6 +931,7 @@ def test_pack_cli_result_file_infers_artefact_dir(monkeypatch, tmp_path, capsys)
         pack_path_arg,
         pack,
         *,
+        project_root=None,
         output_root,
         max_powerbi_concurrency=None,
         base_options=None,
@@ -930,6 +1000,7 @@ def test_pack_run_defaults_to_live_data_mode(monkeypatch, tmp_path, capsys) -> N
         pack_path_arg,
         pack,
         *,
+        project_root=None,
         output_root,
         max_powerbi_concurrency=None,
         base_options=None,
@@ -998,6 +1069,7 @@ def test_pack_run_respects_mock_data_mode_override(monkeypatch, tmp_path, capsys
         pack_path_arg,
         pack,
         *,
+        project_root=None,
         output_root,
         max_powerbi_concurrency=None,
         base_options=None,
