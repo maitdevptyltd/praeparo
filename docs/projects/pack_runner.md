@@ -232,6 +232,22 @@ poetry run praeparo pack run projects/example/pack.yaml \
 Artefact paths remain unchanged: `<artefact-dir>/<slide-slug>.png` for the main
 PNG plus per-slide artefacts under `<artefact-dir>/<slide-slug>/`.
 
+### Debugging failing pack slides
+
+When one or more Power BI slides fail, the runner now surfaces a detailed summary:
+
+```
+1 Power BI slide(s) failed:
+  - discharges_dashboard (Discharges Dashboard): HttpError: DAX error: Token Eof expected near '!='
+Hint: re-run with --slides "Discharges Dashboard" --max-pbi-concurrency 1 for focused debugging.
+```
+
+Use these flags to narrow failures and keep successful outputs:
+
+- `--slides` – filter by slide title, id, or slugified equivalent to focus on one slide at a time.
+- `--max-pbi-concurrency 1` – force serial Power BI exports to avoid concurrency noise while debugging.
+- `--allow-partial` – keep successful slide artefacts and print the summary without a traceback; exit code remains non-zero so automation can detect the failure.
+
 ## Integration with existing visuals
 
 Because the pack runner delegates to the visual registry:

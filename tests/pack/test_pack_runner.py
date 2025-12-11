@@ -13,7 +13,7 @@ from pydantic import model_validator
 from praeparo.models import BaseVisualConfig, PackConfig, PackSlide, PackVisualRef
 from praeparo.pack.filters import merge_odata_filters
 from praeparo.pack.loader import load_pack_config
-from praeparo.pack.runner import run_pack
+from praeparo.pack.runner import PackPowerBIFailure, run_pack
 from praeparo.pack.templating import create_pack_jinja_env, render_value
 from praeparo.pipeline import PipelineOptions, VisualExecutionResult, VisualPipeline
 from praeparo.pipeline.outputs import OutputKind, PipelineOutputArtifact
@@ -502,7 +502,7 @@ def test_run_pack_raises_when_powerbi_job_fails(tmp_path: Path) -> None:
 
     pipeline = _ConcurrentStubPipeline(delay=0.0, fail_case=failing_slug)
 
-    with pytest.raises(RuntimeError) as excinfo:
+    with pytest.raises(PackPowerBIFailure) as excinfo:
         run_pack(
             pack_path,
             pack,
@@ -514,6 +514,9 @@ def test_run_pack_raises_when_powerbi_job_fails(tmp_path: Path) -> None:
             max_powerbi_concurrency=2,
         )
 
-    assert failing_slug in str(excinfo.value)
+    message = str(excinfo.value)
+    assert "Power BI slide(s) failed" in message
+    assert failing_slug in message
+    assert "RuntimeError" in message
     ok_png = tmp_path / "artefacts" / f"{slugify('ok-pbi')}.png"
     assert ok_png.exists()

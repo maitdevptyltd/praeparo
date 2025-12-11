@@ -32,6 +32,7 @@ from praeparo.pipeline import (
 from praeparo.pack import (
     DEFAULT_POWERBI_CONCURRENCY,
     PackConfigError,
+    PackPowerBIFailure,
     create_pack_jinja_env,
     load_pack_config,
     render_value,
@@ -316,6 +317,15 @@ def _register_pack_parsers(parent: argparse._SubParsersAction[argparse.ArgumentP
         ),
     )
     run_parser.add_argument(
+        "--allow-partial",
+        dest="allow_partial",
+        action="store_true",
+        help=(
+            "Allow pack execution to keep successful slide outputs while still reporting failures at the end. "
+            "When set, Power BI failures print a summary without a traceback; exit code remains non-zero."
+        ),
+    )
+    run_parser.add_argument(
         "--datasource",
         "--data-source",
         dest="datasource",
@@ -399,7 +409,7 @@ def _register_pack_parsers(parent: argparse._SubParsersAction[argparse.ArgumentP
         action="append",
         default=[],
         metavar="ID_OR_TITLE",
-        help="Limit execution to matching slide ids/titles/slugs (repeatable).",
+        help="Limit execution to matching slide titles, ids, or slugified equivalents (repeatable).",
     )
     run_parser.set_defaults(_handler=_handle_pack_run, print_dax=False, validate_define=False, sort_rows=False)
 
@@ -1084,6 +1094,7 @@ def _handle_pack_run(args: argparse.Namespace) -> int:
     pipeline = VisualPipeline(planner_provider=build_default_query_planner_provider())
     slide_filter = tuple(args.slides or [])
 
+    partial_failure = False
     try:
         results = run_pack(
             args.pack,
@@ -1097,6 +1108,14 @@ def _handle_pack_run(args: argparse.Namespace) -> int:
         )
     except ConfigLoadError as exc:
         raise ValueError(str(exc)) from exc
+    except PackPowerBIFailure as exc:
+        # Surface the richer summary to the user while preserving successful artefacts.
+        if args.allow_partial:
+            print(str(exc))
+            results = exc.successful_results
+            partial_failure = True
+        else:
+            raise RuntimeError(str(exc)) from exc
     except (
         DataSourceConfigError,
         PowerBIConfigurationError,
@@ -1111,6 +1130,10 @@ def _handle_pack_run(args: argparse.Namespace) -> int:
         print(f"[ok] Wrote {png_count} PNG(s) to {args.artefact_dir}")
     else:
         print("[warn] No PNG outputs were produced.")
+
+    # Even in partial mode, propagate a non-zero exit so automation can detect failures.
+    if partial_failure:
+        return 1
 
     return 0
 

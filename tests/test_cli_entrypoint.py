@@ -10,7 +10,7 @@ import pytest
 from praeparo.cli import main as cli_main
 from praeparo.dax import DaxQueryPlan
 from praeparo.models import BaseVisualConfig, PackConfig, PackSlide, PackVisualRef
-from praeparo.pack import PackSlideResult
+from praeparo.pack import PackPowerBIFailure, PackSlideResult
 from praeparo.visuals.dax_compilers import DaxCompileArtifact, register_dax_compiler
 from praeparo.pipeline import VisualExecutionResult
 from praeparo.pipeline.outputs import OutputKind, PipelineOutputArtifact
@@ -576,3 +576,81 @@ def test_pack_cli_run_warns_when_no_pngs(monkeypatch, tmp_path, capsys) -> None:
     assert exc.value.code == 0
     out = capsys.readouterr().out
     assert "[warn] No PNG outputs were produced." in out
+
+
+def test_pack_cli_allow_partial_prints_summary(monkeypatch, tmp_path, capsys) -> None:
+    pack_path = tmp_path / "pack.yaml"
+    pack_path.write_text("contents", encoding="utf-8")
+
+    def fake_load_pack_config(path: Path) -> PackConfig:
+        return PackConfig(schema="test-pack", slides=[])
+
+    failure = PackPowerBIFailure(
+        "1 Power BI slide(s) failed:\n  - slide_a (Slide A): RuntimeError: boom\nHint: re-run with --slides \"Slide A\" --max-pbi-concurrency 1 for focused debugging.",
+        successful_results=[],
+        failed_exports=[],
+    )
+
+    def fake_run_pack(*_, **__):
+        raise failure
+
+    monkeypatch.setattr("praeparo.cli.load_pack_config", fake_load_pack_config)
+    monkeypatch.setattr("praeparo.cli.run_pack", fake_run_pack)
+    monkeypatch.setattr("praeparo.cli.build_default_query_planner_provider", lambda: None)
+    monkeypatch.setattr("praeparo.cli.VisualPipeline", lambda *_, **__: None)
+
+    argv = [
+        "pack",
+        "run",
+        str(pack_path),
+        "--artefact-dir",
+        str(tmp_path / "artefacts"),
+        "--allow-partial",
+    ]
+
+    with pytest.raises(SystemExit) as exc:
+        cli_main(argv)
+
+    assert exc.value.code == 1
+    out = capsys.readouterr().out
+    assert "Power BI slide(s) failed" in out
+    assert "Slide A" in out
+    assert "RuntimeError" in out
+
+
+def test_pack_cli_without_partial_re_raises(monkeypatch, tmp_path, capsys) -> None:
+    pack_path = tmp_path / "pack.yaml"
+    pack_path.write_text("contents", encoding="utf-8")
+
+    def fake_load_pack_config(path: Path) -> PackConfig:
+        return PackConfig(schema="test-pack", slides=[])
+
+    failure = PackPowerBIFailure(
+        "1 Power BI slide(s) failed:\n  - slide_a (Slide A): RuntimeError: boom\nHint: re-run with --slides \"Slide A\" --max-pbi-concurrency 1 for focused debugging.",
+        successful_results=[],
+        failed_exports=[],
+    )
+
+    def fake_run_pack(*_, **__):
+        raise failure
+
+    monkeypatch.setattr("praeparo.cli.load_pack_config", fake_load_pack_config)
+    monkeypatch.setattr("praeparo.cli.run_pack", fake_run_pack)
+    monkeypatch.setattr("praeparo.cli.build_default_query_planner_provider", lambda: None)
+    monkeypatch.setattr("praeparo.cli.VisualPipeline", lambda *_, **__: None)
+
+    argv = [
+        "pack",
+        "run",
+        str(pack_path),
+        "--artefact-dir",
+        str(tmp_path / "artefacts"),
+    ]
+
+    with pytest.raises(SystemExit) as exc:
+        cli_main(argv)
+
+    # argparse surfaces RuntimeError via parser.error with exit code 2
+    assert exc.value.code == 2
+    err = capsys.readouterr().err
+    assert "Power BI slide(s) failed" in err

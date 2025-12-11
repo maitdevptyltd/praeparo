@@ -48,6 +48,44 @@ class PackSlideResult:
 DEFAULT_POWERBI_CONCURRENCY = 5
 
 
+class PackPowerBIFailure(RuntimeError):
+    """Raised when one or more Power BI slides fail during a pack run."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        successful_results: list[PackSlideResult],
+        failed_exports: Sequence[PowerBIExportResult],
+    ) -> None:
+        super().__init__(message)
+        self.successful_results = successful_results
+        self.failed_exports = failed_exports
+
+
+def _format_powerbi_failure_summary(failed_exports: Sequence[PowerBIExportResult]) -> str:
+    """Build a human-readable summary of failed Power BI slide exports."""
+
+    lines = [f"{len(failed_exports)} Power BI slide(s) failed:"]
+
+    for item in failed_exports:
+        exc = item.exception
+        exc_type = exc.__class__.__name__ if exc else "Error"
+        message = ""
+        if exc:
+            raw = str(exc)
+            message = raw.splitlines()[0] if raw else repr(exc)
+        title = f" ({item.job.slide_title})" if item.job.slide_title else ""
+        lines.append(f"  - {item.job.slide_slug}{title}: {exc_type}: {message}".rstrip())
+
+    focus_target = failed_exports[0].job.slide_title or failed_exports[0].job.slide_slug
+    lines.append(
+        f"Hint: re-run with --slides \"{focus_target}\" --max-pbi-concurrency 1 for focused debugging."
+    )
+
+    return "\n".join(lines)
+
+
 def _slug_for_slide(slide: PackSlide, index: int) -> str:
     if slide.id:
         return slugify(slide.id)
@@ -364,16 +402,23 @@ def run_pack(
             )
         )
 
+    ordered_results.sort(key=lambda pair: pair[0])
+    sorted_results = [item[1] for item in ordered_results]
+
     if failed_powerbi:
         failed_slides = [item.job.slide_slug for item in failed_powerbi]
         logger.error(
             "Power BI slides failed",
             extra={"failed_slide_count": len(failed_slides), "failed_slides": failed_slides},
         )
-        raise RuntimeError(f"{len(failed_slides)} Power BI slide(s) failed: {', '.join(failed_slides)}")
+        summary = _format_powerbi_failure_summary(failed_powerbi)
+        raise PackPowerBIFailure(
+            summary,
+            successful_results=sorted_results,
+            failed_exports=failed_powerbi,
+        )
 
-    ordered_results.sort(key=lambda pair: pair[0])
-    return [item[1] for item in ordered_results]
+    return sorted_results
 
 
-__all__ = ["PackSlideResult", "run_pack"]
+__all__ = ["PackPowerBIFailure", "PackSlideResult", "run_pack"]
