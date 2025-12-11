@@ -15,6 +15,7 @@ dependencies = [
     "kaleido (>=1.1.0,<2.0.0)",
     "httpx (>=0.27.0,<0.28.0)",
     "python-dotenv (>=1.0.1,<2.0.0)",
+    "python-pptx (>=0.6.23,<0.7.0)",
 ]
 
 [project.scripts]

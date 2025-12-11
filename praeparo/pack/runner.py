@@ -10,10 +10,11 @@ from typing import Callable, Iterable, Mapping, Sequence
 
 from jinja2 import Environment
 
-from praeparo.models import BaseVisualConfig, PackConfig, PackSlide
+from praeparo.models import BaseVisualConfig, FiltersType, PackConfig, PackPlaceholder, PackSlide
 from praeparo.pack.filters import merge_calculate_filters, merge_odata_filters
 from praeparo.pack.pbi_queue import PowerBIExportJob, PowerBIExportQueue
 from praeparo.pack.templating import create_pack_jinja_env, render_value
+from praeparo.pack.pptx import assemble_pack_pptx
 from praeparo.pipeline import (
     ExecutionContext,
     OutputKind,
@@ -175,6 +176,35 @@ def _should_run_slide(slide: PackSlide, *, only: set[str] | None) -> bool:
     return any(candidate in only for candidate in candidates)
 
 
+def _resolve_default_template(pack_path: Path) -> Path | None:
+    """
+    Try common locations for the shared pack PPTX template.
+
+    Preference order:
+    - Sibling to the pack file
+    - Parent folder
+    - registry/packs/pack_template.pptx (rooted from pack path)
+    """
+
+    candidates: list[Path] = []
+    # Local to pack
+    candidates.append(pack_path.parent / "pack_template.pptx")
+    # One level up
+    candidates.append(pack_path.parent.parent / "pack_template.pptx")
+    # Shared registry/packs template relative to pack location
+    try:
+        candidates.append(pack_path.parent.parent / "packs" / "pack_template.pptx")
+        candidates.append(pack_path.parent.parent.parent / "packs" / "pack_template.pptx")
+        candidates.append(pack_path.parent.parent.parent / "registry" / "packs" / "pack_template.pptx")
+    except IndexError:
+        pass
+
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return None
+
+
 def run_pack(
     pack_path: Path,
     pack: PackConfig,
@@ -244,147 +274,182 @@ def run_pack(
                 logger.debug("Rendered global calculate", extra={"count": 1})
 
     ordered_results: list[tuple[int, PackSlideResult]] = []
+    slide_png_map: dict[str, Path] = {}
+    placeholder_png_map: dict[str, dict[str, Path]] = {}
+
+    def _render_filters(value: object | None) -> FiltersType:
+        return render_value(value, env=jinja_env, context=context_payload)
+
     for index, slide in enumerate(pack.slides, start=1):
-        if slide.visual is None:
-            continue
         if slide_filter and not _should_run_slide(slide, only=slide_filter):
             continue
 
-        visual_ref = slide.visual.ref
-        visual_path = (pack_path.parent / visual_ref).resolve()
-        visual = visual_loader(visual_path)
-
-        slide_filters = render_value(slide.visual.filters, env=jinja_env, context=context_payload)
-        slide_calculate = render_value(slide.visual.calculate, env=jinja_env, context=context_payload)
-
-        merged_filters = merge_odata_filters(rendered_global_filters, slide_filters)
-        calculate_filters = merge_calculate_filters(rendered_global_calculate, slide_calculate)
-
         slide_slug = _slug_for_slide(slide, index)
-        ordinal = f"{index:02d}"
-        artifact_label = f"[{ordinal}]_{slide_slug}"
-        logger.info(
-            "Processing slide",
-            extra={
-                "slide": slide_slug,
-                "index": index,
-                "title": slide.title,
-                "visual_ref": visual_ref,
-            },
-        )
-        logger.debug(
-            "Resolved visual",
-            extra={"visual_path": str(visual_path), "visual_type": getattr(visual, "type", None)},
-        )
-        metadata_update: dict[str, object] = {}
-        if visual_context_base:
-            # Carry pack-level context into slide metadata so typed visual contexts
-            # can derive defaults (e.g., reference month) before DAX merges run.
-            metadata_update["context"] = visual_context_base
-        options, slide_dir = _prepare_slide_options(
-            base,
-            slide_slug=artifact_label,
-            artefact_root=output_root,
-            metadata_update=metadata_update,
-            png_scale=base.png_scale,
-        )
 
-        if visual.type == "powerbi":
-            if merged_filters:
-                options.metadata["powerbi_filters"] = merged_filters
-            options.metadata.setdefault("build_artifacts_dir", slide_dir / "pbi_exports")
+        def _execute_visual(
+            *,
+            visual_ref: str,
+            slide_label: str,
+            filters: FiltersType,
+            calculate: FiltersType,
+            placeholder_id: str | None = None,
+            target_map: dict[str, Path],
+        ) -> None:
+            visual_path = (pack_path.parent / visual_ref).resolve()
+            visual = visual_loader(visual_path)
 
-        if calculate_filters or rendered_define:
-            existing_context = options.metadata.get("context") if isinstance(options.metadata, dict) else {}
-            merged_context = merge_context_payload(
-                base=existing_context if isinstance(existing_context, Mapping) else {},
-                calculate=calculate_filters,
-                define=rendered_define,
-            )
-            options.metadata["context"] = merged_context
-            logger.debug(
-                "Applied context to slide",
+            merged_filters = merge_odata_filters(rendered_global_filters, _render_filters(filters))
+            calculate_filters = merge_calculate_filters(rendered_global_calculate, _render_filters(calculate))
+
+            ordinal = f"{index:02d}"
+            artifact_label = f"[{ordinal}]_{slide_label}"
+            logger.info(
+                "Processing slide",
                 extra={
-                    "slide": slide_slug,
-                    "calculate_count": len(calculate_filters) if calculate_filters else 0,
-                    "has_define": bool(rendered_define),
+                    "slide": slide_label,
+                    "index": index,
+                    "title": slide.title,
+                    "visual_ref": visual_ref,
+                    "placeholder": placeholder_id,
+                },
+            )
+            logger.debug(
+                "Resolved visual",
+                extra={"visual_path": str(visual_path), "visual_type": getattr(visual, "type", None)},
+            )
+
+            metadata_update: dict[str, object] = {}
+            if visual_context_base:
+                metadata_update["context"] = visual_context_base
+            options, slide_dir = _prepare_slide_options(
+                base,
+                slide_slug=artifact_label,
+                artefact_root=output_root,
+                metadata_update=metadata_update,
+                png_scale=base.png_scale,
+            )
+
+            if visual.type == "powerbi":
+                if merged_filters:
+                    options.metadata["powerbi_filters"] = merged_filters
+                options.metadata.setdefault("build_artifacts_dir", slide_dir / "pbi_exports")
+
+            if calculate_filters or rendered_define:
+                existing_context = options.metadata.get("context") if isinstance(options.metadata, dict) else {}
+                merged_context = merge_context_payload(
+                    base=existing_context if isinstance(existing_context, Mapping) else {},
+                    calculate=calculate_filters,
+                    define=rendered_define,
+                )
+                options.metadata["context"] = merged_context
+                logger.debug(
+                    "Applied context to slide",
+                    extra={
+                        "slide": slide_label,
+                        "calculate_count": len(calculate_filters) if calculate_filters else 0,
+                        "has_define": bool(rendered_define),
+                    },
+                )
+
+            registration = get_visual_registration(visual.type)
+            visual_context = _instantiate_slide_context(
+                registration=registration,
+                metadata=options.metadata,
+                project_root=pack_path.parent,
+            )
+
+            execution_context = ExecutionContext(
+                config_path=visual_path,
+                project_root=pack_path.parent,
+                case_key=slide_label,
+                options=options,
+                visual_context=visual_context,
+            )
+
+            if visual.type == "powerbi":
+                powerbi_queue.enqueue(
+                    PowerBIExportJob(
+                        slide_index=index,
+                        slide_slug=slide_label,
+                        slide_title=slide.title,
+                        slide=slide,
+                        visual=visual,
+                        visual_path=visual_path,
+                        execution_context=execution_context,
+                    )
+                )
+                return
+
+            try:
+                logger.debug(
+                    "Executing pipeline",
+                    extra={
+                        "slide": slide_label,
+                        "visual_type": getattr(visual, "type", None),
+                        "odata_filter_keys": sorted(merged_filters.keys()) if isinstance(merged_filters, Mapping) else None,
+                        "calculate_count": len(calculate_filters) if calculate_filters else 0,
+                        "png_target": str(options.outputs[0].path) if options.outputs else None,
+                        "artefact_dir": str(options.artefact_dir) if options.artefact_dir else None,
+                    },
+                )
+                result = resolved_pipeline.execute(visual, execution_context)
+            except Exception:
+                logger.exception(
+                    "Slide failed",
+                    extra={
+                        "slide": slide_label,
+                        "visual_ref": visual_ref,
+                        "visual_path": str(visual_path),
+                    },
+                )
+                raise
+            png_path = _select_png_output(result, options.outputs)
+            logger.info(
+                "Slide completed",
+                extra={
+                    "slide": slide_label,
+                    "visual_type": getattr(visual, "type", None),
+                    "png_path": str(png_path) if png_path else None,
+                    "artefact_dir": str(slide_dir),
                 },
             )
 
-        registration = get_visual_registration(visual.type)
-        visual_context = _instantiate_slide_context(
-            registration=registration,
-            metadata=options.metadata,
-            project_root=pack_path.parent,
-        )
+            if png_path:
+                target_map[slide_label] = png_path
 
-        execution_context = ExecutionContext(
-            config_path=visual_path,
-            project_root=pack_path.parent,
-            case_key=slide_slug,
-            options=options,
-            visual_context=visual_context,
-        )
-
-        if visual.type == "powerbi":
-            powerbi_queue.enqueue(
-                PowerBIExportJob(
-                    slide_index=index,
-                    slide_slug=slide_slug,
-                    slide_title=slide.title,
-                    slide=slide,
-                    visual=visual,
-                    visual_path=visual_path,
-                    execution_context=execution_context,
+            ordered_results.append(
+                (
+                    index,
+                    PackSlideResult(
+                        slide=slide,
+                        visual_path=visual_path,
+                        result=result,
+                        png_path=png_path,
+                    ),
                 )
             )
-            continue
 
-        try:
-            logger.debug(
-                "Executing pipeline",
-                extra={
-                    "slide": slide_slug,
-                    "visual_type": getattr(visual, "type", None),
-                    "odata_filter_keys": sorted(merged_filters.keys()) if isinstance(merged_filters, Mapping) else None,
-                    "calculate_count": len(calculate_filters) if calculate_filters else 0,
-                    "png_target": str(options.outputs[0].path) if options.outputs else None,
-                    "artefact_dir": str(options.artefact_dir) if options.artefact_dir else None,
-                },
+        if slide.visual is not None:
+            _execute_visual(
+                visual_ref=slide.visual.ref,
+                slide_label=slide_slug,
+                filters=slide.visual.filters,
+                calculate=slide.visual.calculate,
+                target_map=slide_png_map,
             )
-            result = resolved_pipeline.execute(visual, execution_context)
-        except Exception:
-            logger.exception(
-                "Slide failed",
-                extra={
-                    "slide": slide_slug,
-                    "visual_ref": visual_ref,
-                    "visual_path": str(visual_path),
-                },
-            )
-            raise
-        png_path = _select_png_output(result, options.outputs)
-        logger.info(
-            "Slide completed",
-            extra={
-                "slide": slide_slug,
-                "visual_type": getattr(visual, "type", None),
-                "png_path": str(png_path) if png_path else None,
-                "artefact_dir": str(slide_dir),
-            },
-        )
 
-        ordered_results.append(
-            (
-                index,
-                PackSlideResult(
-                    slide=slide,
-                    visual_path=visual_path,
-                    result=result,
-                    png_path=png_path,
-                ),
-            )
-        )
+        if slide.placeholders:
+            placeholder_map = placeholder_png_map.setdefault(slide_slug, {})
+            for placeholder_id, placeholder in slide.placeholders.items():
+                placeholder_slug = f"{slide_slug}__{slugify(placeholder_id)}"
+                _execute_visual(
+                    visual_ref=placeholder.visual.ref,
+                    slide_label=placeholder_slug,
+                    filters=placeholder.visual.filters,
+                    calculate=placeholder.visual.calculate,
+                    placeholder_id=placeholder_id,
+                    target_map=placeholder_map,
+                )
 
     powerbi_results = powerbi_queue.drain()
     failed_powerbi = [item for item in powerbi_results if item.exception]
@@ -392,6 +457,14 @@ def run_pack(
         if item.result is None:
             continue
         png_path = _select_png_output(item.result, item.job.execution_context.options.outputs)
+        if png_path:
+            slide_slug = item.job.slide_slug
+            if "__" in slide_slug:
+                parent = slide_slug.split("__", 1)[0]
+                placeholder_map = placeholder_png_map.setdefault(parent, {})
+                placeholder_map[slide_slug] = png_path
+            else:
+                slide_png_map[slide_slug] = png_path
         ordered_results.append(
             (
                 item.job.slide_index,
@@ -419,6 +492,29 @@ def run_pack(
             successful_results=sorted_results,
             failed_exports=failed_powerbi,
         )
+
+    result_file = base.metadata.get("result_file") if base.metadata else None
+    if result_file:
+        template_override = base.metadata.get("pptx_template") if base.metadata else None
+        template_path = Path(template_override) if template_override else _resolve_default_template(pack_path)
+        if template_path is None:
+            logger.warning(
+                "Skipping PPTX assembly because no template was found",
+                extra={"pack": str(pack_path), "result_file": str(result_file)},
+            )
+        else:
+            try:
+                assemble_pack_pptx(
+                    pack=pack,
+                    results=sorted_results,
+                    slide_pngs=slide_png_map,
+                    placeholder_pngs=placeholder_png_map,
+                    result_path=Path(result_file),
+                    template_path=template_path,
+                )
+            except Exception:
+                logger.exception("PPTX assembly failed", extra={"result_file": str(result_file)})
+                raise
 
     return sorted_results
 

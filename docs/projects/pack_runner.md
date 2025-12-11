@@ -110,7 +110,9 @@ You can optionally supply a positional `dest` to derive defaults for `--artefact
 and a PPTX `--result-file`:
 
 - `praeparo pack run projects/example/pack.yaml out/ing` writes artefacts to
-  `out/ing/_artifacts/` and defaults the PPTX to `out/ing/<pack-slug>.pptx`.
+  `out/ing/_artifacts/` and defaults the PPTX to
+  `out/ing/<pack-slug>_<revision>.pptx` when a revision is available (revision
+  flags or `context.month`), otherwise `out/ing/<pack-slug>.pptx`.
 - `praeparo pack run projects/example/pack.yaml out/ing_governance.pptx` writes
   artefacts to `out/ing_governance/_artifacts/` and the PPTX to
   `out/ing_governance.pptx`.
@@ -130,8 +132,12 @@ Key flags:
   - Omit this flag only when using the positional `dest` shorthand; the derived
     `artefact_dir` will be `dest/_artifacts` (or `<dest-stem>/_artifacts` when
     `dest` ends with `.pptx`).
-- `--result-file` – optional PPTX destination. Defaults to `<dest>/<pack-slug>.pptx`
-  when `dest` is a directory or to the exact `dest` when it ends with `.pptx`.
+- `--result-file` – optional PPTX destination. If `--artefact-dir` is omitted,
+  it is inferred as `<result-file.parent>/<result-file.stem>/_artifacts`. When
+  paired with revisions, defaults to `<dest>/<pack-slug>_<revision>.pptx`.
+- `--revision`, `--revision-strategy {full,minor}`, `--revision-dry-run` –
+  allocate or preview a revision token/minor counter for the run (see
+  “PPTX & revisions” below).
 - `--slides` – optional list of slide ids/titles/slugified titles to restrict
   execution:
 
@@ -306,18 +312,45 @@ Because the pack runner delegates to the visual registry:
 This makes packs a thin orchestration layer over the existing visual ecosystem
 rather than a parallel execution path.
 
-## Future: PPTX & revisions
+## PPTX & revisions
 
-The pack runner currently focuses on PNG outputs and per-slide artefacts. A
-future PPTX layer can build on this by:
+PPTX assembly is now part of `pack run` when `result_file` is present in pipeline
+metadata (automatically set via positional `dest`, `--result-file`, or a revision
+allocation). Templates are resolved in order:
 
-- Using the pack definition as the single source of truth for slide order,
-  titles, and visuals.
-- Treating `--artefact-dir` as the revision root for visual artefacts.
-- Writing a PPTX (or zipped revision) to a separate, explicit result path
-  (e.g. `--output-pptx`) that mirrors the revision semantics used in existing
-  deck builders.
+- `pack_template.pptx` next to the pack file,
+- parent folders, or
+- `registry/packs/pack_template.pptx`.
 
-By keeping pack orchestration separate from PPTX composition, Praeparo can
-service both notebook/automation workflows (PNG-only) and full deck pipelines
-with minimal duplication.
+Slides without a `template` are skipped; slides with a template but no visual or
+placeholders now pass through untouched so “static” template-only pages do not
+break the run.
+
+### Revision-aware defaults
+
+- `--revision` – supply an explicit revision token (e.g. `2025-12`, `r17`).
+- `--revision-strategy {full,minor}` – manifest-backed allocation under
+  `<dest>/_revisions/manifest.json`:
+  - `full` bumps/sets the revision (month from pack context when available) and
+    resets minor to `1`.
+  - `minor` keeps the current revision and increments the minor counter.
+- `--revision-dry-run` – print the next revision (including the suggested PPTX
+  name) and exit without executing visuals.
+
+When a revision is present and no explicit `--result-file` is supplied, the
+default PPTX name becomes `<pack-slug>_<revision>.pptx` (minor revisions append
+`_rN`). If neither revision flag is set, the runner still attempts to use the
+pack `context.month` as the revision token; otherwise it falls back to the
+legacy `<pack-slug>.pptx`.
+
+### Output location defaults
+
+- Positional `dest` keeps the existing shorthand:
+  - directory path → `<dest>/_artifacts` and `<dest>/<pack-slug>.pptx` (or
+    `<pack-slug>_<revision>.pptx` when revisions apply).
+  - `.pptx` path → `<dest-parent>/<dest-stem>/_artifacts` and the provided PPTX
+    path.
+- `--result-file` alone now implies an artefact root:
+  `<result-file.parent>/<result-file.stem>/_artifacts`, so you no longer need
+  to supply `dest` or `--artefact-dir` when you only care about a specific PPTX
+  path.

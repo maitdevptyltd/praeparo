@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 from dataclasses import dataclass
 from datetime import date
 import threading
@@ -9,8 +10,11 @@ from typing import Any, Dict, Mapping, Tuple, cast
 
 import pytest
 from pydantic import model_validator
+from pptx import Presentation
+from pptx.enum.shapes import MSO_SHAPE_TYPE
+from pptx.util import Inches
 
-from praeparo.models import BaseVisualConfig, PackConfig, PackSlide, PackVisualRef
+from praeparo.models import BaseVisualConfig, PackConfig, PackPlaceholder, PackSlide, PackVisualRef
 from praeparo.pack.filters import merge_odata_filters
 from praeparo.pack.loader import load_pack_config
 from praeparo.pack.runner import PackPowerBIFailure, run_pack
@@ -121,6 +125,49 @@ class _ConcurrentStubPipeline:
         return VisualExecutionResult(config=visual, outputs=outputs)
 
 
+def _write_png(path: Path) -> None:
+    data = base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAE"
+        "AAL/AXx5lXcAAAAASUVORK5CYII="
+    )
+    path.write_bytes(data)
+
+
+class _PngPipeline(_StubPipeline):
+    def execute(self, visual: BaseVisualConfig, context) -> VisualExecutionResult:
+        path = context.options.outputs[0].path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        _write_png(path)
+        outputs = [PipelineOutputArtifact(kind=OutputKind.PNG, path=path)]
+        with self._lock:
+            self.calls.append((visual, context.options))
+            self.contexts.append(context)
+        return VisualExecutionResult(config=visual, outputs=outputs)
+
+
+def _build_pack_template(path: Path) -> None:
+    prs = Presentation()
+    blank = prs.slide_layouts[6]
+
+    tmp_img = path.parent / "tmp.png"
+    _write_png(tmp_img)
+
+    single = prs.slides.add_slide(blank)
+    pic = single.shapes.add_picture(str(tmp_img), Inches(1), Inches(1), width=Inches(4), height=Inches(3))
+    pic.name = "image"
+    single.notes_slide.notes_text_frame.text = "TEMPLATE_TAG=single_image"
+
+    two_up = prs.slides.add_slide(blank)
+    left = two_up.shapes.add_picture(str(tmp_img), Inches(0.5), Inches(1), width=Inches(3), height=Inches(2.5))
+    left.name = "left_chart"
+    right = two_up.shapes.add_picture(str(tmp_img), Inches(4), Inches(1), width=Inches(3), height=Inches(2.5))
+    right.name = "right_chart"
+    two_up.notes_slide.notes_text_frame.text = "TEMPLATE_TAG=two_up"
+
+    prs.save(path)
+    tmp_img.unlink(missing_ok=True)
+
+
 def test_run_pack_names_outputs_with_ordinal_prefix(tmp_path: Path) -> None:
     pack_path = tmp_path / "pack.yaml"
     pack_path.write_text("", encoding="utf-8")
@@ -141,7 +188,7 @@ def test_run_pack_names_outputs_with_ordinal_prefix(tmp_path: Path) -> None:
     def _loader(path: Path, payload: Mapping[str, object] | None = None, stack: tuple[Path, ...] = ()) -> BaseVisualConfig:
         return visuals[path.name]
 
-    pipeline = _StubPipeline()
+    pipeline = _PngPipeline()
     results = run_pack(
         pack_path,
         pack,
@@ -265,7 +312,7 @@ def test_run_pack_populates_typed_dax_context(tmp_path: Path) -> None:
     def _loader(path: Path, payload: Mapping[str, object] | None = None, stack: tuple[Path, ...] = ()) -> BaseVisualConfig:
         return visuals[path.name]
 
-    pipeline = _StubPipeline()
+    pipeline = _PngPipeline()
     results = run_pack(
         pack_path,
         pack,
@@ -330,7 +377,7 @@ def test_run_pack_forwards_pack_context_into_visual_context(tmp_path: Path) -> N
     def _loader(path: Path, payload: Mapping[str, object] | None = None, stack: tuple[Path, ...] = ()) -> BaseVisualConfig:
         return visuals[path.name]
 
-    pipeline = _StubPipeline()
+    pipeline = _PngPipeline()
     results = run_pack(
         pack_path,
         pack,
@@ -560,3 +607,185 @@ def test_run_pack_raises_when_powerbi_job_fails(tmp_path: Path) -> None:
     assert "RuntimeError" in message
     ok_png = tmp_path / "artefacts" / f"[01]_{slugify('ok-pbi')}.png"
     assert ok_png.exists()
+
+
+def test_run_pack_renders_slides_without_template(tmp_path: Path) -> None:
+    pack_path = tmp_path / "pack.yaml"
+    pack_path.write_text("", encoding="utf-8")
+
+    pack = PackConfig(
+        schema="test-pack",
+        slides=[
+            PackSlide(title="With Template", id="with-template", template="full_page_image", visual=PackVisualRef(ref="one.yaml")),
+            PackSlide(title="No Template", id="no-template", visual=PackVisualRef(ref="two.yaml")),
+        ],
+    )
+
+    visuals: Dict[str, BaseVisualConfig] = {
+        "one.yaml": BaseVisualConfig(type="matrix"),
+        "two.yaml": BaseVisualConfig(type="matrix"),
+    }
+
+    def _loader(path: Path, payload: Mapping[str, object] | None = None, stack: tuple[Path, ...] = ()) -> BaseVisualConfig:
+        return visuals[path.name]
+
+    pipeline = _StubPipeline()
+    results = run_pack(
+        pack_path,
+        pack,
+        output_root=tmp_path / "artefacts",
+        base_options=PipelineOptions(),
+        visual_loader=_loader,
+        pipeline=cast(VisualPipeline[Any], pipeline),
+        env=create_pack_jinja_env(),
+    )
+
+    png_paths = {result.png_path for result in results if result.png_path}
+    assert (tmp_path / "artefacts" / "[01]_with_template.png") in png_paths
+    assert (tmp_path / "artefacts" / "[02]_no_template.png") in png_paths
+
+
+def test_run_pack_renders_placeholder_visuals(tmp_path: Path) -> None:
+    pack_path = tmp_path / "pack.yaml"
+    pack_path.write_text("", encoding="utf-8")
+
+    pack = PackConfig(
+        schema="test-pack",
+        slides=[
+            PackSlide(
+                title="Two Up",
+                id="two-up",
+                template="two_up",
+                placeholders={
+                    "left_chart": PackPlaceholder(visual=PackVisualRef(ref="left.yaml")),
+                    "right_chart": PackPlaceholder(visual=PackVisualRef(ref="right.yaml")),
+                },
+            )
+        ],
+    )
+
+    visuals: Dict[str, BaseVisualConfig] = {
+        "left.yaml": BaseVisualConfig(type="matrix"),
+        "right.yaml": BaseVisualConfig(type="matrix"),
+    }
+
+    def _loader(path: Path, payload: Mapping[str, object] | None = None, stack: tuple[Path, ...] = ()) -> BaseVisualConfig:
+        return visuals[path.name]
+
+    pipeline = _StubPipeline()
+    results = run_pack(
+        pack_path,
+        pack,
+        output_root=tmp_path / "artefacts",
+        base_options=PipelineOptions(),
+        visual_loader=_loader,
+        pipeline=cast(VisualPipeline[Any], pipeline),
+        env=create_pack_jinja_env(),
+    )
+
+    png_paths = {result.png_path for result in results if result.png_path}
+    expected_left = tmp_path / "artefacts" / "[01]_two_up__left_chart.png"
+    expected_right = tmp_path / "artefacts" / "[01]_two_up__right_chart.png"
+    assert expected_left in png_paths
+    assert expected_right in png_paths
+
+
+def test_run_pack_invokes_pptx_when_result_file(monkeypatch, tmp_path: Path) -> None:
+    pack_path = tmp_path / "pack.yaml"
+    pack_path.write_text("", encoding="utf-8")
+
+    # Place a template where the resolver will find it.
+    template_path = pack_path.parent / "pack_template.pptx"
+    template_path.write_bytes(b"template")
+
+    pack = PackConfig(
+        schema="test-pack",
+        slides=[
+            PackSlide(title="Deck Slide", id="deck-slide", template="full_page_image", visual=PackVisualRef(ref="one.yaml")),
+        ],
+    )
+
+    visuals: Dict[str, BaseVisualConfig] = {
+        "one.yaml": BaseVisualConfig(type="matrix"),
+    }
+
+    def _loader(path: Path, payload: Mapping[str, object] | None = None, stack: tuple[Path, ...] = ()) -> BaseVisualConfig:
+        return visuals[path.name]
+
+    captured: Dict[str, object] = {}
+
+    def _fake_assemble(**kwargs) -> None:
+        captured.update(kwargs)
+
+    monkeypatch.setattr("praeparo.pack.runner.assemble_pack_pptx", _fake_assemble)
+
+    pipeline = _StubPipeline()
+    base_options = PipelineOptions(metadata={"result_file": tmp_path / "deck.pptx"})
+    run_pack(
+        pack_path,
+        pack,
+        output_root=tmp_path / "artefacts",
+        base_options=base_options,
+        visual_loader=_loader,
+        pipeline=cast(VisualPipeline[Any], pipeline),
+        env=create_pack_jinja_env(),
+    )
+
+    assert captured, "assemble_pack_pptx should be invoked when result_file is set"
+    assert captured["slide_pngs"]
+    assert captured["placeholder_pngs"] == {}
+    assert captured["result_path"] == tmp_path / "deck.pptx"
+    assert captured["template_path"] == template_path
+
+
+def test_run_pack_builds_pptx_with_template_only_slide(tmp_path: Path) -> None:
+    pack_path = tmp_path / "pack.yaml"
+    pack_path.write_text("", encoding="utf-8")
+
+    template_path = tmp_path / "pack_template.pptx"
+    _build_pack_template(template_path)
+    result_path = tmp_path / "deck" / "governance.pptx"
+
+    pack = PackConfig(
+        schema="test-pack",
+        slides=[
+            PackSlide(title="Single Visual", id="single", template="single_image", visual=PackVisualRef(ref="one.yaml")),
+            PackSlide(
+                title="Placeholders",
+                id="placeholders",
+                template="two_up",
+                placeholders={
+                    "left_chart": PackPlaceholder(visual=PackVisualRef(ref="left.yaml")),
+                    "right_chart": PackPlaceholder(visual=PackVisualRef(ref="right.yaml")),
+                },
+            ),
+            PackSlide(title="Static Home", id="home", template="single_image"),
+        ],
+    )
+
+    visuals: Dict[str, BaseVisualConfig] = {
+        "one.yaml": BaseVisualConfig(type="matrix"),
+        "left.yaml": BaseVisualConfig(type="matrix"),
+        "right.yaml": BaseVisualConfig(type="matrix"),
+    }
+
+    def _loader(path: Path, payload: Mapping[str, object] | None = None, stack: tuple[Path, ...] = ()) -> BaseVisualConfig:
+        return visuals[path.name]
+
+    pipeline = _PngPipeline()
+    base_options = PipelineOptions(metadata={"result_file": result_path, "pptx_template": template_path})
+    run_pack(
+        pack_path,
+        pack,
+        output_root=tmp_path / "artefacts",
+        base_options=base_options,
+        visual_loader=_loader,
+        pipeline=cast(VisualPipeline[Any], pipeline),
+        env=create_pack_jinja_env(),
+    )
+
+    deck = Presentation(result_path)
+    assert len(deck.slides) == 3
+    template_only_slide = deck.slides[2]
+    pictures = [shape for shape in template_only_slide.shapes if shape.shape_type == MSO_SHAPE_TYPE.PICTURE]
+    assert pictures

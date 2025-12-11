@@ -34,7 +34,7 @@ from .powerbi import (
     PowerBIVisualMode,
     PowerBIPaginatedArtifact,
 )
-from .pack import PackConfig, PackSlide, PackVisualRef, FiltersType
+from .pack import PackConfig, PackPlaceholder, PackSlide, PackVisualRef, FiltersType
 
 __all__ = [
     "BaseVisualConfig",
@@ -73,6 +73,7 @@ __all__ = [
     "PowerBIVisualMode",
     "PowerBIPaginatedArtifact",
     "PackConfig",
+    "PackPlaceholder",
     "PackSlide",
     "PackVisualRef",
     "FiltersType",

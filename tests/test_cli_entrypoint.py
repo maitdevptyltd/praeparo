@@ -771,6 +771,148 @@ def test_pack_cli_dest_allows_flag_overrides(monkeypatch, tmp_path, capsys) -> N
     assert explicit_artefact_dir.as_posix() in out
 
 
+def test_pack_cli_revision_updates_default_result(monkeypatch, tmp_path, capsys) -> None:
+    pack_path = tmp_path / "ing governance pack.yaml"
+    pack_path.write_text("contents", encoding="utf-8")
+    dest = tmp_path / "out" / "ing_governance_pack"
+
+    captured: Dict[str, object] = {}
+
+    def fake_load_pack_config(path: Path) -> PackConfig:
+        return PackConfig(
+            schema="test-pack",
+            context={"month": "2025-12-01"},
+            slides=[PackSlide(title="Slide One", id="slide-id-1", visual=PackVisualRef(ref="one.yaml"))],
+        )
+
+    def fake_run_pack(
+        pack_path_arg,
+        pack,
+        *,
+        output_root,
+        max_powerbi_concurrency=None,
+        base_options=None,
+        visual_loader=None,
+        pipeline=None,
+        env=None,
+        only_slides=(),
+    ):
+        captured["output_root"] = output_root
+        captured["base_options"] = base_options
+        slide = pack.slides[0]
+        png_path = output_root / "slide-id-1.png"
+        png_path.parent.mkdir(parents=True, exist_ok=True)
+        png_path.write_text("png", encoding="utf-8")
+        return [
+            PackSlideResult(
+                slide=slide,
+                visual_path=pack_path_arg,
+                result=VisualExecutionResult(config=BaseVisualConfig(type="powerbi"), outputs=[]),
+                png_path=png_path,
+            )
+        ]
+
+    class FakePipeline:
+        def __init__(self, *_, **__):
+            pass
+
+    monkeypatch.setattr("praeparo.cli.load_pack_config", fake_load_pack_config)
+    monkeypatch.setattr("praeparo.cli.run_pack", fake_run_pack)
+    monkeypatch.setattr("praeparo.cli.VisualPipeline", FakePipeline)
+    monkeypatch.setattr("praeparo.cli.build_default_query_planner_provider", lambda: None)
+
+    with pytest.raises(SystemExit) as exc:
+        cli_main(
+            [
+                "pack",
+                "run",
+                str(pack_path),
+                str(dest),
+                "--revision-strategy",
+                "full",
+            ]
+        )
+
+    assert exc.value.code == 0
+    artefact_dir = dest / "_artifacts"
+    assert captured["output_root"] == artefact_dir
+    base_options = cast(PipelineOptions, captured["base_options"])
+    assert base_options is not None
+    expected_result = dest / f"{slugify(pack_path.stem)}_2025-12.pptx"
+    assert base_options.metadata.get("result_file") == expected_result
+    assert base_options.metadata.get("revision") == "2025-12"
+    assert base_options.metadata.get("revision_minor") == 1
+
+
+def test_pack_cli_result_file_infers_artefact_dir(monkeypatch, tmp_path, capsys) -> None:
+    pack_path = tmp_path / "pack.yaml"
+    pack_path.write_text("contents", encoding="utf-8")
+    result_path = tmp_path / "out" / "ing_governance.pptx"
+
+    captured: Dict[str, object] = {}
+
+    def fake_load_pack_config(path: Path) -> PackConfig:
+        return PackConfig(
+            schema="test-pack",
+            slides=[PackSlide(title="Slide One", id="slide-id-1", visual=PackVisualRef(ref="one.yaml"))],
+        )
+
+    def fake_run_pack(
+        pack_path_arg,
+        pack,
+        *,
+        output_root,
+        max_powerbi_concurrency=None,
+        base_options=None,
+        visual_loader=None,
+        pipeline=None,
+        env=None,
+        only_slides=(),
+    ):
+        captured["output_root"] = output_root
+        captured["base_options"] = base_options
+        slide = pack.slides[0]
+        png_path = output_root / "slide-id-1.png"
+        png_path.parent.mkdir(parents=True, exist_ok=True)
+        png_path.write_text("png", encoding="utf-8")
+        return [
+            PackSlideResult(
+                slide=slide,
+                visual_path=pack_path_arg,
+                result=VisualExecutionResult(config=BaseVisualConfig(type="powerbi"), outputs=[]),
+                png_path=png_path,
+            )
+        ]
+
+    class FakePipeline:
+        def __init__(self, *_, **__):
+            pass
+
+    monkeypatch.setattr("praeparo.cli.load_pack_config", fake_load_pack_config)
+    monkeypatch.setattr("praeparo.cli.run_pack", fake_run_pack)
+    monkeypatch.setattr("praeparo.cli.VisualPipeline", FakePipeline)
+    monkeypatch.setattr("praeparo.cli.build_default_query_planner_provider", lambda: None)
+
+    with pytest.raises(SystemExit) as exc:
+        cli_main(
+            [
+                "pack",
+                "run",
+                str(pack_path),
+                "--result-file",
+                str(result_path),
+            ]
+        )
+
+    assert exc.value.code == 0
+    inferred_artefact = result_path.parent / result_path.stem / "_artifacts"
+    assert captured["output_root"] == inferred_artefact
+    base_options = cast(PipelineOptions, captured["base_options"])
+    assert base_options is not None
+    assert base_options.artefact_dir == inferred_artefact
+    assert base_options.metadata.get("result_file") == result_path
+
+
 def test_pack_run_defaults_to_live_data_mode(monkeypatch, tmp_path, capsys) -> None:
     pack_path = tmp_path / "pack.yaml"
     pack_path.write_text("contents", encoding="utf-8")

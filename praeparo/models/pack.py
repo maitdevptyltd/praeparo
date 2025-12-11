@@ -35,6 +35,14 @@ class PackVisualRef(BaseModel):
         return cleaned
 
 
+class PackPlaceholder(BaseModel):
+    """Placeholder binding used by PPTX assembly."""
+
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    visual: PackVisualRef = Field(..., description="Visual rendered for this placeholder.")
+
+
 class PackSlide(BaseModel):
     """Single slide within a pack."""
 
@@ -46,6 +54,14 @@ class PackSlide(BaseModel):
     visual: PackVisualRef | None = Field(
         default=None,
         description="Optional visual reference; absent for non-visual slides.",
+    )
+    template: str | None = Field(
+        default=None,
+        description="Optional PPTX template identifier (TEMPLATE_TAG) used during deck assembly.",
+    )
+    placeholders: dict[str, PackPlaceholder] | None = Field(
+        default=None,
+        description="Optional placeholder map when a slide template contains multiple picture placeholders.",
     )
 
     @field_validator("title")
@@ -97,4 +113,4 @@ class PackConfig(BaseModel):
         return cleaned
 
 
-__all__ = ["FiltersType", "PackConfig", "PackSlide", "PackVisualRef"]
+__all__ = ["FiltersType", "PackConfig", "PackPlaceholder", "PackSlide", "PackVisualRef"]

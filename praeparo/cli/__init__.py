@@ -33,6 +33,7 @@ from praeparo.pack import (
     DEFAULT_POWERBI_CONCURRENCY,
     PackConfigError,
     PackPowerBIFailure,
+    allocate_revision,
     create_pack_jinja_env,
     load_pack_config,
     render_value,
@@ -340,6 +341,23 @@ def _register_pack_parsers(parent: argparse._SubParsersAction[argparse.ArgumentP
         help=(
             "Optional PPTX destination. Overrides defaults derived from positional dest when supplied."
         ),
+    )
+    run_parser.add_argument(
+        "--revision",
+        dest="revision",
+        help="Optional revision token (e.g. 2025-12, r17). Overrides any automatic revision allocation.",
+    )
+    run_parser.add_argument(
+        "--revision-strategy",
+        dest="revision_strategy",
+        choices=["full", "minor"],
+        help="Optional revision allocation strategy when no explicit --revision is supplied.",
+    )
+    run_parser.add_argument(
+        "--revision-dry-run",
+        dest="revision_dry_run",
+        action="store_true",
+        help="Allocate the next revision without executing visuals or writing PPTX.",
     )
     run_parser.add_argument(
         "--meta",
@@ -848,6 +866,12 @@ def _prepare_pack_metadata(args: argparse.Namespace) -> Dict[str, object]:
     grain_override = getattr(args, "grain", None)
     if grain_override:
         metadata["grain"] = tuple(grain_override)
+    revision_value = getattr(args, "revision", None)
+    if revision_value is not None:
+        metadata["revision"] = revision_value
+    revision_minor = getattr(args, "revision_minor", None)
+    if revision_minor is not None:
+        metadata["revision_minor"] = revision_minor
     return metadata
 
 
@@ -1143,12 +1167,13 @@ def _handle_pack_run(args: argparse.Namespace) -> int:
 
     artefact_dir = args.artefact_dir or default_artefact_dir
     result_file = explicit_result_file or default_result_file
+    explicit_result_supplied = explicit_result_file is not None
+
+    if artefact_dir is None and result_file is not None:
+        artefact_dir = result_file.parent / result_file.stem / "_artifacts"
 
     if artefact_dir is None:
         raise ValueError("Provide --artefact-dir or a positional dest to choose output locations.")
-
-    args.artefact_dir = artefact_dir
-    args.result_file = result_file
 
     if getattr(args, "data_mode", None) is None:
         args.data_mode = "live"
@@ -1157,6 +1182,35 @@ def _handle_pack_run(args: argparse.Namespace) -> int:
         pack = load_pack_config(pack_path)
     except PackConfigError as exc:
         raise ValueError(str(exc)) from exc
+
+    revision_info = allocate_revision(
+        pack_path,
+        artefact_root=artefact_dir,
+        pack_context=pack.context or {},
+        strategy=getattr(args, "revision_strategy", None),
+        override=getattr(args, "revision", None),
+        dry_run=getattr(args, "revision_dry_run", False),
+    )
+
+    if revision_info:
+        if getattr(args, "revision_dry_run", False):
+            planned_result = result_file or (artefact_dir.parent / revision_info.pptx_name)
+            print(
+                f"Next revision for {pack_path.stem}: "
+                f"revision={revision_info.revision} minor={revision_info.minor} "
+                f"result_file={planned_result}"
+            )
+            return 0
+
+        args.revision = revision_info.revision
+        setattr(args, "revision_minor", revision_info.minor)
+
+        if not explicit_result_supplied:
+            base_result_dir = result_file.parent if result_file else artefact_dir.parent
+            result_file = base_result_dir / revision_info.pptx_name
+
+    args.artefact_dir = artefact_dir
+    args.result_file = result_file
 
     metadata = _prepare_pack_metadata(args)
     jinja_env = create_pack_jinja_env()
