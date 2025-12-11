@@ -66,7 +66,7 @@ fig.show()
 
 | Method | Description |
 | --- | --- |
-| `.metric(key, *, alias=None, label=None, calculate=None, allow_placeholder=False)` | Adds a registry metric or variant. Filters are merged with the metric’s own inheritance chain. |
+| `.metric(key, *, alias=None, label=None, calculate=None, allow_placeholder=False, value_type=None, ratio_to=None)` | Adds a registry metric or variant. Filters are merged with the metric’s own inheritance chain. `ratio_to=True` infers the base key from the dotted metric (e.g., `metric.variant → metric`), or pass `ratio_to="base.metric"` explicitly. When `ratio_to` is set and `value_type` is omitted, the builder infers `value_type="percent"`. |
 | `.expression(identifier, expression, *, label=None, value_type="number")` | Declares an inline expression built from existing metrics (`documents_sent.automated / documents_sent`). |
 | `.calculate(filters)` | Appends global filters (string or list) that wrap every measure via `CALCULATE`. |
 | `.define(blocks)` | Adds additional DEFINE blocks rendered before SUMMARIZECOLUMNS (useful for session-level calculations). |
@@ -81,6 +81,33 @@ fig.show()
 | `.aexecute()` | Async execution that yields a `MetricDatasetResult` (rows, measure_map, metadata). |
 | `.to_df()` | Synchronous helper that returns a pandas DataFrame (imports pandas lazily). |
 | `.ato_df()` | Awaitable helper returning a pandas DataFrame. |
+
+## Ratio Metrics
+
+Use `ratio_to` to compute simple ratios directly in the dataset without hand-written expressions:
+
+```python
+builder.metric("documents_sent", alias="documents_sent", label="Documents sent")
+
+builder.metric(
+    "documents_sent.within_4_hours",
+    alias="pct_in_4h",
+    label="% Sent in 4 hours",
+    ratio_to=True,  # denominator inferred as "documents_sent"
+)
+
+builder.metric(
+    "documents_sent.within_1_business_day_from_file_ready",
+    alias="pct_in_1d",
+    label="% Sent in 1 day",
+    ratio_to="documents_sent",  # explicit denominator
+)
+```
+
+- `ratio_to=True` infers the denominator by trimming the last segment of the dotted metric key.
+- `ratio_to="<metric_key>"` points to any metric added to the builder; the key must exist or the plan raises `ValueError`.
+- When `ratio_to` is set and `value_type` is omitted, the builder defaults to `value_type="percent"`.
+- Dataset values are stored as fractions (`0–1`). Visuals can multiply by 100 when whole-number percentages are required.
 
 ## Datasource Resolution
 

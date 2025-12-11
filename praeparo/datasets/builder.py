@@ -48,6 +48,7 @@ class _MetricDatasetSeries:
     source: str
     expression: str | None = None
     value_type: str | None = None
+    ratio_to_ref: str | None = None
 
 
 class MetricDatasetBuilder:
@@ -105,7 +106,27 @@ class MetricDatasetBuilder:
         calculate: Sequence[str] | str | None = None,
         allow_placeholder: bool = False,
         value_type: str | None = None,
+        ratio_to: bool | str | None = None,
     ) -> "MetricDatasetBuilder":
+        ratio_to_ref: str | None = None
+
+        if isinstance(ratio_to, bool):
+            if ratio_to:
+                if "." not in key:
+                    msg = "ratio_to=True requires a dotted metric key to infer base metric."
+                    raise ValueError(msg)
+                ratio_to_ref = key.rsplit(".", 1)[0]
+        elif isinstance(ratio_to, str):
+            candidate = ratio_to.strip()
+            if not candidate:
+                raise ValueError("ratio_to metric key cannot be empty.")
+            ratio_to_ref = candidate
+        elif ratio_to is not None:
+            raise TypeError("ratio_to must be bool, str, or None.")
+
+        if ratio_to_ref is not None and value_type is None:
+            value_type = "percent"
+
         identifier = self._allocate_series_id(alias or key)
         series = _MetricDatasetSeries(
             series_id=identifier,
@@ -115,6 +136,7 @@ class MetricDatasetBuilder:
             allow_placeholder=allow_placeholder,
             source="metric",
             value_type=value_type,
+            ratio_to_ref=ratio_to_ref,
         )
         self._series.append(series)
         self._invalidate_plan()
@@ -326,6 +348,17 @@ class MetricDatasetBuilder:
         if not self._series:
             raise ValueError("MetricDatasetBuilder requires at least one metric or expression.")
 
+        reference_to_series_id: dict[str, str] = {
+            series.reference: series.series_id for series in self._series if series.source == "metric"
+        }
+        for series in self._series:
+            if series.ratio_to_ref and series.ratio_to_ref not in reference_to_series_id:
+                msg = (
+                    f"Metric '{series.reference}' declares ratio_to='{series.ratio_to_ref}' "
+                    "but no matching denominator metric was added to this builder."
+                )
+                raise ValueError(msg)
+
         # Load the metric catalog once and reuse a compilation cache to avoid redundant work.
         catalog = load_metric_catalog([self._context.metrics_root])
         builder = MetricDaxBuilder(catalog)
@@ -513,6 +546,30 @@ class MetricDatasetBuilder:
             for series_id, measure_name in plan.measure_map.items():
                 record[series_id] = raw.get(measure_name)
             normalised.append(record)
+
+        # Apply ratio_to semantics once base metric values have been mapped into the dataset.
+        reference_to_series_id = {series.reference: series.series_id for series in self._series}
+        for series in self._series:
+            if not series.ratio_to_ref:
+                continue
+
+            numerator_id = series.series_id
+            denominator_id = reference_to_series_id.get(series.ratio_to_ref)
+            if not denominator_id:
+                continue  # Safeguard; upstream validation should prevent this path.
+
+            for record in normalised:
+                numerator_value = record.get(numerator_id)
+                denominator_value = record.get(denominator_id)
+
+                if not isinstance(numerator_value, (int, float)) or not isinstance(denominator_value, (int, float)):
+                    record[numerator_id] = None
+                    continue
+                if denominator_value == 0:
+                    record[numerator_id] = None
+                    continue
+
+                record[numerator_id] = float(numerator_value) / float(denominator_value)
         return normalised
 
     def _apply_expression_mocks(
