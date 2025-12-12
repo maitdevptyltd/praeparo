@@ -81,7 +81,7 @@ class MetricDatasetBuilder:
 
         # Builder state: track declarative inputs until plan() compiles them into DAX.
         self._series: list[_MetricDatasetSeries] = []
-        self._grain: tuple[str, ...] = ("'dim_calendar'[Month]",)
+        self._grain: tuple[str, ...] = ("'dim_calendar'[month]",)
         self._global_filters: list[str] = []
         self._define_blocks: list[str] = []
         self._datasource_name: str | None = self._context.default_datasource

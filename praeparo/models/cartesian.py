@@ -65,7 +65,7 @@ class CategoryConfig(BaseModel):
 
     field: str = Field(
         ...,
-        description="Semantic model column referenced by the category axis (e.g. `'dim_calendar'[Month]`).",
+        description="Semantic model column referenced by the category axis (e.g. `'dim_calendar'[month]`).",
     )
     label: str | None = Field(
         default=None,
