@@ -90,6 +90,8 @@ When a visual needs to emit DAX, reuse the helpers under
 - `parse_metric_expression` parses inline expressions and returns a
   `ParsedExpression` struct with referenced metrics so planners can substitute
   compiled DAX fragments safely.
+- See `metric_expressions.md` for the expression grammar and the `ratio_to()`
+  helper supported inside expressions.
 - `resolve_expression_metric` compiles inline expression rows into
   `MetricMeasureDefinition` instances using the same builder/cache workflow as
   catalogue metrics.
