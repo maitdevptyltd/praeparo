@@ -61,6 +61,7 @@ from praeparo.visuals.registry import (
 )
 
 LOG_LEVEL_ENV_VAR = "PRAEPARO_LOG_LEVEL"
+INCLUDE_THIRD_PARTY_LOGS_ENV_VAR = "PRAEPARO_INCLUDE_THIRD_PARTY_LOGS"
 PBI_CONCURRENCY_ENV_VAR = "PRAEPARO_PBI_MAX_CONCURRENCY"
 logger = logging.getLogger(__name__)
 
@@ -70,16 +71,51 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 
-def _configure_logging(log_level: str | None) -> None:
+def _configure_logging(log_level: str | None, *, include_third_party_logs: bool | None = None) -> None:
+    """Configure CLI logging.
+
+    Praeparo logs are emitted at the selected level (default DEBUG). To avoid
+    noisy dependencies during pack runs, logs from non-Praeparo libraries are
+    suppressed unless they are WARNING+ by default. Set
+    `--include-third-party-logs` or `PRAEPARO_INCLUDE_THIRD_PARTY_LOGS=1` to
+    restore full third-party logging.
+    """
+
+    def _env_flag_enabled(raw: str | None) -> bool:
+        if not raw:
+            return False
+        return raw.strip().lower() in {"1", "true", "yes", "on"}
+
     env_level = os.getenv(LOG_LEVEL_ENV_VAR)
     candidate = (log_level or env_level or "DEBUG").upper()
     resolved = logging.getLevelName(candidate)
     level = resolved if isinstance(resolved, int) else logging.DEBUG
+
+    include_env = _env_flag_enabled(os.getenv(INCLUDE_THIRD_PARTY_LOGS_ENV_VAR))
+    include_third_party = include_env if include_third_party_logs is None else bool(include_third_party_logs)
+
+    # Ensure our handler and filters apply even if a dependency configured logging early.
     logging.basicConfig(
         level=level,
         format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+        force=True,
     )
-    logging.getLogger().setLevel(level)
+    root = logging.getLogger()
+    root.setLevel(level)
+
+    if include_third_party:
+        return
+
+    third_party_threshold = logging.WARNING
+
+    class _PraeparoOnlyFilter(logging.Filter):
+        def filter(self, record: logging.LogRecord) -> bool:
+            if record.name.startswith("praeparo"):
+                return True
+            return record.levelno >= third_party_threshold
+
+    for handler in root.handlers:
+        handler.addFilter(_PraeparoOnlyFilter())
 
 
 # ---------------------------------------------------------------------------
@@ -686,6 +722,16 @@ def _build_parser(
         dest="log_level",
         choices=["CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG", "NOTSET"],
         help=f"Override log level (default DEBUG; also honours {LOG_LEVEL_ENV_VAR}).",
+    )
+    parser.add_argument(
+        "--include-third-party-logs",
+        dest="include_third_party_logs",
+        action="store_true",
+        default=None,
+        help=(
+            "Include INFO/DEBUG logs from non-Praeparo libraries. "
+            f"Defaults to WARNING+ only; also honours {INCLUDE_THIRD_PARTY_LOGS_ENV_VAR}."
+        ),
     )
     _add_plugin_argument(parser)
 
@@ -1541,7 +1587,10 @@ def main(argv: Sequence[str] | None = None) -> None:
     parser = _build_parser(visual_registrations, dax_registrations)
     try:
         args = parser.parse_args(args_list)
-        _configure_logging(getattr(args, "log_level", None))
+        _configure_logging(
+            getattr(args, "log_level", None),
+            include_third_party_logs=getattr(args, "include_third_party_logs", None),
+        )
         handler = getattr(args, "_handler", None)
         if handler is None:
             parser.error("No handler registered for command")

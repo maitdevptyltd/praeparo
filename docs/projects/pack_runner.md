@@ -205,7 +205,12 @@ poetry run praeparo pack run projects/example/pack.yaml \
 ### Logging
 
 `praeparo pack run` emits structured logs via Python’s logging module. The CLI
-defaults to `DEBUG` to aid pack debugging; adjust with either:
+defaults to `DEBUG` for Praeparo’s own logs to aid pack debugging. To keep pack
+output readable, logs from other libraries are suppressed unless they are
+WARNING+ by default. Opt in to full dependency logging with
+`--include-third-party-logs` or `PRAEPARO_INCLUDE_THIRD_PARTY_LOGS=1`.
+
+Adjust the Praeparo log level with either:
 
 ```bash
 poetry run praeparo pack run projects/example/pack.yaml \

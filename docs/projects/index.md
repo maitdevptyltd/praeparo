@@ -47,8 +47,11 @@ Prefer the explicit flags for clarity, but you can use a positional shorthand:
 
 Each visual slide is executed via the normal visual registry and pipelines;
 PNGs land in `<artefact-dir>/[NN]_<slide-slug>.png` with per-slide artefacts under
-`<artefact-dir>/[NN]_<slide-slug>/`. Pack CLI logging defaults to `DEBUG`; override
-with `--log-level` or `PRAEPARO_LOG_LEVEL` (see [Pack Runner](pack_runner.md)
+`<artefact-dir>/[NN]_<slide-slug>/`. Pack CLI logging defaults to `DEBUG` for
+Praeparo loggers while suppressing INFO/DEBUG output from dependencies unless
+they are WARNING+. Override Praeparo verbosity with `--log-level` or
+`PRAEPARO_LOG_LEVEL`, and restore dependency logs with
+`--include-third-party-logs` or `PRAEPARO_INCLUDE_THIRD_PARTY_LOGS=1` (see [Pack Runner](pack_runner.md)
 for details).
 
 ## Upcoming: Python Metric Dataset Builder
