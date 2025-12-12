@@ -521,6 +521,35 @@ Slides without a `template` are skipped; slides with a template but no visual or
 placeholders now pass through untouched so “static” template-only pages do not
 break the run.
 
+### Template geometry → render size hints (`width` / `height`)
+
+When a pack uses a PPTX template, Praeparo can derive **render-time** size hints
+from the template’s picture placeholders and attach them to each slide’s
+`PipelineOptions.metadata` as `width`/`height` pixel values.
+
+This is primarily for locally-rendered visuals (for example Python visuals,
+governance matrix, and other non-PowerBI renderers) so they can size their PNG
+canvas to match the template viewport before PPTX best-fit placement runs.
+
+Rules:
+
+- Hints are derived from the template’s placeholder dimensions (EMUs) and
+  converted to pixels at a nominal 96 DPI.
+- Pack CLI overrides win: explicit `--width` / `--height` are never overwritten
+  by template-derived hints.
+- Placeholder visuals (e.g. `slide.placeholders.left_chart.visual`) receive the
+  placeholder’s size; slide-level visuals receive the template’s single-slot
+  size when available.
+
+Example (Python visuals can consume the hints):
+
+```python
+width = context.options.metadata.get("width")
+height = context.options.metadata.get("height")
+if width or height:
+    fig.update_layout(width=width, height=height)
+```
+
 ### Static images and placeholder bindings
 
 Packs can bind static images into PPTX templates without creating a dedicated
