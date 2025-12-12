@@ -10,6 +10,23 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 _SLUG_PATTERN = re.compile(r"^[a-z0-9_]+$")
 _VALUE_TYPES = {"number", "percent", "currency"}
+_FORMAT_PATTERN = re.compile(r"^(number|percent|currency)(:\d+)?$")
+
+
+def _normalise_optional_format(value: object) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise TypeError("format must be a string.")
+    candidate = value.strip().lower()
+    if not candidate:
+        return None
+    if not _FORMAT_PATTERN.match(candidate):
+        raise ValueError(
+            "format must start with one of ['currency', 'number', 'percent'] "
+            "and may include an optional precision suffix like 'percent:2'."
+        )
+    return candidate
 
 
 def _ensure_string_list(value: object) -> List[str]:
@@ -55,6 +72,10 @@ class MetricVariant(BaseModel):
         default_factory=dict,
         description="Optional nested variants that inherit this variant's filters",
     )
+    format: str | None = Field(
+        default=None,
+        description="Optional display format token (percent, number, currency).",
+    )
     value_type: str | None = Field(
         default=None,
         description="Override the display value type for this variant (number, percent, currency).",
@@ -62,6 +83,7 @@ class MetricVariant(BaseModel):
 
     _coerce_calculate = field_validator("calculate", mode="before")(_ensure_string_list)
     _validate_nested_keys = field_validator("variants", mode="after")(_ensure_variant_keys)
+    _validate_format = field_validator("format", mode="before")(_normalise_optional_format)
 
     @field_validator("value_type", mode="before")
     @classmethod
@@ -165,12 +187,17 @@ class MetricDefinition(BaseModel):
     ratios: MetricRatiosConfig | None = Field(
         default=None, description="Automatic or explicit ratios derived from this metric"
     )
+    format: str | None = Field(
+        default=None,
+        description="Optional display format token (percent, number, currency).",
+    )
     value_type: str = Field(
         default="number",
         description="Display value type for the metric (number, percent, currency).",
     )
 
     _coerce_calculate = field_validator("calculate", mode="before")(_ensure_string_list)
+    _validate_format = field_validator("format", mode="before")(_normalise_optional_format)
 
     @field_validator("value_type", mode="before")
     @classmethod

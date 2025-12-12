@@ -140,6 +140,19 @@
           "title": "Variants",
           "type": "object"
         },
+        "format": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional display format token (percent, number, currency).",
+          "title": "Format"
+        },
         "value_type": {
           "anyOf": [
             {
@@ -282,6 +295,19 @@
       ],
       "default": null,
       "description": "Automatic or explicit ratios derived from this metric"
+    },
+    "format": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Optional display format token (percent, number, currency).",
+      "title": "Format"
     },
     "value_type": {
       "default": "number",

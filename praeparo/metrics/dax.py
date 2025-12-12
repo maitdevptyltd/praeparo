@@ -35,6 +35,9 @@ class MetricMeasureDefinition:
     value_type: str = "number"
     """Declared value type for presentation (number, percent, currency)."""
 
+    format: str | None = None
+    """Optional display format token carried from the metric/variant definition."""
+
 
 @dataclass(frozen=True)
 class MetricDaxPlan:
@@ -61,6 +64,7 @@ class MetricDaxBuilder:
         chain = _resolve_metric_chain(self._catalog, metric)
         define = _resolve_define(chain)
         base_filters = _collect_metric_filters(chain)
+        effective_metric_format = _resolve_format(chain)
 
         base_expression = normalize_dax_expression(_compose_calculate(define, base_filters))
         base_measure = MetricMeasureDefinition(
@@ -71,6 +75,7 @@ class MetricDaxBuilder:
             description=metric.description,
             variant_path=None,
             value_type=metric.value_type,
+            format=effective_metric_format,
         )
 
         variant_definitions: dict[str, MetricMeasureDefinition] = {}
@@ -82,6 +87,7 @@ class MetricDaxBuilder:
                 variant_expression = normalize_dax_expression(_compose_calculate(define, combined_filters))
                 variant_key = f"{metric_key}.{path}"
                 variant_value_type = variant.value_type or metric.value_type
+                variant_format = variant.format or effective_metric_format
                 variant_definitions[path] = MetricMeasureDefinition(
                     key=variant_key,
                     label=variant.display_name,
@@ -90,6 +96,7 @@ class MetricDaxBuilder:
                     description=variant.description,
                     variant_path=path,
                     value_type=variant_value_type,
+                    format=variant_format,
                 )
 
         return MetricDaxPlan(metric_key=metric_key, base=base_measure, variants=variant_definitions)
@@ -129,6 +136,20 @@ def _resolve_define(chain: Iterable[MetricDefinition]) -> str:
         keys = " → ".join(item.key for item in chain)
         raise ValueError(f"Metric chain '{keys}' does not define a base expression.")
     return define
+
+
+def _resolve_format(chain: Iterable[MetricDefinition]) -> str | None:
+    """Return the effective format token for the metric chain.
+
+    The last defined (non-empty) format in the inheritance chain wins.
+    """
+
+    resolved: str | None = None
+    for metric in chain:
+        candidate = getattr(metric, "format", None)
+        if isinstance(candidate, str) and candidate.strip():
+            resolved = candidate
+    return resolved
 
 
 def _collect_metric_filters(chain: Iterable[MetricDefinition]) -> list[str]:

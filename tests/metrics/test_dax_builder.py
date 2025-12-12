@@ -139,6 +139,60 @@ def test_compile_metric_handles_nested_variants() -> None:
     )
 
 
+def test_compile_metric_carries_format_and_variant_override() -> None:
+    metric = MetricDefinition.model_validate(
+        {
+            "key": "documents_sent",
+            "display_name": "Documents sent",
+            "section": "Document Preparation",
+            "define": normalize_dax_expression("SUM('fact_events'[DocumentsSent])"),
+            "format": "percent",
+            "variants": {
+                "automated": {
+                    "display_name": "Documents sent (automatic)",
+                    "calculate": ["fact_events.IsAutomated = TRUE()"],
+                    "format": "currency",
+                },
+                "manual": {
+                    "display_name": "Documents sent (manual)",
+                    "calculate": ["fact_events.IsAutomated = FALSE()"],
+                },
+            },
+        }
+    )
+
+    plan = MetricDaxBuilder(_metric_catalog(metric)).compile_metric("documents_sent")
+
+    assert plan.base.format == "percent"
+    assert plan.variants["automated"].format == "currency"
+    assert plan.variants["manual"].format == "percent"
+
+
+def test_compile_metric_inherits_format_from_parent_when_unset() -> None:
+    parent = MetricDefinition.model_validate(
+        {
+            "key": "documents_sent",
+            "display_name": "Documents sent",
+            "section": "Document Preparation",
+            "define": normalize_dax_expression("SUM('fact_events'[DocumentsSent])"),
+            "format": "percent",
+        }
+    )
+    child = MetricDefinition.model_validate(
+        {
+            "key": "documents_sent_business",
+            "display_name": "Business docs sent",
+            "section": "Document Preparation",
+            "extends": "documents_sent",
+            "calculate": ["dim_matter.Segment = \"Business\""],
+        }
+    )
+
+    plan = MetricDaxBuilder(_metric_catalog(parent, child)).compile_metric("documents_sent_business")
+
+    assert plan.base.format == "percent"
+
+
 def test_compile_metric_raises_when_define_missing() -> None:
     metric = MetricDefinition.model_validate(
         {
