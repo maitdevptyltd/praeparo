@@ -206,3 +206,194 @@ def test_compile_metric_raises_when_define_missing() -> None:
 
     with pytest.raises(ValueError):
         builder.compile_metric("documents_sent")
+
+
+def test_compile_metric_with_expression_base() -> None:
+    metric_a = MetricDefinition.model_validate(
+        {
+            "key": "metric_a",
+            "display_name": "Metric A",
+            "section": "Expression",
+            "define": "SUM('fact_events'[A])",
+        }
+    )
+    metric_b = MetricDefinition.model_validate(
+        {
+            "key": "metric_b",
+            "display_name": "Metric B",
+            "section": "Expression",
+            "define": "SUM('fact_events'[B])",
+        }
+    )
+    expression_metric = MetricDefinition.model_validate(
+        {
+            "key": "metric_a_plus_b",
+            "display_name": "A plus B",
+            "section": "Expression",
+            "expression": "metric_a + metric_b",
+        }
+    )
+
+    catalog = _metric_catalog(metric_a, metric_b, expression_metric)
+    plan = MetricDaxBuilder(catalog).compile_metric("metric_a_plus_b")
+
+    assert (
+        plan.base.expression
+        == "((SUM('fact_events'[A])) + (SUM('fact_events'[B])))"
+    )
+
+
+def test_compile_metric_expression_with_variants_wraps_filters() -> None:
+    metric_a = MetricDefinition.model_validate(
+        {
+            "key": "metric_a",
+            "display_name": "Metric A",
+            "section": "Expression",
+            "define": "SUM('fact_events'[A])",
+        }
+    )
+    metric_b = MetricDefinition.model_validate(
+        {
+            "key": "metric_b",
+            "display_name": "Metric B",
+            "section": "Expression",
+            "define": "SUM('fact_events'[B])",
+        }
+    )
+    expression_metric = MetricDefinition.model_validate(
+        {
+            "key": "metric_a_plus_b",
+            "display_name": "A plus B",
+            "section": "Expression",
+            "expression": "metric_a + metric_b",
+            "calculate": ["dim_status.IsComplete = TRUE()"],
+            "variants": {
+                "automated": {
+                    "display_name": "A plus B (automatic)",
+                    "calculate": ["fact_events.IsAutomated = TRUE()"],
+                },
+            },
+        }
+    )
+
+    catalog = _metric_catalog(metric_a, metric_b, expression_metric)
+    plan = MetricDaxBuilder(catalog).compile_metric("metric_a_plus_b")
+
+    expected_base = (
+        "CALCULATE(\n"
+        "    ((SUM('fact_events'[A])) + (SUM('fact_events'[B]))),\n"
+        "    'dim_status'[IsComplete] = TRUE()\n"
+        ")"
+    )
+    assert plan.base.expression == expected_base
+
+    expected_variant = (
+        "CALCULATE(\n"
+        "    ((SUM('fact_events'[A])) + (SUM('fact_events'[B]))),\n"
+        "    'dim_status'[IsComplete] = TRUE(),\n"
+        "    'fact_events'[IsAutomated] = TRUE()\n"
+        ")"
+    )
+    assert plan.variants["automated"].expression == expected_variant
+
+
+def test_compile_metric_leaf_expression_overrides_parent_define() -> None:
+    parent = MetricDefinition.model_validate(
+        {
+            "key": "metric_a",
+            "display_name": "Metric A",
+            "section": "Expression",
+            "define": "SUM('fact_events'[A])",
+        }
+    )
+    metric_b = MetricDefinition.model_validate(
+        {
+            "key": "metric_b",
+            "display_name": "Metric B",
+            "section": "Expression",
+            "define": "SUM('fact_events'[B])",
+        }
+    )
+    child = MetricDefinition.model_validate(
+        {
+            "key": "metric_a_ratio",
+            "display_name": "A / B",
+            "section": "Expression",
+            "extends": "metric_a",
+            "expression": "metric_a / metric_b",
+        }
+    )
+
+    catalog = _metric_catalog(parent, metric_b, child)
+    plan = MetricDaxBuilder(catalog).compile_metric("metric_a_ratio")
+
+    assert (
+        plan.base.expression
+        == "((SUM('fact_events'[A])) / (SUM('fact_events'[B])))"
+    )
+
+
+def test_compile_metric_leaf_define_overrides_parent_expression() -> None:
+    metric_a = MetricDefinition.model_validate(
+        {
+            "key": "metric_a",
+            "display_name": "Metric A",
+            "section": "Expression",
+            "define": "SUM('fact_events'[A])",
+        }
+    )
+    metric_b = MetricDefinition.model_validate(
+        {
+            "key": "metric_b",
+            "display_name": "Metric B",
+            "section": "Expression",
+            "define": "SUM('fact_events'[B])",
+        }
+    )
+    parent = MetricDefinition.model_validate(
+        {
+            "key": "metric_total",
+            "display_name": "Total",
+            "section": "Expression",
+            "expression": "metric_a + metric_b",
+        }
+    )
+    child = MetricDefinition.model_validate(
+        {
+            "key": "metric_total_override",
+            "display_name": "Override",
+            "section": "Expression",
+            "extends": "metric_total",
+            "define": "SUM('fact_events'[Override])",
+        }
+    )
+
+    catalog = _metric_catalog(metric_a, metric_b, parent, child)
+    plan = MetricDaxBuilder(catalog).compile_metric("metric_total_override")
+
+    assert plan.base.expression == "SUM('fact_events'[Override])"
+
+
+def test_compile_metric_expression_circular_dependency_raises() -> None:
+    metric_a = MetricDefinition.model_validate(
+        {
+            "key": "metric_a",
+            "display_name": "Metric A",
+            "section": "Expression",
+            "expression": "metric_b",
+        }
+    )
+    metric_b = MetricDefinition.model_validate(
+        {
+            "key": "metric_b",
+            "display_name": "Metric B",
+            "section": "Expression",
+            "expression": "metric_a",
+        }
+    )
+
+    catalog = _metric_catalog(metric_a, metric_b)
+    builder = MetricDaxBuilder(catalog)
+
+    with pytest.raises(ValueError, match="Circular metric dependency detected"):
+        builder.compile_metric("metric_a")

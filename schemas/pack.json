@@ -4,21 +4,42 @@
       "additionalProperties": true,
       "description": "Context payload shared by slides.\n\nExtra keys are allowed so packs can continue to pass arbitrary template values.",
       "properties": {
-        "metrics": {
+        "calculate": {
           "anyOf": [
             {
+              "type": "string"
+            },
+            {
               "items": {
-                "$ref": "#/$defs/PackMetricBinding"
+                "type": "string"
               },
               "type": "array"
+            },
+            {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
             },
             {
               "type": "null"
             }
           ],
           "default": null,
-          "description": "Optional metric bindings resolved into Jinja variables.",
-          "title": "Metrics"
+          "description": "Deprecated alias for metrics.calculate; use context.metrics.calculate instead.",
+          "title": "Calculate"
+        },
+        "metrics": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PackMetricsContext"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional metric context bindings and scoping predicates."
         }
       },
       "title": "PackContext",
@@ -109,6 +130,55 @@
         }
       },
       "title": "PackMetricBinding",
+      "type": "object"
+    },
+    "PackMetricsContext": {
+      "additionalProperties": false,
+      "description": "Metrics-only context for packs and slides.\n\nThis wrapper scopes DAX predicates to metric-context resolution without\naffecting slide visuals.",
+      "properties": {
+        "calculate": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional DAX CALCULATE predicates applied to the outer metric context query.",
+          "title": "Calculate"
+        },
+        "bindings": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/PackMetricBinding"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Metric bindings resolved into Jinja variables.",
+          "title": "Bindings"
+        }
+      },
+      "title": "PackMetricsContext",
       "type": "object"
     },
     "PackPlaceholder": {
@@ -275,21 +345,42 @@
       "additionalProperties": true,
       "description": "Context payload specific to an individual slide.",
       "properties": {
-        "metrics": {
+        "calculate": {
           "anyOf": [
             {
+              "type": "string"
+            },
+            {
               "items": {
-                "$ref": "#/$defs/PackMetricBinding"
+                "type": "string"
               },
               "type": "array"
+            },
+            {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
             },
             {
               "type": "null"
             }
           ],
           "default": null,
-          "description": "Optional metric bindings resolved into Jinja variables.",
-          "title": "Metrics"
+          "description": "Deprecated alias for metrics.calculate; use context.metrics.calculate instead.",
+          "title": "Calculate"
+        },
+        "metrics": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PackMetricsContext"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional metric context bindings and scoping predicates."
         }
       },
       "title": "PackSlideContext",

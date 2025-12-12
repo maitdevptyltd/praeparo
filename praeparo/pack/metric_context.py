@@ -27,7 +27,7 @@ from praeparo.datasets import MetricDatasetBuilder, MetricDatasetBuilderContext
 from praeparo.datasets.context import resolve_default_metrics_root_for_pack
 from praeparo.datasets.expression_eval import evaluate_expression
 from praeparo.metrics import MetricCatalog, load_metric_catalog
-from praeparo.models import PackMetricBinding
+from praeparo.models import FiltersType, PackMetricBinding
 from praeparo.pack.templating import render_value
 from praeparo.visuals.dax.expressions import ParsedExpression, parse_metric_expression
 
@@ -106,6 +106,7 @@ def resolve_metric_context(
     env: Environment,
     base_payload: Mapping[str, object],
     scope: str,
+    metrics_calculate: FiltersType = None,
     artefact_dir: Path | None = None,
 ) -> ResolvedMetricContext:
     """Resolve bindings into scalars, reusing inherited values where valid."""
@@ -114,6 +115,12 @@ def resolve_metric_context(
     aliases: dict[str, float | None] = dict(inherited.aliases) if inherited else {}
     by_key: dict[str, float | None] = dict(inherited.by_key) if inherited else {}
     signatures_by_key: dict[str, tuple[Any, ...]] = dict(inherited.signatures_by_key) if inherited else {}
+
+    rendered_scope_calculate = (
+        render_value(metrics_calculate, env=env, context=base_payload) if metrics_calculate else None
+    )
+    scope_calculate_list = _normalise_rendered_calculate(rendered_scope_calculate)
+    scope_signature = tuple(sorted(set(scope_calculate_list)))
 
     if not bindings:
         return ResolvedMetricContext(aliases=aliases, by_key=by_key, signatures_by_key=signatures_by_key)
@@ -173,14 +180,17 @@ def resolve_metric_context(
 
     # Decide which explicit key bindings can be reused from inherited values.
     bindings_to_fetch: list[PackMetricBinding] = []
+    binding_signatures: dict[str, tuple[Any, ...]] = {}
     for binding in key_bindings:
         full_key = binding.full_key
         assert full_key is not None
         if not catalog.contains(full_key):
             raise ValueError(f"{scope} context.metrics references unknown metric key '{full_key}'")
 
+        binding_sig = binding.signature() + (scope_signature,)
+        binding_signatures[full_key] = binding_sig
         inherited_sig = signatures_by_key.get(full_key)
-        if inherited_sig is not None and inherited_sig == binding.signature():
+        if inherited_sig is not None and inherited_sig == binding_sig:
             # Reuse inherited key and expose it under this alias if needed.
             aliases[binding.alias or full_key.replace(".", "_")] = by_key.get(full_key)
             continue
@@ -206,6 +216,9 @@ def resolve_metric_context(
 
         if builder_context.use_mock:
             builder.mock_rows(1)
+
+        if scope_calculate_list:
+            builder.calculate(scope_calculate_list)
 
         for binding in bindings_to_fetch:
             full_key = binding.full_key
@@ -239,13 +252,13 @@ def resolve_metric_context(
             assert full_key is not None and binding.alias is not None
             value = _coerce_float(row.get(binding.alias))
             by_key[full_key] = value
-            signatures_by_key[full_key] = binding.signature()
+            signatures_by_key[full_key] = binding_signatures.get(full_key, binding.signature() + (scope_signature,))
             aliases[binding.alias] = value
 
         for dep_alias, full_key in dependency_fetches.items():
             value = _coerce_float(row.get(dep_alias))
             by_key[full_key] = value
-            signatures_by_key[full_key] = (full_key, tuple(), None, None)
+            signatures_by_key[full_key] = (full_key, tuple(), None, None, scope_signature)
 
     if expression_bindings:
         _evaluate_expressions(

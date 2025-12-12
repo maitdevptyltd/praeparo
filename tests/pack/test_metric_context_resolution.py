@@ -180,3 +180,90 @@ define: "COUNTROWS('fact_documents')"
     assert isinstance(payload, list)
     assert len(payload) == 1
     assert "total_documents" in payload[0]
+
+
+def test_metrics_calculate_included_in_dax_artifact(tmp_path: Path) -> None:
+    metrics_root = tmp_path / "registry" / "metrics"
+    metrics_root.mkdir(parents=True, exist_ok=True)
+    (metrics_root / "documents_sent.yaml").write_text(
+        """
+key: documents_sent
+display_name: Documents Sent
+section: documents
+define: "COUNTROWS('fact_documents')"
+""",
+        encoding="utf-8",
+    )
+
+    builder_context = MetricDatasetBuilderContext.discover(
+        project_root=tmp_path,
+        metrics_root=metrics_root,
+        use_mock=True,
+    )
+    catalog = load_metric_catalog([metrics_root])
+    env = create_pack_jinja_env()
+
+    bindings = [PackMetricBinding(key="documents_sent", alias="total_documents")]
+    artefact_dir = tmp_path / "artefacts"
+    month_filter = "'dim_calendar'[month] = DATEVALUE(\"2025-11-01\")"
+
+    resolve_metric_context(
+        bindings=bindings,
+        inherited=None,
+        builder_context=builder_context,
+        catalog=catalog,
+        env=env,
+        base_payload={},
+        scope="root",
+        metrics_calculate={"month": month_filter},
+        artefact_dir=artefact_dir,
+    )
+
+    dax_path = artefact_dir / "metric_context.root.dax"
+    assert dax_path.exists()
+    assert month_filter in dax_path.read_text(encoding="utf-8")
+
+
+def test_metrics_calculate_mismatch_disables_reuse(tmp_path: Path) -> None:
+    metrics_root = tmp_path / "registry" / "metrics"
+    metrics_root.mkdir(parents=True, exist_ok=True)
+    (metrics_root / "documents_sent.yaml").write_text(
+        """
+key: documents_sent
+display_name: Documents Sent
+section: documents
+define: "COUNTROWS('fact_documents')"
+""",
+        encoding="utf-8",
+    )
+
+    builder_context = MetricDatasetBuilderContext.discover(
+        project_root=tmp_path,
+        metrics_root=metrics_root,
+        use_mock=True,
+    )
+    catalog = load_metric_catalog([metrics_root])
+    env = create_pack_jinja_env()
+
+    binding = PackMetricBinding(key="documents_sent", alias="total_documents")
+    inherited = ResolvedMetricContext(
+        aliases={"total_documents": 7.0},
+        by_key={"documents_sent": 7.0},
+        signatures_by_key={"documents_sent": binding.signature() + (tuple(),)},
+    )
+
+    artefact_dir = tmp_path / "artefacts"
+    resolve_metric_context(
+        bindings=[binding],
+        inherited=inherited,
+        builder_context=builder_context,
+        catalog=catalog,
+        env=env,
+        base_payload={},
+        scope="slide_1",
+        metrics_calculate=["'dim_calendar'[month] = DATEVALUE(\"2025-11-01\")"],
+        artefact_dir=artefact_dir,
+    )
+
+    dax_path = artefact_dir / "metric_context.slide_1.dax"
+    assert dax_path.exists()

@@ -29,8 +29,9 @@ for path, variant in plan.variants.items():
 
 ## Behaviour
 
-- **Inheritance aware** – the builder walks the `extends` chain, re-using the most recent `define:` block and stacking every `calculate:` filter from parent → child. Missing `define:` entries raise an error so metrics stay grounded in a DAX expression.
+- **Inheritance aware** – the builder walks the `extends` chain, re-using the leaf-most base formula and stacking every `calculate:` filter from parent → child. A base formula may be a DAX `define:` block or an arithmetic `expression:`. The last formula defined in the chain wins (so a child `expression:` overrides a parent `define:`, and vice versa).
 - **Variant support** – any variants declared in the metric YAML (including nested paths) gain their own measure definition. Filters from each variant level cascade in the order they appear within the YAML.
+- **Expression metrics** – when a metric declares `expression:`, Praeparo parses lightweight arithmetic over other metrics/variants (for example `documents_sent.manual / documents_sent`) and inlines their DAX before applying filters. Circular dependencies across expression metrics are detected and surfaced during compilation.
 - **Raw expressions** – the builder returns DAX snippets only; callers decide where to register measures (for example `DEFINE MEASURE 'adhoc'[documents_sent] = ...`). This lets downstream systems control naming and table placement.
 - **Ratios** – the current API surfaces variant metadata only. Automatic ratio generation will land in a follow-up iteration once the consuming projects lock in naming conventions.
 

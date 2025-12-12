@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable
+from typing import Iterable, TYPE_CHECKING
 
 from .catalog import MetricCatalog
 from .models import MetricDefinition, MetricVariant
 from ..utils import normalize_dax_expression
+
+if TYPE_CHECKING:
+    from praeparo.visuals.dax.cache import MetricCompilationCache
 
 
 @dataclass(frozen=True)
@@ -54,7 +57,9 @@ class MetricDaxBuilder:
     def __init__(self, catalog: MetricCatalog) -> None:
         self._catalog = catalog
 
-    def compile_metric(self, metric_key: str) -> MetricDaxPlan:
+    def compile_metric(
+        self, metric_key: str, *, cache: "MetricCompilationCache | None" = None
+    ) -> MetricDaxPlan:
         """Return the DAX plan for the supplied metric key."""
 
         metric = self._catalog.get_metric(metric_key)
@@ -62,11 +67,30 @@ class MetricDaxBuilder:
             raise KeyError(f"Metric '{metric_key}' not found in catalog.")
 
         chain = _resolve_metric_chain(self._catalog, metric)
-        define = _resolve_define(chain)
+        base_kind, base_text = _resolve_base_formula(chain)
         base_filters = _collect_metric_filters(chain)
         effective_metric_format = _resolve_format(chain)
 
-        base_expression = normalize_dax_expression(_compose_calculate(define, base_filters))
+        if base_kind == "expression":
+            # Expression compilation relies on MetricDaxBuilder, so we import lazily to avoid
+            # circular imports at module load time.
+            from praeparo.expressions.metrics import resolve_expression_metric
+            from praeparo.visuals.dax.cache import MetricCompilationCache
+
+            compilation_cache = cache or MetricCompilationCache()
+            compiled = resolve_expression_metric(
+                metric_key=metric_key,
+                expression=base_text,
+                builder=self,
+                cache=compilation_cache,
+                label=metric.display_name,
+                value_type=metric.value_type,
+            )
+            base_formula = compiled.expression
+        else:
+            base_formula = base_text
+
+        base_expression = normalize_dax_expression(_compose_calculate(base_formula, base_filters))
         base_measure = MetricMeasureDefinition(
             key=metric_key,
             label=metric.display_name,
@@ -84,7 +108,9 @@ class MetricDaxBuilder:
             for path, variant in flattened_variants.items():
                 variant_filters = _collect_variant_filters(metric, path)
                 combined_filters = tuple(base_filters + variant_filters)
-                variant_expression = normalize_dax_expression(_compose_calculate(define, combined_filters))
+                variant_expression = normalize_dax_expression(
+                    _compose_calculate(base_formula, combined_filters)
+                )
                 variant_key = f"{metric_key}.{path}"
                 variant_value_type = variant.value_type or metric.value_type
                 variant_format = variant.format or effective_metric_format
@@ -123,19 +149,33 @@ def _resolve_metric_chain(catalog: MetricCatalog, metric: MetricDefinition) -> l
     return list(reversed(chain))
 
 
-def _resolve_define(chain: Iterable[MetricDefinition]) -> str:
-    """Return the effective define block for the metric chain."""
+def _resolve_base_formula(chain: Iterable[MetricDefinition]) -> tuple[str, str]:
+    """Return the effective base formula for the metric chain.
 
-    define: str | None = None
+    The leaf-most (root → leaf) formula wins, regardless of whether it is a DAX
+    `define` or arithmetic `expression`. Expressions are compiled later.
+    """
+
+    base_kind: str | None = None
+    base_text: str | None = None
     for metric in chain:
+        expression_candidate = getattr(metric, "expression", None)
+        if isinstance(expression_candidate, str):
+            candidate = expression_candidate.strip()
+            if candidate:
+                base_kind = "expression"
+                base_text = candidate
+
         if metric.define:
             candidate = metric.define.strip()
             if candidate:
-                define = candidate
-    if not define:
+                base_kind = "define"
+                base_text = candidate
+
+    if not base_text:
         keys = " → ".join(item.key for item in chain)
         raise ValueError(f"Metric chain '{keys}' does not define a base expression.")
-    return define
+    return base_kind or "define", base_text
 
 
 def _resolve_format(chain: Iterable[MetricDefinition]) -> str | None:

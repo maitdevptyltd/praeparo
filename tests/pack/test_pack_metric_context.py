@@ -22,7 +22,8 @@ def test_context_metrics_list_shorthand_defaults_alias() -> None:
     )
 
     assert pack.context.metrics is not None
-    binding = pack.context.metrics[0]
+    bindings = pack.context.metrics.bindings or []
+    binding = bindings[0]
     assert binding.key == "documents_verified.within_1_day"
     assert binding.alias == "documents_verified_within_1_day"
 
@@ -37,7 +38,8 @@ def test_context_metrics_mapping_shorthand_normalises_bindings() -> None:
     )
 
     assert pack.context.metrics is not None
-    binding = pack.context.metrics[0]
+    bindings = pack.context.metrics.bindings or []
+    binding = bindings[0]
     assert binding.key == "documents_verified"
     assert binding.alias == "verified_total"
 
@@ -59,7 +61,7 @@ def test_context_metrics_object_form_supports_variant_and_expression() -> None:
         }
     )
 
-    bindings = pack.context.metrics or []
+    bindings = pack.context.metrics.bindings or []
     assert bindings[0].full_key == "documents_verified.within_1_day"
     assert bindings[0].alias == "documents_verified_within_1_day"
     assert bindings[1].alias == "pct_verified_1d"
@@ -117,7 +119,8 @@ def test_slide_alias_collision_with_override_passes() -> None:
 
     assert pack.slides[0].context is not None
     assert pack.slides[0].context.metrics is not None
-    assert pack.slides[0].context.metrics[0].override is True
+    slide_bindings = pack.slides[0].context.metrics.bindings or []
+    assert slide_bindings[0].override is True
 
 
 def test_slide_alias_collision_identical_binding_no_override() -> None:
@@ -136,5 +139,25 @@ def test_slide_alias_collision_identical_binding_no_override() -> None:
 
     assert pack.slides[0].context is not None
     assert pack.slides[0].context.metrics is not None
-    assert pack.slides[0].context.metrics[0].override is False
+    slide_bindings = pack.slides[0].context.metrics.bindings or []
+    assert slide_bindings[0].override is False
 
+
+def test_context_metrics_wrapper_supports_calculate_and_bindings() -> None:
+    pack = PackConfig.model_validate(
+        {
+            "schema": "test-pack",
+            "context": {
+                "metrics": {
+                    "calculate": {"month": "'dim_calendar'[month] = DATEVALUE(\"2025-11-01\")"},
+                    "bindings": {"documents_verified": "total_verified"},
+                }
+            },
+            "slides": [_minimal_slide()],
+        }
+    )
+
+    assert pack.context.metrics is not None
+    assert pack.context.metrics.calculate is not None
+    bindings = pack.context.metrics.bindings or []
+    assert bindings[0].alias == "total_verified"

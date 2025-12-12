@@ -13,15 +13,26 @@ class MetricCompilationCache:
     """Cache compiled metric plans to avoid redundant builder invocations."""
 
     _plans: Dict[str, MetricDaxPlan]
+    _in_progress: set[str]
 
     def __init__(self) -> None:
         self._plans = {}
+        self._in_progress = set()
 
     def get_plan(self, builder: MetricDaxBuilder, metric_key: str) -> MetricDaxPlan:
         plan = self._plans.get(metric_key)
         if plan is None:
-            plan = builder.compile_metric(metric_key)
-            self._plans[metric_key] = plan
+            if metric_key in self._in_progress:
+                raise ValueError(
+                    f"Circular metric dependency detected while compiling '{metric_key}'."
+                )
+
+            self._in_progress.add(metric_key)
+            try:
+                plan = builder.compile_metric(metric_key, cache=self)
+                self._plans[metric_key] = plan
+            finally:
+                self._in_progress.discard(metric_key)
         return plan
 
 

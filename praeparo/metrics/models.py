@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from typing import Dict, List
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 _SLUG_PATTERN = re.compile(r"^[a-z0-9_]+$")
@@ -50,6 +50,17 @@ def _ensure_variant_keys(
                 "variant identifiers must be snake_case (lowercase letters, digits, underscore)"
             )
     return value
+
+
+def _normalise_optional_expression(value: object) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise TypeError("expression must be a string.")
+    candidate = value.strip()
+    if not candidate:
+        return None
+    return candidate
 
 
 class MetricVariant(BaseModel):
@@ -169,6 +180,10 @@ class MetricDefinition(BaseModel):
         default=None,
         description="Optional base expression (e.g., DAX) describing how the metric is calculated",
     )
+    expression: str | None = Field(
+        default=None,
+        description="Optional arithmetic expression over other metrics.",
+    )
     notes: str | None = Field(
         default=None, description="Additional implementation or commentary notes"
     )
@@ -198,6 +213,9 @@ class MetricDefinition(BaseModel):
 
     _coerce_calculate = field_validator("calculate", mode="before")(_ensure_string_list)
     _validate_format = field_validator("format", mode="before")(_normalise_optional_format)
+    _normalise_expression = field_validator("expression", mode="before")(
+        _normalise_optional_expression
+    )
 
     @field_validator("value_type", mode="before")
     @classmethod
@@ -215,6 +233,14 @@ class MetricDefinition(BaseModel):
         if not _SLUG_PATTERN.match(value):
             raise ValueError("metric key must be snake_case (lowercase letters, digits, underscore)")
         return value
+
+    @model_validator(mode="after")
+    def _validate_base_expression_exclusive(self) -> "MetricDefinition":
+        define = self.define.strip() if isinstance(self.define, str) else ""
+        expression = self.expression.strip() if isinstance(self.expression, str) else ""
+        if define and expression:
+            raise ValueError("metric cannot define both 'define' and 'expression'")
+        return self
 
     @field_validator("variants", mode="after")
     @classmethod

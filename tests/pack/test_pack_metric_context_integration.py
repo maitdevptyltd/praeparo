@@ -53,6 +53,7 @@ def test_root_and_slide_metrics_injected_into_visual_context(monkeypatch, tmp_pa
         env,
         base_payload,
         scope: str,
+        metrics_calculate=None,
         artefact_dir=None,
     ) -> ResolvedMetricContext:
         if scope == "root":

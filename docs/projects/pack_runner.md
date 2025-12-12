@@ -112,16 +112,19 @@ Root-level metrics are resolved **once per pack** and inherited by every slide.
 Slides may extend the inherited metric dict or override an alias only when
 `override: true` is set.
 
-Mapping shorthand (key → alias):
+Recommended wrapper form (bindings + optional metrics-only calculate):
 
 ```yaml
 context:
   metrics:
-    instructions_received: total_instructions
-    documents_sent: total_documents
+    calculate:
+      month: "'dim_calendar'[month] = DATEVALUE(\"{{ month }}\")"
+    bindings:
+      instructions_received: total_instructions
+      documents_sent: total_documents
 ```
 
-List shorthand (alias derived from key by replacing `.` with `_`):
+Shorthand still accepted (Praeparo treats these as `bindings`):
 
 ```yaml
 slides:
@@ -137,18 +140,19 @@ Object form (future-ready; accepted now):
 ```yaml
 context:
   metrics:
-    - key: documents_verified
-      alias: verified_total
-      variant: within_1_day
-      calculate:
-        - dim_customer[CustomerName] = "{{ customer }}"
-      format: "percent:0"
-    - alias: pct_verified_1d
-      expression: documents_verified.within_1_day / documents_verified
-      format: "percent:0"
-    - key: documents_sent
-      alias: total_documents
-      override: true
+    bindings:
+      - key: documents_verified
+        alias: verified_total
+        variant: within_1_day
+        calculate:
+          - dim_customer[CustomerName] = "{{ customer }}"
+        format: "percent:0"
+      - alias: pct_verified_1d
+        expression: documents_verified.within_1_day / documents_verified
+        format: "percent:0"
+      - key: documents_sent
+        alias: total_documents
+        override: true
 ```
 
 Notes:
@@ -158,6 +162,12 @@ Notes:
   resolved aliases. Cycles and unknown identifiers fail validation.
 - Per-binding `calculate` filters apply only to that binding and do not implicitly
   affect other identifiers used in expressions.
+- `metrics.calculate` (pack root and/or slide context) adds DAX predicates to the
+  **outer** CALCULATETABLE wrapping the metric context query, letting you scope
+  the SUMMARIZECOLUMNS grain for scalar results (for example, filter to a single month).
+  These filters affect only `context.metrics` resolution, not slide visuals.
+- `context.calculate` is a deprecated alias for `metrics.calculate` and will be removed
+  in a future release.
 
 ## CLI usage
 

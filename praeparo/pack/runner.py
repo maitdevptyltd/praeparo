@@ -329,9 +329,14 @@ def run_pack(
     rendered_define = render_value(pack.define, env=jinja_env, context=pack_payload)
 
     base = base_options or PipelineOptions()
-    root_bindings = pack.context.metrics or []
+    root_metrics_context = pack.context.metrics
+    root_bindings = root_metrics_context.bindings if root_metrics_context else []
+    root_metrics_calculate = root_metrics_context.calculate if root_metrics_context else None
     slide_bindings_present = any(
-        slide.context is not None and slide.context.metrics for slide in pack.slides
+        slide.context is not None
+        and slide.context.metrics is not None
+        and slide.context.metrics.bindings
+        for slide in pack.slides
     )
     has_metric_bindings = bool(root_bindings) or slide_bindings_present
 
@@ -350,13 +355,14 @@ def run_pack(
 
         # Resolve root-level metric bindings once and expose them as pack-wide Jinja variables.
         global_metrics_context = resolve_metric_context(
-            bindings=root_bindings,
+            bindings=root_bindings or None,
             inherited=None,
             builder_context=builder_context,
             catalog=catalog,
             env=jinja_env,
             base_payload=pack_payload,
             scope="root",
+            metrics_calculate=root_metrics_calculate,
             artefact_dir=output_root,
         )
     else:
@@ -437,14 +443,20 @@ def run_pack(
             slide_payload.update(dump_context_payload(slide.context))
 
         if has_metric_bindings and builder_context is not None and catalog is not None:
+            slide_metrics_config = slide.context.metrics if slide.context else None
+            slide_metrics_calculate = merge_calculate_filters(
+                root_metrics_calculate,
+                slide_metrics_config.calculate if slide_metrics_config else None,
+            )
             slide_metrics_context = resolve_metric_context(
-                bindings=slide.context.metrics if slide.context else None,
+                bindings=slide_metrics_config.bindings if slide_metrics_config else None,
                 inherited=global_metrics_context,
                 builder_context=builder_context,
                 catalog=catalog,
                 env=jinja_env,
                 base_payload=slide_payload,
                 scope=f"slide_{index}",
+                metrics_calculate=slide_metrics_calculate,
                 artefact_dir=output_root,
             )
             slide_payload.update(slide_metrics_context.aliases)
@@ -835,9 +847,14 @@ def restitch_pack_pptx(
     rendered_global_calculate = render_value(pack.calculate, env=jinja_env, context=pack_payload)
     rendered_define = render_value(pack.define, env=jinja_env, context=pack_payload)
 
-    root_bindings = pack.context.metrics or []
+    root_metrics_context = pack.context.metrics
+    root_bindings = root_metrics_context.bindings if root_metrics_context else []
+    root_metrics_calculate = root_metrics_context.calculate if root_metrics_context else None
     slide_bindings_present = any(
-        slide.context is not None and slide.context.metrics for slide in pack.slides
+        slide.context is not None
+        and slide.context.metrics is not None
+        and slide.context.metrics.bindings
+        for slide in pack.slides
     )
     has_metric_bindings = bool(root_bindings) or slide_bindings_present
 
@@ -855,13 +872,14 @@ def restitch_pack_pptx(
         catalog = load_catalog_for_context(builder_context)
 
         global_metrics_context = resolve_metric_context(
-            bindings=root_bindings,
+            bindings=root_bindings or None,
             inherited=None,
             builder_context=builder_context,
             catalog=catalog,
             env=jinja_env,
             base_payload=pack_payload,
             scope="root",
+            metrics_calculate=root_metrics_calculate,
             artefact_dir=output_root,
         )
     else:
@@ -880,14 +898,20 @@ def restitch_pack_pptx(
             slide_payload.update(dump_context_payload(slide.context))
 
         if has_metric_bindings and builder_context is not None and catalog is not None:
+            slide_metrics_config = slide.context.metrics if slide.context else None
+            slide_metrics_calculate = merge_calculate_filters(
+                root_metrics_calculate,
+                slide_metrics_config.calculate if slide_metrics_config else None,
+            )
             slide_metrics_context = resolve_metric_context(
-                bindings=slide.context.metrics if slide.context else None,
+                bindings=slide_metrics_config.bindings if slide_metrics_config else None,
                 inherited=global_metrics_context,
                 builder_context=builder_context,
                 catalog=catalog,
                 env=jinja_env,
                 base_payload=slide_payload,
                 scope=f"slide_{index}",
+                metrics_calculate=slide_metrics_calculate,
                 artefact_dir=output_root,
             )
             slide_payload.update(slide_metrics_context.aliases)

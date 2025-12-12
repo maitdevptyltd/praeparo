@@ -247,6 +247,19 @@
       "description": "Optional base expression (e.g., DAX) describing how the metric is calculated",
       "title": "Define"
     },
+    "expression": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Optional arithmetic expression over other metrics.",
+      "title": "Expression"
+    },
     "notes": {
       "anyOf": [
         {
