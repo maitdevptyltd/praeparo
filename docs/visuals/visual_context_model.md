@@ -15,3 +15,22 @@ Praeparo now supports typed visual context objects that are instantiated at the 
 - **Lifecycle:** the CLI merges CLI flags, context files (`--context`), and metadata into a raw dictionary, validates it against the registered context model, and stores the result on `ExecutionContext.visual_context`. Pipelines and builders can then rely on the typed model instead of parsing `options.metadata`.
 
 Use this pattern whenever a visual needs structured context—start by subclassing `VisualContextModel` and let Praeparo handle instantiation and validation.
+
+## Context Files (`--context`)
+
+`praeparo visual ... --context <file>` accepts JSON/YAML payloads and merges them into the visual metadata context.
+
+- **Templating:** the CLI renders `calculate`, `define`, and `filters` using the same Jinja environment as the pack runner, so shared helpers (for example `odata_months_back_range`) behave consistently between `praeparo pack run` and `praeparo visual ...`.
+- **Pack-shaped payloads:** if the supplied file looks like a pack (contains `schema` and `slides`), the CLI flattens `context.*` into the base mapping and uses that same `context` mapping as the Jinja template context.
+- **Named calculate overrides:** `calculate` supports string/list/dict inputs; when dicts are used, later sources override earlier keys (last-writer-wins) before the final list is normalised for DAX execution.
+
+Example (pack-shaped context file used with `praeparo visual ...`):
+
+```yaml
+schema: example_pack
+context:
+  lender_id: 201
+calculate:
+  lender: "'dim_lender'[LenderId] = {{ lender_id }}"
+slides: []
+```

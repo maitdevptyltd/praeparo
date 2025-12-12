@@ -80,15 +80,20 @@ slides:
   - a single string,
   - a list of strings, or
   - a dict of named filters (`{name: expression}`).
-  These are normalised to a list and made available to DAX-backed pipelines
-  through the metadata context; slide-level `visual.calculate` can extend this
-  set.
+  These are merged using pack semantics: when both pack-level and slide-level
+  `calculate` supply a mapping, slide-level keys override pack-level keys (last
+  writer wins). Unlabelled filters (string/list entries) are appended in order.
+  The resulting list is forwarded to DAX-backed pipelines through the metadata
+  context.
 - `filters` – OData filters for Power BI, expressed as:
   - a single string,
   - a list of strings, or
   - a dict of named filters (`{name: expression}`).
-  These are normalised and treated as **pack-level defaults**; slide-level
-  `visual.filters` can extend or override them.
+  These are treated as **pack-level defaults**; slide-level `visual.filters`
+  can extend or override them. Named overrides apply when both sides are
+  mappings (slide-level keys override pack-level keys). If either side uses a
+  sequence form, Praeparo falls back to concatenating the effective lists of
+  filter expressions (dropping names).
 - `slides` – ordered slide definitions:
   - `id` – optional stable identifier (used for filtering and slug generation).
   - `title` – human-readable slide title.
