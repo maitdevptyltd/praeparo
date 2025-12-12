@@ -318,3 +318,157 @@ define: "COUNTROWS('fact_documents')"
     before_eval, after_eval = dax_text.split("EVALUATE", 1)
     assert "Time Intelligence" not in before_eval
     assert "Time Intelligence" in after_eval
+
+
+def test_ratio_to_adds_denominator_and_resolves_scalar(tmp_path: Path) -> None:
+    metrics_root = tmp_path / "registry" / "metrics"
+    metrics_root.mkdir(parents=True, exist_ok=True)
+    (metrics_root / "documents_verified.yaml").write_text(
+        """
+key: documents_verified
+display_name: Documents Verified
+section: documents
+define: "COUNTROWS('fact_documents')"
+variants:
+  within_1_day:
+    display_name: Within 1 day
+    calculate:
+      - "TRUE()"
+""",
+        encoding="utf-8",
+    )
+
+    builder_context = MetricDatasetBuilderContext.discover(
+        project_root=tmp_path,
+        metrics_root=metrics_root,
+        use_mock=True,
+    )
+    catalog = load_metric_catalog([metrics_root])
+    env = create_pack_jinja_env()
+
+    binding = PackMetricBinding.model_validate(
+        {
+            "key": "documents_verified",
+            "variant": "within_1_day",
+            "alias": "pct_verified_1d",
+            "ratio_to": True,
+        }
+    )
+
+    resolved = resolve_metric_context(
+        bindings=[binding],
+        inherited=None,
+        builder_context=builder_context,
+        catalog=catalog,
+        env=env,
+        base_payload={},
+        scope="root",
+    )
+
+    assert resolved.aliases["pct_verified_1d"] == pytest.approx(1.0)
+
+
+def test_ratio_to_evaluate_applies_to_denominator_define_does_not(tmp_path: Path) -> None:
+    metrics_root = tmp_path / "registry" / "metrics"
+    metrics_root.mkdir(parents=True, exist_ok=True)
+    (metrics_root / "documents_verified.yaml").write_text(
+        """
+key: documents_verified
+display_name: Documents Verified
+section: documents
+define: "COUNTROWS('fact_documents')"
+variants:
+  within_1_day:
+    display_name: Within 1 day
+    calculate:
+      - "TRUE()"
+""",
+        encoding="utf-8",
+    )
+
+    builder_context = MetricDatasetBuilderContext.discover(
+        project_root=tmp_path,
+        metrics_root=metrics_root,
+        use_mock=True,
+    )
+    catalog = load_metric_catalog([metrics_root])
+    env = create_pack_jinja_env()
+
+    define_filter = "fact_documents[DummyDefine] = 1"
+    evaluate_filter = "'Time Intelligence'[Period] = \"Current Month\""
+    binding = PackMetricBinding.model_validate(
+        {
+            "key": "documents_verified.within_1_day",
+            "alias": "pct_verified_1d",
+            "ratio_to": True,
+            "calculate": {
+                "define_only": define_filter,
+                "period": {"evaluate": evaluate_filter},
+            },
+        }
+    )
+
+    artefact_dir = tmp_path / "artefacts"
+    resolve_metric_context(
+        bindings=[binding],
+        inherited=None,
+        builder_context=builder_context,
+        catalog=catalog,
+        env=env,
+        base_payload={},
+        scope="root",
+        artefact_dir=artefact_dir,
+    )
+
+    dax_text = (artefact_dir / "metric_context.root.dax").read_text(encoding="utf-8")
+    before_eval, after_eval = dax_text.split("EVALUATE", 1)
+
+    assert evaluate_filter not in before_eval
+    assert after_eval.count(evaluate_filter) == 2
+    assert dax_text.count(define_filter) == 1
+
+
+def test_ratio_to_unknown_denominator_raises_friendly_error(tmp_path: Path) -> None:
+    metrics_root = tmp_path / "registry" / "metrics"
+    metrics_root.mkdir(parents=True, exist_ok=True)
+    (metrics_root / "documents_verified.yaml").write_text(
+        """
+key: documents_verified
+display_name: Documents Verified
+section: documents
+define: "COUNTROWS('fact_documents')"
+variants:
+  within_1_day:
+    display_name: Within 1 day
+    calculate:
+      - "TRUE()"
+""",
+        encoding="utf-8",
+    )
+
+    builder_context = MetricDatasetBuilderContext.discover(
+        project_root=tmp_path,
+        metrics_root=metrics_root,
+        use_mock=True,
+    )
+    catalog = load_metric_catalog([metrics_root])
+    env = create_pack_jinja_env()
+
+    binding = PackMetricBinding.model_validate(
+        {
+            "key": "documents_verified.within_1_day",
+            "alias": "pct_verified_1d",
+            "ratio_to": "missing_metric",
+        }
+    )
+
+    with pytest.raises(ValueError, match="root context\\.metrics binding 'pct_verified_1d'.*missing_metric"):
+        resolve_metric_context(
+            bindings=[binding],
+            inherited=None,
+            builder_context=builder_context,
+            catalog=catalog,
+            env=env,
+            base_payload={},
+            scope="root",
+        )

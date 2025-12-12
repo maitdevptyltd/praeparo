@@ -115,6 +115,14 @@ class PackMetricBinding(BaseModel):
         default=None,
         description="Optional formatting hint mirroring Praeparo format tokens.",
     )
+    ratio_to: bool | str | None = Field(
+        default=None,
+        description=(
+            "Optional ratio semantics for this binding. "
+            "`true` ratios against the base metric inferred from the dotted key. "
+            "A string value must be a catalogue metric key used as the denominator."
+        ),
+    )
     expression: str | None = Field(
         default=None,
         description="Optional arithmetic expression referencing metric keys or aliases.",
@@ -123,6 +131,23 @@ class PackMetricBinding(BaseModel):
         default=False,
         description="True when intentionally shadowing an inherited alias.",
     )
+
+    @field_validator("ratio_to", mode="before")
+    @classmethod
+    def _normalise_ratio_to(cls, value: object) -> bool | str | None:
+        if value is None:
+            return None
+        if value is False:
+            # Treat explicit false as "unset" so templated configs can disable ratio semantics.
+            return None
+        if value is True:
+            return True
+        if isinstance(value, str):
+            candidate = value.strip()
+            if not candidate:
+                raise ValueError("ratio_to metric key cannot be empty")
+            return candidate
+        raise TypeError("ratio_to must be bool, str, or None")
 
     @field_validator("calculate", mode="before")
     @classmethod
@@ -143,6 +168,14 @@ class PackMetricBinding(BaseModel):
     def _apply_defaults_and_validate(self) -> "PackMetricBinding":
         if not self.key and not self.expression:
             raise ValueError("metric binding requires either 'key' or 'expression'")
+
+        if self.ratio_to is not None:
+            if self.expression:
+                raise ValueError("ratio_to is not supported for expression bindings yet")
+            if not self.full_key:
+                raise ValueError("ratio_to requires a metric key")
+            if self.ratio_to is True and "." not in self.full_key:
+                raise ValueError("ratio_to=true requires a dotted metric key to infer the base denominator")
 
         if self.variant:
             if not self.key:
@@ -175,11 +208,11 @@ class PackMetricBinding(BaseModel):
             return f"{self.key}.{self.variant}"
         return self.key
 
-    def signature(self) -> tuple[str | None, tuple[str, ...], str | None, str | None]:
+    def signature(self) -> tuple[str | None, tuple[str, ...], str | None, str | None, bool | str | None]:
         """Return a hashable signature used for reuse checks."""
 
         calculate_sig = self.calculate.combined_signature() if self.calculate else tuple()
-        return (self.full_key, calculate_sig, self.format, self.expression)
+        return (self.full_key, calculate_sig, self.format, self.expression, self.ratio_to)
 
 
 def _normalise_metric_bindings(value: object) -> list[PackMetricBinding] | None:
@@ -574,7 +607,7 @@ class PackConfig(BaseModel):
     @model_validator(mode="after")
     def _validate_slide_metric_overrides(self) -> "PackConfig":
         root_metrics_context = self.context.metrics
-        root_bindings = root_metrics_context.bindings if root_metrics_context else []
+        root_bindings = root_metrics_context.bindings or [] if root_metrics_context else []
         root_scope_signature = _merge_filter_signature(
             root_metrics_context.calculate if root_metrics_context else None,
             None,

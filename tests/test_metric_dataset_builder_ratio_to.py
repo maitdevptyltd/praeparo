@@ -183,6 +183,32 @@ def test_ratio_to_denominator_ignores_numerator_calculate(tmp_path: Path) -> Non
     assert denom_series.filters == ()
 
 
+def test_ratio_to_denominator_inherits_numerator_evaluate_filters(tmp_path: Path) -> None:
+    builder = _builder(tmp_path, variants=["variant"])
+    evaluate_filter = "'Time Intelligence'[Period] = \"Current Month\""
+
+    builder.metric(
+        "documents_sent.variant",
+        alias="ratio_series",
+        ratio_to=True,
+        evaluate=[evaluate_filter],
+    )
+
+    plan = builder.plan()
+
+    numerator_series = next(series for series in builder._series if series.series_id == "ratio_series")
+    denom_series = next(
+        series
+        for series in builder._series
+        if series.reference == "documents_sent" and series.source == "metric"
+    )
+
+    assert numerator_series.group_filters == (evaluate_filter,)
+    assert denom_series.group_filters == (evaluate_filter,)
+    assert denom_series.filters == ()
+    assert plan.statement.count(evaluate_filter) == 2
+
+
 def test_ratio_to_true_requires_dotted_metric(tmp_path: Path) -> None:
     builder = _builder(tmp_path)
 

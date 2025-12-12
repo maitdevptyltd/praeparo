@@ -147,6 +147,14 @@ context:
         calculate:
           - dim_customer[CustomerName] = "{{ customer }}"
         format: "percent:0"
+      - key: documents_verified.within_1_day
+        alias: pct_verified_1d
+        ratio_to: true
+        format: "percent:0"
+      - key: documents_verified.within_1_day
+        alias: pct_verified_1d_against_total
+        ratio_to: documents_verified
+        format: "percent:0"
       - alias: pct_verified_1d
         expression: documents_verified.within_1_day / documents_verified
         format: "percent:0"
@@ -158,6 +166,10 @@ context:
 Notes:
 
 - `variant` is a shortcut for `key.variant` and is disallowed when `key` is already dotted.
+- `ratio_to` computes a deterministic 0–1 ratio and injects it under the binding alias.
+  - `ratio_to: true` requires a dotted numerator key and infers the base denominator (before the first dot).
+  - `ratio_to: "<metric_key>"` uses that catalogue metric key as the denominator (metric keys only; aliases are rejected to avoid ambiguity).
+  - Denominators are auto-included in the metric-context query plan; authors should not duplicate denominator bindings.
 - Expression bindings require an `alias` and may reference catalogue keys and/or previously
   resolved aliases. Cycles and unknown identifiers fail validation.
 - Per-binding `calculate` filters apply only to that binding and do not implicitly
@@ -173,6 +185,8 @@ Notes:
         period:
           evaluate: "'Time Intelligence'[Period] = \"Current Month\""
   ```
+- For `ratio_to` bindings, `calculate.*.evaluate` applies to both numerator and denominator,
+  while `calculate.*.define` applies only to the numerator (the denominator does not inherit it).
 - `metrics.calculate` (pack root and/or slide context) adds DAX predicates to the
   **outer** CALCULATETABLE wrapping the metric context query, letting you scope
   the SUMMARIZECOLUMNS grain for scalar results (for example, filter to a single month).
@@ -462,3 +476,7 @@ legacy `<pack-slug>.pptx`.
   `<result-file.parent>/<result-file.stem>/_artifacts`, so you no longer need
   to supply `dest` or `--artefact-dir` when you only care about a specific PPTX
   path.
+
+## Changelog
+
+- 2025-12-12: Added `ratio_to` support for `context.metrics.bindings` so packs can inject scalar rates/attainment values without duplicating expression bindings.

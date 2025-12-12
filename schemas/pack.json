@@ -105,6 +105,22 @@
           "description": "Optional formatting hint mirroring Praeparo format tokens.",
           "title": "Format"
         },
+        "ratio_to": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional ratio semantics for this binding. `true` ratios against the base metric inferred from the dotted key. A string value must be a catalogue metric key used as the denominator.",
+          "title": "Ratio To"
+        },
         "expression": {
           "anyOf": [
             {

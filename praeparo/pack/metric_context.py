@@ -129,6 +129,11 @@ def resolve_metric_context(
     # Render any templated calculate/expression payloads before we build query plans.
     rendered_bindings: list[PackMetricBinding] = []
     for binding in bindings:
+        rendered_ratio_to = binding.ratio_to
+        if binding.ratio_to is True and binding.full_key and "." in binding.full_key:
+            # Phase 7: ratio_to=true ratios against the base metric (before the first dot).
+            rendered_ratio_to = binding.full_key.split(".", 1)[0]
+
         rendered_define = render_value(binding.calculate.define or None, env=env, context=base_payload)
         rendered_evaluate = render_value(binding.calculate.evaluate or None, env=env, context=base_payload)
         rendered_expression = (
@@ -146,6 +151,7 @@ def resolve_metric_context(
                     "calculate": scoped_calculate,
                     "expression": str(rendered_expression).strip() if rendered_expression else None,
                     "format": str(rendered_format).strip() if rendered_format else None,
+                    "ratio_to": rendered_ratio_to,
                 }
             )
         )
@@ -229,11 +235,13 @@ def resolve_metric_context(
         for binding in bindings_to_fetch:
             full_key = binding.full_key
             assert full_key is not None
+            ratio_denominator = _resolve_ratio_denominator(binding, catalog=catalog, scope=scope)
             builder.metric(
                 full_key,
                 alias=binding.alias,
                 calculate=binding.calculate.define,
                 evaluate=binding.calculate.evaluate,
+                ratio_to=ratio_denominator,
             )
 
         for dep_alias, full_key in dependency_fetches.items():
@@ -315,6 +323,54 @@ def _allocate_dependency_alias(full_key: str, taken: MutableMapping[str, object]
     else:
         taken[candidate] = True
     return candidate
+
+
+def _resolve_ratio_denominator(
+    binding: PackMetricBinding,
+    *,
+    catalog: MetricCatalog,
+    scope: str,
+) -> str | None:
+    """Resolve and validate ratio_to denominators for metric-context bindings.
+
+    Phase 7 accepts metric keys only for string denominators to avoid alias ambiguity.
+    """
+
+    if binding.ratio_to is None:
+        return None
+
+    alias = binding.alias or "<unknown>"
+    full_key = binding.full_key
+    if not full_key:
+        raise ValueError(
+            f"{scope} context.metrics binding '{alias}' declares ratio_to but is missing a numerator metric key."
+        )
+
+    if binding.expression:
+        raise ValueError(
+            f"{scope} context.metrics binding '{alias}' cannot combine ratio_to with expression bindings yet "
+            f"(numerator '{full_key}')."
+        )
+
+    raw_ratio_to = binding.ratio_to
+    if raw_ratio_to is True:
+        if "." not in full_key:
+            raise ValueError(
+                f"{scope} context.metrics binding '{alias}' declares ratio_to=true but numerator '{full_key}' "
+                "is not dotted; cannot infer a denominator."
+            )
+        denominator_key = full_key.split(".", 1)[0]
+    else:
+        assert isinstance(raw_ratio_to, str)
+        denominator_key = raw_ratio_to
+
+    if not catalog.contains(denominator_key):
+        raise ValueError(
+            f"{scope} context.metrics binding '{alias}' ratios numerator '{full_key}' against unknown "
+            f"denominator metric key '{denominator_key}'."
+        )
+
+    return denominator_key
 
 
 def _evaluate_expressions(

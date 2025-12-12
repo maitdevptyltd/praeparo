@@ -193,3 +193,47 @@ def test_binding_calculate_named_evaluate_scope_supported() -> None:
 
     assert binding.calculate.define == []
     assert "'Time Intelligence'[Period] = \"MoM %\"" in binding.calculate.evaluate
+
+
+def test_binding_ratio_to_true_requires_dotted_key() -> None:
+    with pytest.raises(ValidationError, match="ratio_to=true"):
+        PackMetricBinding.model_validate(
+            {
+                "key": "documents_sent",
+                "alias": "pct_docs",
+                "ratio_to": True,
+            }
+        )
+
+
+def test_binding_ratio_to_rejected_for_expression_only() -> None:
+    with pytest.raises(ValidationError, match="ratio_to"):
+        PackMetricBinding.model_validate(
+            {
+                "alias": "pct_docs",
+                "expression": "documents_sent / 2",
+                "ratio_to": "documents_sent",
+            }
+        )
+
+
+def test_pack_metric_binding_accepts_ratio_to() -> None:
+    pack = PackConfig.model_validate(
+        {
+            "schema": "test-pack",
+            "context": {
+                "metrics": [
+                    {
+                        "key": "documents_verified.within_1_day",
+                        "alias": "pct_verified_1d",
+                        "ratio_to": True,
+                    }
+                ]
+            },
+            "slides": [_minimal_slide()],
+        }
+    )
+
+    assert pack.context.metrics is not None
+    bindings = pack.context.metrics.bindings or []
+    assert bindings[0].ratio_to is True

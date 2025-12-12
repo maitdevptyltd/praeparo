@@ -49,7 +49,7 @@ class _MetricDatasetSeries:
     source: str
     expression: str | None = None
     value_type: str | None = None
-    ratio_to_ref: str | None = None
+    ratio_to_series_id: str | None = None
 
 
 class MetricDatasetBuilder:
@@ -141,6 +141,12 @@ class MetricDatasetBuilder:
 
         identifier = self._allocate_series_id(alias or key)
         effective_allow_placeholder = allow_placeholder if allow_placeholder is not None else self._ignore_placeholders
+        ratio_to_series_id: str | None = None
+        if ratio_to_ref is not None:
+            ratio_to_series_id = self._ensure_ratio_denominator(
+                ratio_to_ref,
+                group_filters=normalise_filters(evaluate),
+            )
         series = _MetricDatasetSeries(
             series_id=identifier,
             reference=key,
@@ -150,24 +156,37 @@ class MetricDatasetBuilder:
             allow_placeholder=bool(effective_allow_placeholder),
             source="metric",
             value_type=value_type,
-            ratio_to_ref=ratio_to_ref,
+            ratio_to_series_id=ratio_to_series_id,
         )
         self._series.append(series)
-
-        if ratio_to_ref is not None:
-            self._ensure_ratio_denominator(ratio_to_ref)
 
         self._invalidate_plan()
         return self
 
-    def _ensure_ratio_denominator(self, denominator_key: str) -> None:
-        """Register a supporting denominator metric if it was not declared explicitly."""
+    def _ensure_ratio_denominator(
+        self,
+        denominator_key: str,
+        *,
+        group_filters: tuple[str, ...],
+    ) -> str:
+        """Register a supporting denominator metric if it was not declared explicitly.
 
-        existing_metric_refs = {
-            series.reference for series in self._series if series.source == "metric"
-        }
-        if denominator_key in existing_metric_refs:
-            return
+        Denominators inherit the numerator's EVALUATE-scoped filters (group filters) so
+        per-series calculation-group selections apply consistently to both sides of the
+        ratio. DEFINE-scoped filters remain numerator-only by construction because the
+        denominator is created without `calculate` filters.
+        """
+
+        for series in self._series:
+            if series.source != "metric":
+                continue
+            if series.reference != denominator_key:
+                continue
+            if series.filters:
+                continue
+            if series.group_filters != group_filters:
+                continue
+            return series.series_id
 
         sanitised_key = denominator_key.replace(".", "_").replace("-", "_")
         alias_candidate = f"__ratio_denom_{sanitised_key}"
@@ -178,11 +197,12 @@ class MetricDatasetBuilder:
             reference=denominator_key,
             label=denominator_key,
             filters=(),
-            group_filters=(),
+            group_filters=group_filters,
             allow_placeholder=bool(self._ignore_placeholders),
             source="metric",
         )
         self._series.append(supporting)
+        return series_id
 
     def expression(
         self,
@@ -393,14 +413,12 @@ class MetricDatasetBuilder:
         if not self._series:
             raise ValueError("MetricDatasetBuilder requires at least one metric or expression.")
 
-        reference_to_series_id: dict[str, str] = {
-            series.reference: series.series_id for series in self._series if series.source == "metric"
-        }
+        series_ids = {series.series_id for series in self._series}
         for series in self._series:
-            if series.ratio_to_ref and series.ratio_to_ref not in reference_to_series_id:
+            if series.ratio_to_series_id and series.ratio_to_series_id not in series_ids:
                 msg = (
-                    f"Metric '{series.reference}' declares ratio_to='{series.ratio_to_ref}' "
-                    "but no matching denominator metric was added to this builder."
+                    f"Metric '{series.reference}' declares ratio_to but no matching denominator series was added "
+                    "to this builder."
                 )
                 raise ValueError(msg)
 
@@ -593,15 +611,12 @@ class MetricDatasetBuilder:
             normalised.append(record)
 
         # Apply ratio_to semantics once base metric values have been mapped into the dataset.
-        reference_to_series_id = {series.reference: series.series_id for series in self._series}
         for series in self._series:
-            if not series.ratio_to_ref:
+            if not series.ratio_to_series_id:
                 continue
 
             numerator_id = series.series_id
-            denominator_id = reference_to_series_id.get(series.ratio_to_ref)
-            if not denominator_id:
-                continue  # Safeguard; upstream validation should prevent this path.
+            denominator_id = series.ratio_to_series_id
 
             for record in normalised:
                 numerator_value = record.get(numerator_id)
