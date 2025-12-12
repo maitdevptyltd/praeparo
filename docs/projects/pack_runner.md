@@ -120,6 +120,46 @@ Templating note:
   reference binding aliases. This render pass is not affected by
   `--ignore-placeholders`.
 
+### Display formatting (`bindings[].format`)
+
+Metric binding aliases always resolve to **raw numeric values** for execution
+surfaces (DAX/config templating, visual execution contexts).
+
+For display-only rendering, Praeparo automatically applies `bindings[].format`
+by swapping metric aliases for small wrapper objects that stringify using the
+format token.
+
+Display-only fields (Phase 8, intentionally narrow):
+
+- PPTX text run rendering (`{{ ... }}` inside slide templates and placeholder text blocks).
+- Nested render of `context.governance_highlights` after metric injection.
+
+Default behaviour:
+
+- `{{ count_instructions }}` renders formatted output when `format` is set.
+- `{{ count_instructions.value }}` returns the raw numeric value (float/int/None).
+
+Examples:
+
+```yaml
+context:
+  metrics:
+    bindings:
+      - key: instructions_received
+        alias: count_instructions
+        format: number:0
+```
+
+```jinja2
+We received {{ count_instructions }} instructions. (Raw: {{ count_instructions.value }})
+```
+
+Percent formatting treats inputs as 0–1 and multiplies by 100 for display:
+
+```yaml
+format: percent:0
+```
+
 Recommended wrapper form (bindings + optional metrics-only calculate):
 
 ```yaml
@@ -177,6 +217,7 @@ Notes:
 - `ratio_to` computes a deterministic 0–1 ratio and injects it under the binding alias.
   - `ratio_to: true` requires a dotted numerator key and infers the base denominator (before the first dot).
   - `ratio_to: "<metric_key>"` uses that catalogue metric key as the denominator (metric keys only; aliases are rejected to avoid ambiguity).
+  - When `format` is omitted, `ratio_to` bindings default to `percent:0` for display-only rendering.
   - Denominators are auto-included in the metric-context query plan; authors should not duplicate denominator bindings.
 - Expression bindings require an `alias` and may reference catalogue keys and/or previously
   resolved aliases. Cycles and unknown identifiers fail validation.
@@ -488,3 +529,4 @@ legacy `<pack-slug>.pptx`.
 ## Changelog
 
 - 2025-12-12: Added `ratio_to` support for `context.metrics.bindings` so packs can inject scalar rates/attainment values without duplicating expression bindings.
+- 2025-12-12: Apply `bindings[].format` automatically for display-only Jinja rendering (PPTX text + `governance_highlights`), with `.value` escape hatch for raw numbers.

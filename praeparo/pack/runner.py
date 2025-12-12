@@ -19,6 +19,7 @@ from praeparo.pack.metric_context import (
     load_catalog_for_context,
     resolve_metric_context,
 )
+from praeparo.pack.formatted_values import FormattedMetricValue
 from praeparo.pack.pbi_queue import PowerBIExportJob, PowerBIExportQueue, PowerBIExportResult
 from praeparo.pack.templating import create_pack_jinja_env, render_value
 from praeparo.pack.pptx import PlaceholderSize, assemble_pack_pptx, resolve_template_geometry
@@ -102,6 +103,7 @@ def _render_slide_context_after_metric_injection(
     *,
     env: Environment,
     slide_payload: dict[str, object],
+    display_payload: Mapping[str, object],
     raw_slide_context: Mapping[str, object],
 ) -> None:
     """Render slide-context values once after metric bindings are injected.
@@ -124,6 +126,37 @@ def _render_slide_context_after_metric_injection(
         return
 
     slide_payload.update(dict(rendered))
+
+    # Phase 8: apply metric-binding formats automatically for display-only
+    # narrative fields without leaking formatted strings into execution surfaces.
+    raw_highlights = raw_slide_context.get("governance_highlights")
+    if raw_highlights is None:
+        return
+
+    rendered_highlights = render_value(raw_highlights, env=env, context=display_payload)
+    if rendered_highlights is None:
+        slide_payload["governance_highlights"] = ""
+    elif isinstance(rendered_highlights, list):
+        slide_payload["governance_highlights"] = "\n".join(
+            str(item) for item in rendered_highlights if item is not None
+        )
+    else:
+        slide_payload["governance_highlights"] = str(rendered_highlights)
+
+
+def _build_display_payload(
+    *,
+    raw_payload: Mapping[str, object],
+    formats_by_alias: Mapping[str, str],
+) -> dict[str, object]:
+    """Clone *raw_payload* and wrap formatted metric aliases for display rendering."""
+
+    payload: dict[str, object] = dict(raw_payload)
+    for alias, token in formats_by_alias.items():
+        raw_value = payload.get(alias)
+        if raw_value is None or isinstance(raw_value, (int, float)):
+            payload[alias] = FormattedMetricValue(value=raw_value, format=token)
+    return payload
 
 
 def _slug_for_slide(slide: PackSlide, index: int) -> str:
@@ -394,9 +427,18 @@ def run_pack(
             artefact_dir=output_root,
         )
     else:
-        global_metrics_context = ResolvedMetricContext(aliases={}, by_key={}, signatures_by_key={})
+        global_metrics_context = ResolvedMetricContext(
+            aliases={},
+            by_key={},
+            signatures_by_key={},
+            formats_by_alias={},
+        )
     global_payload: dict[str, object] = dict(pack_payload)
     global_payload.update(global_metrics_context.aliases)
+    global_display_payload = _build_display_payload(
+        raw_payload=global_payload,
+        formats_by_alias=global_metrics_context.formats_by_alias,
+    )
 
     resolved_pipeline = pipeline or VisualPipeline(
         planner_provider=build_default_query_planner_provider(),
@@ -472,6 +514,7 @@ def run_pack(
             raw_slide_context = dump_context_payload(slide.context)
             slide_payload.update(raw_slide_context)
 
+        effective_metrics_context = global_metrics_context
         if has_metric_bindings and builder_context is not None and catalog is not None:
             slide_metrics_config = slide.context.metrics if slide.context else None
             slide_metrics_calculate = merge_calculate_filters(
@@ -489,12 +532,18 @@ def run_pack(
                 metrics_calculate=slide_metrics_calculate,
                 artefact_dir=output_root,
             )
+            effective_metrics_context = slide_metrics_context
             slide_payload.update(slide_metrics_context.aliases)
 
         if has_metric_bindings:
+            display_payload = _build_display_payload(
+                raw_payload=slide_payload,
+                formats_by_alias=effective_metrics_context.formats_by_alias,
+            )
             _render_slide_context_after_metric_injection(
                 env=jinja_env,
                 slide_payload=slide_payload,
+                display_payload=display_payload,
                 raw_slide_context=raw_slide_context,
             )
 
@@ -514,7 +563,10 @@ def run_pack(
                 "slide_slug": slide_slug,
             }
         )
-        slide_contexts_by_slug[slide_slug] = dict(slide_payload)
+        slide_contexts_by_slug[slide_slug] = _build_display_payload(
+            raw_payload=slide_payload,
+            formats_by_alias=effective_metrics_context.formats_by_alias,
+        )
 
         def _render_filters(value: object | None) -> FiltersType:
             return render_value(value, env=jinja_env, context=slide_payload)
@@ -848,7 +900,7 @@ def run_pack(
                 assemble_pack_pptx(
                     pack=pack,
                     results=sorted_results,
-                    context_payload=global_payload,
+                    context_payload=global_display_payload,
                     slide_contexts=slide_contexts_by_slug,
                     slide_pngs=slide_png_map,
                     placeholder_pngs=placeholder_png_map,
@@ -920,9 +972,18 @@ def restitch_pack_pptx(
             artefact_dir=output_root,
         )
     else:
-        global_metrics_context = ResolvedMetricContext(aliases={}, by_key={}, signatures_by_key={})
+        global_metrics_context = ResolvedMetricContext(
+            aliases={},
+            by_key={},
+            signatures_by_key={},
+            formats_by_alias={},
+        )
     global_payload: dict[str, object] = dict(pack_payload)
     global_payload.update(global_metrics_context.aliases)
+    global_display_payload = _build_display_payload(
+        raw_payload=global_payload,
+        formats_by_alias=global_metrics_context.formats_by_alias,
+    )
 
     slide_png_map: dict[str, Path] = {}
     placeholder_png_map: dict[str, dict[str, Path]] = {}
@@ -936,6 +997,7 @@ def restitch_pack_pptx(
             raw_slide_context = dump_context_payload(slide.context)
             slide_payload.update(raw_slide_context)
 
+        effective_metrics_context = global_metrics_context
         if has_metric_bindings and builder_context is not None and catalog is not None:
             slide_metrics_config = slide.context.metrics if slide.context else None
             slide_metrics_calculate = merge_calculate_filters(
@@ -953,12 +1015,18 @@ def restitch_pack_pptx(
                 metrics_calculate=slide_metrics_calculate,
                 artefact_dir=output_root,
             )
+            effective_metrics_context = slide_metrics_context
             slide_payload.update(slide_metrics_context.aliases)
 
         if has_metric_bindings:
+            display_payload = _build_display_payload(
+                raw_payload=slide_payload,
+                formats_by_alias=effective_metrics_context.formats_by_alias,
+            )
             _render_slide_context_after_metric_injection(
                 env=jinja_env,
                 slide_payload=slide_payload,
+                display_payload=display_payload,
                 raw_slide_context=raw_slide_context,
             )
 
@@ -977,7 +1045,10 @@ def restitch_pack_pptx(
                 "slide_slug": slide_slug,
             }
         )
-        slide_contexts_by_slug[slide_slug] = dict(slide_payload)
+        slide_contexts_by_slug[slide_slug] = _build_display_payload(
+            raw_payload=slide_payload,
+            formats_by_alias=effective_metrics_context.formats_by_alias,
+        )
 
         _reuse_existing_assets(
             slide=slide,
@@ -1009,7 +1080,7 @@ def restitch_pack_pptx(
     assemble_pack_pptx(
         pack=pack,
         results=[],
-        context_payload=global_payload,
+        context_payload=global_display_payload,
         slide_contexts=slide_contexts_by_slug,
         slide_pngs=slide_png_map,
         placeholder_pngs=placeholder_png_map,

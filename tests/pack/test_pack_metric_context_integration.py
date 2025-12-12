@@ -61,11 +61,13 @@ def test_root_and_slide_metrics_injected_into_visual_context(monkeypatch, tmp_pa
                 aliases={"total_instructions": 7.0},
                 by_key={"instructions_received": 7.0},
                 signatures_by_key={"instructions_received": ("instructions_received", tuple(), None, None)},
+                formats_by_alias={},
             )
         return ResolvedMetricContext(
             aliases={"count_docs_sent": 3.0},
             by_key={},
             signatures_by_key={},
+            formats_by_alias={},
         )
 
     monkeypatch.setattr(
@@ -137,11 +139,13 @@ def test_governance_highlights_renders_after_metric_injection(monkeypatch, tmp_p
                 aliases={"total_instructions": 7.0},
                 by_key={"instructions_received": 7.0},
                 signatures_by_key={"instructions_received": ("instructions_received", tuple(), None, None)},
+                formats_by_alias={},
             )
         return ResolvedMetricContext(
             aliases={"count_docs_sent": 3.0},
             by_key={},
             signatures_by_key={},
+            formats_by_alias={},
         )
 
     monkeypatch.setattr(

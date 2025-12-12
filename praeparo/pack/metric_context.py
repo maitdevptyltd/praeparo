@@ -29,6 +29,7 @@ from praeparo.datasets.expression_eval import evaluate_expression
 from praeparo.metrics import MetricCatalog, load_metric_catalog
 from praeparo.models import FiltersType, PackMetricBinding
 from praeparo.models.scoped_calculate import ScopedCalculateFilters
+from praeparo.formatting import parse_format_token
 from praeparo.pack.templating import render_value
 from praeparo.visuals.dax.expressions import ParsedExpression, parse_metric_expression
 
@@ -40,6 +41,7 @@ class ResolvedMetricContext:
     aliases: dict[str, float | None]
     by_key: dict[str, float | None]
     signatures_by_key: dict[str, tuple[Any, ...]]
+    formats_by_alias: dict[str, str]
 
 
 def dump_context_payload(context: Mapping[str, Any] | Any | None) -> dict[str, object]:
@@ -116,6 +118,7 @@ def resolve_metric_context(
     aliases: dict[str, float | None] = dict(inherited.aliases) if inherited else {}
     by_key: dict[str, float | None] = dict(inherited.by_key) if inherited else {}
     signatures_by_key: dict[str, tuple[Any, ...]] = dict(inherited.signatures_by_key) if inherited else {}
+    formats_by_alias: dict[str, str] = dict(inherited.formats_by_alias) if inherited else {}
 
     rendered_scope_calculate = (
         render_value(metrics_calculate, env=env, context=base_payload) if metrics_calculate else None
@@ -124,7 +127,12 @@ def resolve_metric_context(
     scope_signature = tuple(sorted(set(scope_calculate_list)))
 
     if not bindings:
-        return ResolvedMetricContext(aliases=aliases, by_key=by_key, signatures_by_key=signatures_by_key)
+        return ResolvedMetricContext(
+            aliases=aliases,
+            by_key=by_key,
+            signatures_by_key=signatures_by_key,
+            formats_by_alias=formats_by_alias,
+        )
 
     # Render any templated calculate/expression payloads before we build query plans.
     rendered_bindings: list[PackMetricBinding] = []
@@ -140,6 +148,16 @@ def resolve_metric_context(
             render_value(binding.expression, env=env, context=base_payload) if binding.expression else None
         )
         rendered_format = render_value(binding.format, env=env, context=base_payload) if binding.format else None
+        cleaned_format = str(rendered_format).strip().lower() if rendered_format else None
+        if cleaned_format:
+            try:
+                parse_format_token(cleaned_format)
+            except ValueError as exc:
+                alias = binding.alias or "<unknown>"
+                raise ValueError(
+                    f"{scope} context.metrics binding '{alias}' declares an invalid format token "
+                    f"'{cleaned_format}': {exc}"
+                ) from exc
 
         scoped_calculate = ScopedCalculateFilters(
             define=_normalise_rendered_calculate(rendered_define),
@@ -150,7 +168,7 @@ def resolve_metric_context(
                 update={
                     "calculate": scoped_calculate,
                     "expression": str(rendered_expression).strip() if rendered_expression else None,
-                    "format": str(rendered_format).strip() if rendered_format else None,
+                    "format": cleaned_format,
                     "ratio_to": rendered_ratio_to,
                 }
             )
@@ -204,7 +222,12 @@ def resolve_metric_context(
         inherited_sig = signatures_by_key.get(full_key)
         if inherited_sig is not None and inherited_sig == binding_sig:
             # Reuse inherited key and expose it under this alias if needed.
-            aliases[binding.alias or full_key.replace(".", "_")] = by_key.get(full_key)
+            alias = binding.alias or full_key.replace(".", "_")
+            aliases[alias] = by_key.get(full_key)
+            if binding.format:
+                formats_by_alias[alias] = binding.format
+            else:
+                formats_by_alias.pop(alias, None)
             continue
 
         bindings_to_fetch.append(binding)
@@ -273,6 +296,10 @@ def resolve_metric_context(
             by_key[full_key] = value
             signatures_by_key[full_key] = binding_signatures.get(full_key, binding.signature() + (scope_signature,))
             aliases[binding.alias] = value
+            if binding.format:
+                formats_by_alias[binding.alias] = binding.format
+            else:
+                formats_by_alias.pop(binding.alias, None)
 
         for dep_alias, full_key in dependency_fetches.items():
             value = _coerce_float(row.get(dep_alias))
@@ -287,8 +314,20 @@ def resolve_metric_context(
             by_key=by_key,
             scope=scope,
         )
+        for binding in expression_bindings:
+            alias = binding.alias
+            assert alias is not None
+            if binding.format:
+                formats_by_alias[alias] = binding.format
+            else:
+                formats_by_alias.pop(alias, None)
 
-    return ResolvedMetricContext(aliases=aliases, by_key=by_key, signatures_by_key=signatures_by_key)
+    return ResolvedMetricContext(
+        aliases=aliases,
+        by_key=by_key,
+        signatures_by_key=signatures_by_key,
+        formats_by_alias=formats_by_alias,
+    )
 
 
 def _normalise_rendered_calculate(value: object) -> list[str]:

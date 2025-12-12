@@ -14,6 +14,8 @@ from typing import Any, Mapping, Sequence
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from praeparo.formatting import parse_format_token
+
 from .scoped_calculate import ScopedCalculateFilters
 
 
@@ -176,6 +178,10 @@ class PackMetricBinding(BaseModel):
                 raise ValueError("ratio_to requires a metric key")
             if self.ratio_to is True and "." not in self.full_key:
                 raise ValueError("ratio_to=true requires a dotted metric key to infer the base denominator")
+            if not self.format:
+                # ratio_to produces deterministic 0–1 values; default to percent formatting for
+                # display-only rendering unless the pack author overrides it.
+                self.format = "percent:0"
 
         if self.variant:
             if not self.key:
@@ -195,6 +201,14 @@ class PackMetricBinding(BaseModel):
             raise ValueError(
                 f"Invalid alias '{self.alias}'. Aliases must be valid Jinja identifiers."
             )
+
+        if self.format and "{{" not in self.format and "}}" not in self.format:
+            try:
+                parse_format_token(self.format)
+            except ValueError as exc:
+                raise ValueError(
+                    f"Invalid format token '{self.format}' for context.metrics binding '{self.alias}': {exc}"
+                ) from exc
 
         return self
 

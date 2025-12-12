@@ -66,7 +66,7 @@ define: "COUNTROWS('fact_documents')"
 
 def test_expression_evaluated_in_dependency_order(tmp_path: Path) -> None:
     builder_context, catalog, env = _empty_context(tmp_path)
-    inherited = ResolvedMetricContext(aliases={"a": 2.0}, by_key={}, signatures_by_key={})
+    inherited = ResolvedMetricContext(aliases={"a": 2.0}, by_key={}, signatures_by_key={}, formats_by_alias={})
 
     bindings = [
         PackMetricBinding(alias="b", expression="a * 3"),
@@ -250,6 +250,7 @@ define: "COUNTROWS('fact_documents')"
         aliases={"total_documents": 7.0},
         by_key={"documents_sent": 7.0},
         signatures_by_key={"documents_sent": binding.signature() + (tuple(),)},
+        formats_by_alias={},
     )
 
     artefact_dir = tmp_path / "artefacts"

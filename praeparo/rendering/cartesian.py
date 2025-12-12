@@ -10,6 +10,7 @@ import plotly.graph_objects as go
 from plotly.graph_objs.layout import Legend, Margin
 
 from praeparo.data import ChartResultSet
+from praeparo.formatting import plotly_text_template, plotly_tickformat
 from praeparo.models import (
     CartesianChartConfig,
     SeriesStackingMode,
@@ -160,59 +161,12 @@ def _resolve_label_position(position: str | None, orientation: str) -> str:
     return resolved
 
 
-def _precision_from_token(token: str, default: int = 0) -> int:
-    if ":" not in token:
-        return default
-    candidate = token.split(":", 1)[1].strip()
-    if not candidate:
-        return default
-    try:
-        return max(0, int(float(candidate)))
-    except ValueError:
-        return default
-
-
 def _format_template(format_token: str | None) -> str:
-    token = (format_token or "").strip().lower()
-    if not token:
-        return "%{text}"
-    if token.startswith("percent"):
-        precision = _precision_from_token(token, default=0)
-        return f"%{{text:.{precision}%}}"
-    if token.startswith("number"):
-        precision = _precision_from_token(token, default=0)
-        return f"%{{text:.{precision}f}}"
-    return "%{text}"
+    return plotly_text_template(format_token)
 
 
 def _derive_tickformat(format_token: str | None) -> str | None:
-    if not format_token:
-        return None
-
-    token = format_token.strip().lower()
-    if not token:
-        return None
-
-    def _precision(spec: str) -> int:
-        try:
-            value = float(spec)
-        except (TypeError, ValueError):
-            return 0
-        return max(0, int(value))
-
-    if token.startswith("percent"):
-        precision = "0"
-        if ":" in token:
-            precision = token.split(":", 1)[1]
-        return f".{_precision(precision)}%"
-
-    if token.startswith("number"):
-        precision = "0"
-        if ":" in token:
-            precision = token.split(":", 1)[1]
-        return f",.{_precision(precision)}f"
-
-    return None
+    return plotly_tickformat(format_token)
 
 
 def _configure_layout(
