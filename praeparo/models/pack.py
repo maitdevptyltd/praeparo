@@ -16,7 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from praeparo.formatting import parse_format_token
 
-from .scoped_calculate import ScopedCalculateFilters
+from .scoped_calculate import ScopedCalculateFilters, ScopedCalculateMap
 
 
 FiltersType = str | Sequence[str] | Mapping[str, str] | None
@@ -274,14 +274,26 @@ class PackMetricsContext(BaseModel):
 
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
-    calculate: FiltersType = Field(
+    calculate: ScopedCalculateMap | None = Field(
         default=None,
-        description="Optional DAX CALCULATE predicates applied to the outer metric context query.",
+        description=(
+            "Optional DAX CALCULATE predicates applied to metric-context execution. "
+            "Shorthand entries default to DEFINE scope (outer dataset scoping). "
+            "Use calculate.<name>.evaluate to apply calculation-group filters around every "
+            "bound series in SUMMARIZECOLUMNS."
+        ),
     )
     bindings: list[PackMetricBinding] | None = Field(
         default=None,
         description="Metric bindings resolved into Jinja variables.",
     )
+
+    @field_validator("calculate", mode="before")
+    @classmethod
+    def _normalise_calculate(cls, value: object) -> ScopedCalculateMap | None:
+        if value is None:
+            return None
+        return ScopedCalculateMap.from_raw(value)
 
     _normalise_bindings = field_validator("bindings", mode="before")(_normalise_metric_bindings)
 
@@ -361,9 +373,9 @@ class PackContext(BaseModel):
         )
 
         if self.metrics is None:
-            self.metrics = PackMetricsContext(calculate=self.calculate)
+            self.metrics = PackMetricsContext(calculate=ScopedCalculateMap.from_raw(self.calculate))
         elif self.metrics.calculate is None:
-            self.metrics.calculate = self.calculate
+            self.metrics.calculate = ScopedCalculateMap.from_raw(self.calculate)
 
         return self
 
@@ -622,9 +634,10 @@ class PackConfig(BaseModel):
     def _validate_slide_metric_overrides(self) -> "PackConfig":
         root_metrics_context = self.context.metrics
         root_bindings = root_metrics_context.bindings or [] if root_metrics_context else []
-        root_scope_signature = _merge_filter_signature(
-            root_metrics_context.calculate if root_metrics_context else None,
-            None,
+        root_scope_signature = (
+            root_metrics_context.calculate.combined_signature()
+            if root_metrics_context and root_metrics_context.calculate
+            else tuple()
         )
         root_by_alias = {
             binding.alias: binding.signature() + (root_scope_signature,)
@@ -641,10 +654,10 @@ class PackConfig(BaseModel):
             slide_metrics = slide_metrics_context.bindings if slide_metrics_context else None
             if not slide_metrics:
                 continue
-            slide_scope_signature = _merge_filter_signature(
+            slide_scope_signature = ScopedCalculateMap.merge(
                 root_metrics_context.calculate if root_metrics_context else None,
                 slide_metrics_context.calculate if slide_metrics_context else None,
-            )
+            ).combined_signature()
 
             for binding in slide_metrics:
                 alias = binding.alias or ""

@@ -151,27 +151,14 @@
         "calculate": {
           "anyOf": [
             {
-              "type": "string"
-            },
-            {
-              "items": {
-                "type": "string"
-              },
-              "type": "array"
-            },
-            {
-              "additionalProperties": {
-                "type": "string"
-              },
-              "type": "object"
+              "$ref": "#/$defs/ScopedCalculateMap"
             },
             {
               "type": "null"
             }
           ],
           "default": null,
-          "description": "Optional DAX CALCULATE predicates applied to the outer metric context query.",
-          "title": "Calculate"
+          "description": "Optional DAX CALCULATE predicates applied to metric-context execution. Shorthand entries default to DEFINE scope (outer dataset scoping). Use calculate.<name>.evaluate to apply calculation-group filters around every bound series in SUMMARIZECOLUMNS."
         },
         "bindings": {
           "anyOf": [
@@ -482,6 +469,30 @@
       "title": "PackVisualRef",
       "type": "object"
     },
+    "ScopedCalculateEntry": {
+      "additionalProperties": false,
+      "description": "Named calculate entry split between DEFINE and EVALUATE scopes.",
+      "properties": {
+        "define": {
+          "description": "Predicates applied in the DEFINE scope.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Define",
+          "type": "array"
+        },
+        "evaluate": {
+          "description": "Predicates applied in the EVALUATE scope (around measures in SUMMARIZECOLUMNS).",
+          "items": {
+            "type": "string"
+          },
+          "title": "Evaluate",
+          "type": "array"
+        }
+      },
+      "title": "ScopedCalculateEntry",
+      "type": "object"
+    },
     "ScopedCalculateFilters": {
       "additionalProperties": false,
       "description": "Split calculate predicates between DEFINE and EVALUATE scopes.",
@@ -504,6 +515,14 @@
         }
       },
       "title": "ScopedCalculateFilters",
+      "type": "object"
+    },
+    "ScopedCalculateMap": {
+      "additionalProperties": {
+        "$ref": "#/$defs/ScopedCalculateEntry"
+      },
+      "description": "Named calculate map with per-scope merge helpers.\n\nThis model is used for `context.metrics.calculate` at both pack root and slide\nscope so root definitions automatically apply to slide metric-context runs.",
+      "title": "ScopedCalculateMap",
       "type": "object"
     }
   },

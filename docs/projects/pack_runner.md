@@ -112,6 +112,10 @@ Root-level metrics are resolved **once per pack** and inherited by every slide.
 Slides may extend the inherited metric dict or override an alias only when
 `override: true` is set.
 
+Metric-context scoping (`context.metrics.calculate`) is also inherited by slides.
+Slide-level `context.metrics.calculate` may add new named predicates or override
+root predicates by name (and by scope) without duplicating every slide.
+
 Templating note:
 
 - Slide context values (excluding `context.metrics`) are rendered **once** after
@@ -167,6 +171,8 @@ context:
   metrics:
     calculate:
       month: "'dim_calendar'[month] = DATEVALUE(\"{{ month }}\")"
+      period:
+        evaluate: "'Time Intelligence'[Period] = \"Current Month\""
     bindings:
       instructions_received: total_instructions
       documents_sent: total_documents
@@ -237,9 +243,16 @@ Notes:
 - For `ratio_to` bindings, `calculate.*.evaluate` applies to both numerator and denominator,
   while `calculate.*.define` applies only to the numerator (the denominator does not inherit it).
 - `metrics.calculate` (pack root and/or slide context) adds DAX predicates to the
-  **outer** CALCULATETABLE wrapping the metric context query, letting you scope
-  the SUMMARIZECOLUMNS grain for scalar results (for example, filter to a single month).
-  These filters affect only `context.metrics` resolution, not slide visuals.
+  metric-context query. Shorthand entries default to DEFINE scope:
+  - `context.metrics.calculate.<name> = <predicate>` applies in DEFINE scope as
+    outer dataset scoping (CALCULATETABLE wrapping SUMMARIZECOLUMNS).
+  - `context.metrics.calculate.<name>.evaluate = <predicate>` applies in EVALUATE
+    scope around every bound series (via SUMMARIZECOLUMNS value filters), which
+    is required for calculation groups like Time Intelligence.
+  Root calculate entries are inherited by slides; slide entries may add or override
+  root entries by name and by scope (slide DEFINE replaces root DEFINE only when
+  the slide supplies a DEFINE predicate for that key; likewise for EVALUATE).
+  These predicates affect only `context.metrics` resolution, not slide visuals.
 - `context.calculate` is a deprecated alias for `metrics.calculate` and will be removed
   in a future release.
 
@@ -528,5 +541,6 @@ legacy `<pack-slug>.pptx`.
 
 ## Changelog
 
+- 2025-12-12: Inherit `context.metrics.calculate` into slide metric-context execution, with DEFINE/EVALUATE scoping preserved and per-slide by-name overrides.
 - 2025-12-12: Added `ratio_to` support for `context.metrics.bindings` so packs can inject scalar rates/attainment values without duplicating expression bindings.
 - 2025-12-12: Apply `bindings[].format` automatically for display-only Jinja rendering (PPTX text + `governance_highlights`), with `.value` escape hatch for raw numbers.

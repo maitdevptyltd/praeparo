@@ -321,6 +321,100 @@ define: "COUNTROWS('fact_documents')"
     assert "Time Intelligence" in after_eval
 
 
+def test_metrics_calculate_evaluate_filters_emit_in_evaluate_section(tmp_path: Path) -> None:
+    metrics_root = tmp_path / "registry" / "metrics"
+    metrics_root.mkdir(parents=True, exist_ok=True)
+    (metrics_root / "documents_sent.yaml").write_text(
+        """
+key: documents_sent
+display_name: Documents Sent
+section: documents
+define: "COUNTROWS('fact_documents')"
+""",
+        encoding="utf-8",
+    )
+
+    builder_context = MetricDatasetBuilderContext.discover(
+        project_root=tmp_path,
+        metrics_root=metrics_root,
+        use_mock=True,
+    )
+    catalog = load_metric_catalog([metrics_root])
+    env = create_pack_jinja_env()
+
+    binding = PackMetricBinding(key="documents_sent", alias="total_documents")
+    artefact_dir = tmp_path / "artefacts"
+    evaluate_filter = "'Time Intelligence'[Period] = \"Current Month\""
+
+    resolve_metric_context(
+        bindings=[binding],
+        inherited=None,
+        builder_context=builder_context,
+        catalog=catalog,
+        env=env,
+        base_payload={},
+        scope="root",
+        metrics_calculate={"period": {"evaluate": evaluate_filter}},
+        artefact_dir=artefact_dir,
+    )
+
+    dax_text = (artefact_dir / "metric_context.root.dax").read_text(encoding="utf-8")
+    before_eval, after_eval = dax_text.split("EVALUATE", 1)
+    assert evaluate_filter not in before_eval
+    assert evaluate_filter in after_eval
+
+
+def test_metrics_calculate_evaluate_filters_stack_with_binding_evaluate(tmp_path: Path) -> None:
+    metrics_root = tmp_path / "registry" / "metrics"
+    metrics_root.mkdir(parents=True, exist_ok=True)
+    (metrics_root / "documents_sent.yaml").write_text(
+        """
+key: documents_sent
+display_name: Documents Sent
+section: documents
+define: "COUNTROWS('fact_documents')"
+""",
+        encoding="utf-8",
+    )
+
+    builder_context = MetricDatasetBuilderContext.discover(
+        project_root=tmp_path,
+        metrics_root=metrics_root,
+        use_mock=True,
+    )
+    catalog = load_metric_catalog([metrics_root])
+    env = create_pack_jinja_env()
+
+    root_filter = "'Time Intelligence'[Period] = \"Current Month\""
+    binding_filter = "'dim_calendar'[month] = DATEVALUE(\"2025-11-01\")"
+    binding = PackMetricBinding.model_validate(
+        {
+            "key": "documents_sent",
+            "alias": "total_documents",
+            "calculate": {"month": {"evaluate": binding_filter}},
+        }
+    )
+
+    artefact_dir = tmp_path / "artefacts"
+    resolve_metric_context(
+        bindings=[binding],
+        inherited=None,
+        builder_context=builder_context,
+        catalog=catalog,
+        env=env,
+        base_payload={},
+        scope="root",
+        metrics_calculate={"period": {"evaluate": root_filter}},
+        artefact_dir=artefact_dir,
+    )
+
+    dax_text = (artefact_dir / "metric_context.root.dax").read_text(encoding="utf-8")
+    _, after_eval = dax_text.split("EVALUATE", 1)
+    assert root_filter in after_eval
+    assert binding_filter in after_eval
+    assert after_eval.index(root_filter) < after_eval.index(binding_filter)
+
+
 def test_ratio_to_adds_denominator_and_resolves_scalar(tmp_path: Path) -> None:
     metrics_root = tmp_path / "registry" / "metrics"
     metrics_root.mkdir(parents=True, exist_ok=True)

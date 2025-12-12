@@ -41,6 +41,7 @@ from praeparo.io.yaml_loader import load_visual_config, load_visual_from_payload
 from praeparo.visuals.context import merge_context_payload, resolve_dax_context
 from praeparo.visuals.registry import VisualTypeRegistration, get_visual_registration, _is_python_visual_type
 from praeparo.visuals.context_models import VisualContextModel
+from praeparo.models.scoped_calculate import ScopedCalculateMap
 
 
 VisualLoader = Callable[[Path], BaseVisualConfig]
@@ -517,7 +518,7 @@ def run_pack(
         effective_metrics_context = global_metrics_context
         if has_metric_bindings and builder_context is not None and catalog is not None:
             slide_metrics_config = slide.context.metrics if slide.context else None
-            slide_metrics_calculate = merge_calculate_filters(
+            slide_metrics_calculate = ScopedCalculateMap.merge(
                 root_metrics_calculate,
                 slide_metrics_config.calculate if slide_metrics_config else None,
             )
@@ -1000,7 +1001,7 @@ def restitch_pack_pptx(
         effective_metrics_context = global_metrics_context
         if has_metric_bindings and builder_context is not None and catalog is not None:
             slide_metrics_config = slide.context.metrics if slide.context else None
-            slide_metrics_calculate = merge_calculate_filters(
+            slide_metrics_calculate = ScopedCalculateMap.merge(
                 root_metrics_calculate,
                 slide_metrics_config.calculate if slide_metrics_config else None,
             )

@@ -28,7 +28,7 @@ from praeparo.datasets.context import resolve_default_metrics_root_for_pack
 from praeparo.datasets.expression_eval import evaluate_expression
 from praeparo.metrics import MetricCatalog, load_metric_catalog
 from praeparo.models import FiltersType, PackMetricBinding
-from praeparo.models.scoped_calculate import ScopedCalculateFilters
+from praeparo.models.scoped_calculate import ScopedCalculateFilters, ScopedCalculateMap
 from praeparo.formatting import parse_format_token
 from praeparo.pack.templating import render_value
 from praeparo.visuals.dax.expressions import ParsedExpression, parse_metric_expression
@@ -109,7 +109,7 @@ def resolve_metric_context(
     env: Environment,
     base_payload: Mapping[str, object],
     scope: str,
-    metrics_calculate: FiltersType = None,
+    metrics_calculate: ScopedCalculateMap | FiltersType | None = None,
     artefact_dir: Path | None = None,
 ) -> ResolvedMetricContext:
     """Resolve bindings into scalars, reusing inherited values where valid."""
@@ -120,11 +120,21 @@ def resolve_metric_context(
     signatures_by_key: dict[str, tuple[Any, ...]] = dict(inherited.signatures_by_key) if inherited else {}
     formats_by_alias: dict[str, str] = dict(inherited.formats_by_alias) if inherited else {}
 
+    raw_scope_calculate: object | None
+    if metrics_calculate is None:
+        raw_scope_calculate = None
+    elif isinstance(metrics_calculate, ScopedCalculateMap):
+        raw_scope_calculate = metrics_calculate.model_dump(mode="python")
+    else:
+        raw_scope_calculate = metrics_calculate
+
     rendered_scope_calculate = (
-        render_value(metrics_calculate, env=env, context=base_payload) if metrics_calculate else None
+        render_value(raw_scope_calculate, env=env, context=base_payload) if raw_scope_calculate else None
     )
-    scope_calculate_list = _normalise_rendered_calculate(rendered_scope_calculate)
-    scope_signature = tuple(sorted(set(scope_calculate_list)))
+    scope_calculate_map = ScopedCalculateMap.from_raw(rendered_scope_calculate) if rendered_scope_calculate else ScopedCalculateMap()
+    scope_define_filters = scope_calculate_map.flatten_define()
+    scope_evaluate_filters = scope_calculate_map.flatten_evaluate()
+    scope_signature = scope_calculate_map.combined_signature()
 
     if not bindings:
         return ResolvedMetricContext(
@@ -252,23 +262,24 @@ def resolve_metric_context(
         if builder_context.use_mock:
             builder.mock_rows(1)
 
-        if scope_calculate_list:
-            builder.calculate(scope_calculate_list)
+        if scope_define_filters:
+            builder.calculate(scope_define_filters)
 
         for binding in bindings_to_fetch:
             full_key = binding.full_key
             assert full_key is not None
             ratio_denominator = _resolve_ratio_denominator(binding, catalog=catalog, scope=scope)
+            effective_evaluate = [*scope_evaluate_filters, *binding.calculate.evaluate]
             builder.metric(
                 full_key,
                 alias=binding.alias,
                 calculate=binding.calculate.define,
-                evaluate=binding.calculate.evaluate,
+                evaluate=effective_evaluate,
                 ratio_to=ratio_denominator,
             )
 
         for dep_alias, full_key in dependency_fetches.items():
-            builder.metric(full_key, alias=dep_alias)
+            builder.metric(full_key, alias=dep_alias, evaluate=scope_evaluate_filters)
 
         # Emit the compiled DAX plan before execution so pack authors can inspect it.
         plan = builder.plan()
