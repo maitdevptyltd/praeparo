@@ -30,6 +30,7 @@ class MetricReference:
     """Reference to a metric or variant referenced inside an expression."""
 
     identifier: str
+    ratio_to_ref: str | None = None
 
 
 @dataclass(frozen=True)
@@ -72,6 +73,12 @@ class ParsedExpression:
             if isinstance(node, ast.Attribute):
                 identifier = _flatten_attribute(node)
                 return f"({substitutions[identifier]})"
+            if isinstance(node, ast.Call):
+                numerator_id, _ = _parse_ratio_to_call(node)
+                denominator_id = _lookup_ratio_to_denominator(self.references, numerator_id)
+                numerator_expr = f"({substitutions[numerator_id]})"
+                denominator_expr = f"({substitutions[denominator_id]})"
+                return f"DIVIDE({numerator_expr}, {denominator_expr})"
             raise TypeError(f"Unsupported expression node: {ast.dump(node)}")
 
         return _emit(self.root)
@@ -162,11 +169,37 @@ class _ExpressionVisitor(ast.NodeVisitor):
         identifier = _flatten_attribute(node)
         self._record_reference(identifier)
 
-    def _record_reference(self, identifier: str) -> None:
-        if identifier not in self._seen:
-            ref = MetricReference(identifier=identifier)
+    def visit_Call(self, node: ast.Call) -> None:  # noqa: N802
+        numerator_id, denominator_id = _parse_ratio_to_call(node)
+
+        # Record denominator first so dependency discovery works even if the only
+        # mention is inside a ratio_to() call.
+        self._record_reference(denominator_id)
+        self._record_reference(numerator_id, ratio_to_ref=denominator_id)
+
+    def _record_reference(self, identifier: str, *, ratio_to_ref: str | None = None) -> None:
+        existing = self._seen.get(identifier)
+        if existing is None:
+            ref = MetricReference(identifier=identifier, ratio_to_ref=ratio_to_ref)
             self._references.append(ref)
             self._seen[identifier] = ref
+            return
+
+        if ratio_to_ref is None:
+            return
+
+        if existing.ratio_to_ref is None:
+            updated = MetricReference(identifier=identifier, ratio_to_ref=ratio_to_ref)
+            index = self._references.index(existing)
+            self._references[index] = updated
+            self._seen[identifier] = updated
+            return
+
+        if existing.ratio_to_ref != ratio_to_ref:
+            raise ValueError(
+                f"ratio_to() cannot be called multiple times for '{identifier}' "
+                "with different denominators."
+            )
 
     def generic_visit(self, node: ast.AST) -> None:  # noqa: D401
         raise TypeError(f"Unsupported expression node: {ast.dump(node)}")
@@ -185,6 +218,49 @@ def _flatten_attribute(node: ast.Attribute) -> str:
     else:
         raise TypeError(f"Unsupported attribute structure: {ast.dump(node)}")
     return ".".join(reversed(parts))
+
+
+def _parse_ratio_to_call(node: ast.Call) -> tuple[str, str]:
+    """Validate and extract identifiers from a ratio_to() call."""
+
+    if not isinstance(node.func, ast.Name) or node.func.id != "ratio_to":
+        raise TypeError("Only ratio_to() calls are supported in expressions.")
+    if node.keywords:
+        raise TypeError("ratio_to() does not accept keyword arguments.")
+    if len(node.args) not in (1, 2):
+        raise ValueError("ratio_to() requires one or two arguments.")
+
+    numerator_id = _flatten_metric_identifier(node.args[0])
+
+    if len(node.args) == 1:
+        if "." not in numerator_id:
+            raise ValueError("ratio_to() requires a dotted metric key to infer the parent denominator.")
+        denominator_id = numerator_id.rsplit(".", 1)[0]
+        return numerator_id, denominator_id
+
+    denominator_arg = node.args[1]
+    if not isinstance(denominator_arg, ast.Constant) or not isinstance(denominator_arg.value, str):
+        raise TypeError("Second argument to ratio_to() must be a string metric key.")
+
+    denominator_id = denominator_arg.value.strip()
+    if not denominator_id:
+        raise ValueError("Second argument to ratio_to() must be a non-empty string metric key.")
+    return numerator_id, denominator_id
+
+
+def _flatten_metric_identifier(node: ast.AST) -> str:
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        return _flatten_attribute(node)
+    raise TypeError("First argument to ratio_to() must be a metric reference.")
+
+
+def _lookup_ratio_to_denominator(references: List[MetricReference], numerator_id: str) -> str:
+    for reference in references:
+        if reference.identifier == numerator_id and reference.ratio_to_ref:
+            return reference.ratio_to_ref
+    raise KeyError(f"ratio_to() denominator could not be resolved for '{numerator_id}'.")
 
 
 __all__ = ["MetricReference", "ParsedExpression", "parse_metric_expression", "resolve_expression_metric"]

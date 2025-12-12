@@ -40,6 +40,37 @@ def test_parse_metric_expression_rejects_invalid_constant() -> None:
         parse_metric_expression("a + 'hello'")
 
 
+def test_parse_metric_expression_ratio_to_infers_parent_denominator() -> None:
+    parsed = parse_metric_expression("ratio_to(documents_sent.manual)")
+    identifiers = [ref.identifier for ref in parsed.references]
+    assert identifiers == ["documents_sent", "documents_sent.manual"]
+    numerator_ref = next(ref for ref in parsed.references if ref.identifier == "documents_sent.manual")
+    assert numerator_ref.ratio_to_ref == "documents_sent"
+
+
+def test_parse_metric_expression_ratio_to_accepts_explicit_denominator() -> None:
+    parsed = parse_metric_expression('ratio_to(documents_sent.manual, "lodgements.total")')
+    identifiers = [ref.identifier for ref in parsed.references]
+    assert identifiers == ["lodgements.total", "documents_sent.manual"]
+    numerator_ref = next(ref for ref in parsed.references if ref.identifier == "documents_sent.manual")
+    assert numerator_ref.ratio_to_ref == "lodgements.total"
+
+
+def test_parse_metric_expression_ratio_to_emits_divide_dax() -> None:
+    expr = parse_metric_expression("ratio_to(a.b)")
+    dax = expr.to_dax({"a": "[Denominator]", "a.b": "[Numerator]"})
+    assert dax == "DIVIDE(([Numerator]), ([Denominator]))"
+
+
+def test_parse_metric_expression_ratio_to_invalid_usage_raises() -> None:
+    with pytest.raises(ValueError, match="requires a dotted metric key"):
+        parse_metric_expression("ratio_to(a)")
+    with pytest.raises(ValueError, match="non-empty string"):
+        parse_metric_expression('ratio_to(a.b, "")')
+    with pytest.raises(TypeError, match="string metric key"):
+        parse_metric_expression("ratio_to(a.b, 123)")
+
+
 def _sample_catalog() -> tuple[MetricCatalog, MetricDaxBuilder]:
     definition = MetricDefinition.model_validate(
         {
@@ -75,6 +106,22 @@ def test_resolve_expression_metric_compiles_definition() -> None:
     assert measure.key == "documents_sent.manual_ratio"
     assert measure.label == "Manual ratio"
     assert "CALCULATE" in measure.expression
+    assert "/" in measure.expression
+
+
+def test_resolve_expression_metric_ratio_to_compiles_safe_divide() -> None:
+    _, builder = _sample_catalog()
+    cache = MetricCompilationCache()
+
+    measure = resolve_expression_metric(
+        metric_key="documents_sent.manual_ratio_safe",
+        expression="ratio_to(documents_sent.manual)",
+        builder=builder,
+        cache=cache,
+        label="Manual ratio safe",
+    )
+
+    assert "DIVIDE" in measure.expression
 
 
 def test_resolve_expression_metric_self_reference_raises() -> None:

@@ -8,7 +8,7 @@ from typing import Mapping
 from praeparo.visuals.dax.expressions import ParsedExpression
 
 
-def evaluate_expression(parsed: ParsedExpression, substitutions: Mapping[str, float]) -> float:
+def evaluate_expression(parsed: ParsedExpression, substitutions: Mapping[str, float]) -> float | None:
     """Evaluate *parsed* using numeric substitutions for each referenced identifier."""
 
     env: dict[str, float] = {}
@@ -19,10 +19,12 @@ def evaluate_expression(parsed: ParsedExpression, substitutions: Mapping[str, fl
     return _evaluate_node(parsed.root, env)
 
 
-def _evaluate_node(node: ast.AST, env: Mapping[str, float]) -> float:
+def _evaluate_node(node: ast.AST, env: Mapping[str, float]) -> float | None:
     if isinstance(node, ast.BinOp):
         left = _evaluate_node(node.left, env)
         right = _evaluate_node(node.right, env)
+        if left is None or right is None:
+            return None
         if isinstance(node.op, ast.Add):
             return left + right
         if isinstance(node.op, ast.Sub):
@@ -35,6 +37,8 @@ def _evaluate_node(node: ast.AST, env: Mapping[str, float]) -> float:
         raise ValueError(msg)
     if isinstance(node, ast.UnaryOp):
         operand = _evaluate_node(node.operand, env)
+        if operand is None:
+            return None
         if isinstance(node.op, ast.USub):
             return -operand
         if isinstance(node.op, ast.UAdd):
@@ -52,6 +56,13 @@ def _evaluate_node(node: ast.AST, env: Mapping[str, float]) -> float:
     if isinstance(node, ast.Attribute):
         identifier = _flatten_attribute(node)
         return env.get(identifier, 0.0)
+    if isinstance(node, ast.Call):
+        numerator_id, denominator_id = _parse_ratio_to_call(node)
+        numerator_value = env.get(numerator_id)
+        denominator_value = env.get(denominator_id)
+        if numerator_value is None or denominator_value is None or denominator_value == 0:
+            return None
+        return float(numerator_value) / float(denominator_value)
     msg = f"Unsupported expression node: {ast.dump(node)}"
     raise TypeError(msg)
 
@@ -65,6 +76,40 @@ def _flatten_attribute(node: ast.Attribute) -> str:
     if isinstance(current, ast.Name):
         parts.append(current.id)
     return ".".join(reversed(parts))
+
+
+def _parse_ratio_to_call(node: ast.Call) -> tuple[str, str]:
+    if not isinstance(node.func, ast.Name) or node.func.id != "ratio_to":
+        raise TypeError("Only ratio_to() calls are supported in expressions.")
+    if node.keywords:
+        raise TypeError("ratio_to() does not accept keyword arguments.")
+    if len(node.args) not in (1, 2):
+        raise ValueError("ratio_to() requires one or two arguments.")
+
+    numerator_id = _flatten_metric_identifier(node.args[0])
+
+    if len(node.args) == 1:
+        if "." not in numerator_id:
+            raise ValueError("ratio_to() requires a dotted metric key to infer the parent denominator.")
+        denominator_id = numerator_id.rsplit(".", 1)[0]
+        return numerator_id, denominator_id
+
+    denominator_arg = node.args[1]
+    if not isinstance(denominator_arg, ast.Constant) or not isinstance(denominator_arg.value, str):
+        raise TypeError("Second argument to ratio_to() must be a string metric key.")
+
+    denominator_id = denominator_arg.value.strip()
+    if not denominator_id:
+        raise ValueError("Second argument to ratio_to() must be a non-empty string metric key.")
+    return numerator_id, denominator_id
+
+
+def _flatten_metric_identifier(node: ast.AST) -> str:
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        return _flatten_attribute(node)
+    raise TypeError("First argument to ratio_to() must be a metric reference.")
 
 
 __all__ = ["evaluate_expression"]
