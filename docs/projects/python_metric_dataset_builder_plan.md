@@ -110,6 +110,8 @@ Additional notes:
 ## Implementation Phases
 
 > **Progress (Nov 7, 2025):** Phases 1–3 are now implemented upstream (`praeparo.datasets`). Planner refactor (phase 4) plus downstream docs/notebooks (phases 5–6) remain in backlog.
+>
+> **Progress (Dec 12, 2025):** `MetricDatasetBuilder` now auto-registers missing ratio denominators so callers can declare `ratio_to` without also adding the base metric as a plotted series.
 
 1. **Context & Builder Scaffolding**
    - Add `praeparo/datasets/__init__.py` with context + builder classes.

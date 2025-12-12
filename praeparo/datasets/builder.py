@@ -118,18 +118,20 @@ class MetricDatasetBuilder:
     ) -> "MetricDatasetBuilder":
         ratio_to_ref: str | None = None
 
-        if isinstance(ratio_to, bool):
-            if ratio_to:
+        raw_ratio_to = getattr(ratio_to, "value", ratio_to)
+
+        if isinstance(raw_ratio_to, bool):
+            if raw_ratio_to:
                 if "." not in key:
                     msg = "ratio_to=True requires a dotted metric key to infer base metric."
                     raise ValueError(msg)
                 ratio_to_ref = key.rsplit(".", 1)[0]
-        elif isinstance(ratio_to, str):
-            candidate = ratio_to.strip()
+        elif isinstance(raw_ratio_to, str):
+            candidate = raw_ratio_to.strip()
             if not candidate:
                 raise ValueError("ratio_to metric key cannot be empty.")
             ratio_to_ref = candidate
-        elif ratio_to is not None:
+        elif raw_ratio_to is not None:
             raise TypeError("ratio_to must be bool, str, or None.")
 
         if ratio_to_ref is not None and value_type is None:
@@ -148,8 +150,35 @@ class MetricDatasetBuilder:
             ratio_to_ref=ratio_to_ref,
         )
         self._series.append(series)
+
+        if ratio_to_ref is not None:
+            self._ensure_ratio_denominator(ratio_to_ref)
+
         self._invalidate_plan()
         return self
+
+    def _ensure_ratio_denominator(self, denominator_key: str) -> None:
+        """Register a supporting denominator metric if it was not declared explicitly."""
+
+        existing_metric_refs = {
+            series.reference for series in self._series if series.source == "metric"
+        }
+        if denominator_key in existing_metric_refs:
+            return
+
+        sanitised_key = denominator_key.replace(".", "_").replace("-", "_")
+        alias_candidate = f"__ratio_denom_{sanitised_key}"
+        series_id = self._allocate_series_id(alias_candidate)
+
+        supporting = _MetricDatasetSeries(
+            series_id=series_id,
+            reference=denominator_key,
+            label=denominator_key,
+            filters=(),
+            allow_placeholder=bool(self._ignore_placeholders),
+            source="metric",
+        )
+        self._series.append(supporting)
 
     def expression(
         self,

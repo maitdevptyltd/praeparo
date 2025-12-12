@@ -68,7 +68,7 @@ fig.show()
 
 | Method | Description |
 | --- | --- |
-| `.metric(key, *, alias=None, label=None, calculate=None, allow_placeholder=None, value_type=None, ratio_to=None)` | Adds a registry metric or variant. Filters are merged with the metric’s own inheritance chain. `allow_placeholder=None` inherits the builder/context-level `ignore_placeholders` flag (default `False`); override with `True`/`False` per series when you need to diverge. `ratio_to=True` infers the base key from the dotted metric (e.g., `metric.variant → metric`), or pass `ratio_to="base.metric"` explicitly. When `ratio_to` is set and `value_type` is omitted, the builder infers `value_type="percent"`. |
+| `.metric(key, *, alias=None, label=None, calculate=None, allow_placeholder=None, value_type=None, ratio_to=None)` | Adds a registry metric or variant. Filters are merged with the metric’s own inheritance chain. `allow_placeholder=None` inherits the builder/context-level `ignore_placeholders` flag (default `False`); override with `True`/`False` per series when you need to diverge. `ratio_to=True` infers the base key from the dotted metric (e.g., `metric.variant → metric`), or pass `ratio_to="base.metric"` explicitly. Denominators referenced via `ratio_to` are auto-registered if they are not already present in the builder. When `ratio_to` is set and `value_type` is omitted, the builder infers `value_type="percent"`. |
 | `.expression(identifier, expression, *, label=None, value_type="number")` | Declares an inline expression built from existing metrics (`documents_sent.automated / documents_sent`). Expressions inherit the builder’s `ignore_placeholders` flag when referenced metrics are missing. |
 | `.calculate(filters)` | Appends global filters (string or list) that wrap every measure via `CALCULATE`. |
 | `.define(blocks)` | Adds additional DEFINE blocks rendered before SUMMARIZECOLUMNS (useful for session-level calculations). |
@@ -107,8 +107,9 @@ builder.metric(
 ```
 
 - `ratio_to=True` infers the denominator by trimming the last segment of the dotted metric key.
-- `ratio_to="<metric_key>"` points to any metric added to the builder; the key must exist or the plan raises `ValueError`.
+- `ratio_to="<metric_key>"` uses the provided key as the denominator. If that metric was not declared as a series, the builder registers a supporting denominator automatically (still raising if the key is unknown in the registry).
 - When `ratio_to` is set and `value_type` is omitted, the builder defaults to `value_type="percent"`.
+- Supporting denominators are evaluated under the builder’s global context only; they do not inherit numerator-specific `calculate` filters.
 - Dataset values are stored as fractions (`0–1`). Visuals can multiply by 100 when whole-number percentages are required.
 
 ## Datasource Resolution

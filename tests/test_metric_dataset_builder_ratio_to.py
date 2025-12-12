@@ -104,12 +104,83 @@ def test_ratio_to_preserves_explicit_value_type_override(tmp_path: Path) -> None
     assert rows[0]["ratio_series"] == pytest.approx(0.5)
 
 
-def test_ratio_to_requires_denominator_present(tmp_path: Path) -> None:
+def test_ratio_to_autoregisters_inferred_denominator(tmp_path: Path) -> None:
+    builder = _builder(tmp_path, variants=["variant"])
+    builder.metric("documents_sent.variant", alias="ratio_series", ratio_to=True)
+
+    plan = builder.plan()
+
+    denom_series = [
+        series for series in builder._series if series.reference == "documents_sent" and series.source == "metric"
+    ]
+    assert len(denom_series) == 1
+    assert denom_series[0].series_id.startswith("__ratio_denom_")
+
+    raw = [
+        {
+            plan.measure_map[denom_series[0].series_id]: 200,
+            plan.measure_map["ratio_series"]: 50,
+        }
+    ]
+    rows = builder._normalise_rows(raw, plan)
+    assert rows[0]["ratio_series"] == pytest.approx(0.25)
+
+
+def test_ratio_to_autoregisters_explicit_denominator(tmp_path: Path) -> None:
     builder = _builder(tmp_path, variants=["variant"])
     builder.metric("documents_sent.variant", alias="ratio_series", ratio_to="documents_sent")
 
-    with pytest.raises(ValueError):
-        builder.plan()
+    plan = builder.plan()
+
+    denom_series = [
+        series for series in builder._series if series.reference == "documents_sent" and series.source == "metric"
+    ]
+    assert len(denom_series) == 1
+
+    raw = [
+        {
+            plan.measure_map[denom_series[0].series_id]: 200,
+            plan.measure_map["ratio_series"]: 100,
+        }
+    ]
+    rows = builder._normalise_rows(raw, plan)
+    assert rows[0]["ratio_series"] == pytest.approx(0.5)
+
+
+def test_ratio_to_does_not_duplicate_existing_denominator(tmp_path: Path) -> None:
+    builder = _builder(tmp_path, variants=["variant"])
+    builder.metric("documents_sent", alias="base")
+    builder.metric("documents_sent.variant", alias="ratio_series", ratio_to=True)
+
+    builder.plan()
+
+    denom_series = [
+        series for series in builder._series if series.reference == "documents_sent" and series.source == "metric"
+    ]
+    assert len(denom_series) == 1
+    assert denom_series[0].series_id == "base"
+
+
+def test_ratio_to_denominator_ignores_numerator_calculate(tmp_path: Path) -> None:
+    builder = _builder(tmp_path, variants=["variant"])
+    builder.metric(
+        "documents_sent.variant",
+        alias="ratio_series",
+        ratio_to=True,
+        calculate=["fact_documents[Dummy] = 1"],
+    )
+
+    builder.plan()
+
+    numerator_series = next(series for series in builder._series if series.series_id == "ratio_series")
+    denom_series = next(
+        series
+        for series in builder._series
+        if series.reference == "documents_sent" and series.source == "metric"
+    )
+
+    assert numerator_series.filters
+    assert denom_series.filters == ()
 
 
 def test_ratio_to_true_requires_dotted_metric(tmp_path: Path) -> None:
