@@ -592,6 +592,55 @@ Notes:
   its template placeholders unchanged/blank; template-only slides still pass
   through unchanged.
 
+### Text placeholders (`placeholders.*.text`)
+
+Packs can bind **text** into PPTX templates without embedding inline `{{ ... }}`
+tokens inside the PowerPoint file.
+
+To use text placeholders:
+
+1. In the PPTX template, set the target text shape’s **Name** to the placeholder
+   id (for example `display_date_text`).
+2. In the pack YAML, bind `text` for that placeholder:
+
+```yaml
+slides:
+  - id: home
+    title: Home
+    template: home
+    placeholders:
+      display_date_text:
+        text: "{{ month }}"
+      subtitle_text:
+        text:
+          - "Customer: {{ customer }}"
+          - "Month: {{ month }}"
+```
+
+Notes:
+
+- `text` can be a string or a list of strings (lists are joined with `\\n`).
+- Placeholder entries are mutually exclusive: each placeholder must define
+  exactly one of `visual`, `image`, or `text`.
+- String shorthand is supported for placeholders:
+  - Path-like strings (containing `/` or ending in `.png`/`.jpg`/etc.) are treated as `image`.
+  - Other strings are treated as `text`.
+
+Shorthand example (equivalent to the long-form binding above):
+
+```yaml
+slides:
+  - id: home
+    title: Home
+    template: home
+    placeholders:
+      display_date_text: "{{ month }}"
+      subtitle_text: "Customer: {{ customer }}"
+```
+- Text placeholders render using the same slide context as the rest of the pack
+  templating flow (including `context.metrics` bindings and display formatting),
+  so you can reference metric aliases directly in the text value.
+
 ### Revision-aware defaults
 
 - `--revision` – supply an explicit revision token (e.g. `2025-12`, `r17`).
