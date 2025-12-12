@@ -95,12 +95,22 @@ slides:
   - `notes` – free-form author notes.
   - `context` – optional per-slide context merged over the pack context,
     including optional `context.metrics` bindings.
+  - `template` – optional PPTX template identifier (`TEMPLATE_TAG`) used during
+    deck assembly.
   - `visual.ref` – path (relative to the pack file) to a visual YAML
     (matrix, frame, Power BI, etc.).
   - `visual.filters` – slide-level OData filters (merged with pack-level
     `filters`).
   - `visual.calculate` – slide-level DAX filters (merged with pack-level
     `calculate`).
+  - `image` – optional static image path (relative to the pack file) used for
+    PPTX slides that do not declare a visual. Requires `template`.
+  - `placeholders` – optional map of placeholder ids to bindings for multi-slot
+    templates (for example a two-up slide). Each placeholder must define
+    exactly one of:
+    - `visual` (render a visual into the placeholder),
+    - `image` (bind a static image path), or
+    - `text` (bind text into a named text shape).
 
 ## Metric Context Bindings (`context.metrics`)
 
@@ -510,6 +520,48 @@ allocation). Templates are resolved in order:
 Slides without a `template` are skipped; slides with a template but no visual or
 placeholders now pass through untouched so “static” template-only pages do not
 break the run.
+
+### Static images and placeholder bindings
+
+Packs can bind static images into PPTX templates without creating a dedicated
+visual:
+
+- Slide-level `image` — use when the template has a single picture slot.
+- Placeholder-level `image` — use when the template has multiple picture slots.
+
+Slide-level image example (path is resolved relative to the pack file):
+
+```yaml
+slides:
+  - id: home
+    title: Home
+    template: home
+    image: ./assets/customer_logo.png
+```
+
+Placeholder-level image example (mix static images with visuals):
+
+```yaml
+slides:
+  - id: dashboard_two_up
+    title: Lodgement vs Discharges
+    template: two_up
+    placeholders:
+      left_chart:
+        visual:
+          ref: ./visuals/powerbi/lodgement.yaml
+      right_chart:
+        image: ./assets/digital_first_logo.png
+```
+
+Notes:
+
+- Slide-level `image` is mutually exclusive with `visual` and requires `template`.
+- Placeholders are mutually exclusive per entry: each placeholder must define
+  exactly one of `visual`, `image`, or `text`.
+- When `--slides` is used and a skipped slide is missing PNGs, Praeparo leaves
+  its template placeholders unchanged/blank; template-only slides still pass
+  through unchanged.
 
 ### Revision-aware defaults
 
