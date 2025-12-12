@@ -723,6 +723,7 @@ def run_pack(
                     placeholder_pngs=placeholder_png_map,
                     result_path=result_file,
                     template_path=template_path,
+                    allow_missing_pngs=bool(slide_filter),
                 )
             except Exception:
                 logger.exception("PPTX assembly failed", extra={"result_file": str(result_file)})

@@ -889,6 +889,72 @@ def test_run_pack_honours_only_slides(tmp_path: Path) -> None:
     assert expected_pngs == emitted_pngs
 
 
+def test_run_pack_only_slides_allows_missing_pngs(tmp_path: Path) -> None:
+    pack_path = tmp_path / "pack.yaml"
+    pack_path.write_text("", encoding="utf-8")
+
+    template_path = tmp_path / "pack_template.pptx"
+    _build_pack_template(template_path)
+    result_path = tmp_path / "deck" / "partial_pack.pptx"
+
+    pack = PackConfig(
+        schema="test-pack",
+        slides=[
+            PackSlide(
+                title="Single Visual",
+                id="single",
+                template="single_image",
+                visual=PackVisualRef(ref="one.yaml"),
+            ),
+            PackSlide(
+                title="Placeholders",
+                id="placeholders",
+                template="two_up",
+                placeholders={
+                    "left_chart": PackPlaceholder(visual=PackVisualRef(ref="left.yaml")),
+                    "right_chart": PackPlaceholder(visual=PackVisualRef(ref="right.yaml")),
+                },
+            ),
+            PackSlide(
+                title="Other Slide",
+                id="other",
+                template="single_image",
+                visual=PackVisualRef(ref="two.yaml"),
+            ),
+        ],
+    )
+
+    visuals: Dict[str, BaseVisualConfig] = {
+        "one.yaml": BaseVisualConfig(type="matrix"),
+        "left.yaml": BaseVisualConfig(type="matrix"),
+        "right.yaml": BaseVisualConfig(type="matrix"),
+        "two.yaml": BaseVisualConfig(type="matrix"),
+    }
+
+    def _loader(path: Path, payload: Mapping[str, object] | None = None, stack: tuple[Path, ...] = ()) -> BaseVisualConfig:
+        return visuals[path.name]
+
+    pipeline = _PngPipeline()
+    base_options = PipelineOptions(metadata={"result_file": result_path, "pptx_template": template_path})
+
+    run_pack(
+        pack_path,
+        pack,
+        project_root=pack_path.parent,
+        output_root=tmp_path / "artefacts",
+        base_options=base_options,
+        visual_loader=_loader,
+        pipeline=cast(VisualPipeline[Any], pipeline),
+        env=create_pack_jinja_env(),
+        only_slides=["single"],
+    )
+
+    assert len(pipeline.calls) == 1, "Only the targeted slide should execute"
+    assert result_path.exists(), "PPTX should be assembled even with missing PNGs for skipped slides"
+    deck = Presentation(result_path)
+    assert len(deck.slides) == 3
+
+
 def test_run_pack_queues_powerbi_and_respects_concurrency(tmp_path: Path) -> None:
     pack_path = tmp_path / "pack.yaml"
     pack_path.write_text("", encoding="utf-8")

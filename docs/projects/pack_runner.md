@@ -149,6 +149,12 @@ Key flags:
     --artefact-dir .tmp/example/pack_png \
     --slides overview digital_broker
   ```
+
+  When `--slides` is used alongside `--result-file`, Praeparo still assembles the
+  PPTX even if the skipped slides or placeholders have no PNG artefacts yet. Any
+  existing PNGs for skipped slides are reused; otherwise Praeparo logs a warning
+  and leaves the template placeholders unchanged/blank. Full runs and
+  `--pptx-only` restitches remain strict about missing PNGs.
 - `--max-pbi-concurrency` – maximum number of Power BI exports in flight at
   once. Defaults to `5` when not supplied; can also be set via
   `PRAEPARO_PBI_MAX_CONCURRENCY` (the CLI flag wins when both are provided).

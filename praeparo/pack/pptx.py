@@ -287,10 +287,15 @@ def assemble_pack_pptx(
     placeholder_pngs: Mapping[str, Mapping[str, Path]] | None = None,
     result_path: Path,
     template_path: Path | None = None,
+    allow_missing_pngs: bool = False,
 ) -> None:
     """Build a PPTX from pack results using optional slide templates.
 
     Slides without a template are skipped rather than failing the run.
+
+    When allow_missing_pngs is True, missing slide or placeholder PNG artefacts
+    are logged and the corresponding template placeholders are left unchanged so
+    partial runs can still assemble a deck.
     """
 
     placeholder_pngs = placeholder_pngs or {}
@@ -356,10 +361,6 @@ def assemble_pack_pptx(
         if has_placeholders:
             placeholders = slide.placeholders or {}
             for placeholder_id in placeholders:
-                image_path = _lookup_placeholder(slide_slug, placeholder_id)
-                if image_path is None:
-                    raise ValueError(f"Missing PNG for placeholder '{placeholder_id}' on slide '{slide_slug}'")
-
                 picture_shapes = [shape for shape in cloned.shapes if getattr(shape, "name", None) == placeholder_id]
                 if not picture_shapes:
                     picture_shapes = _picture_shapes(cloned)
@@ -368,18 +369,35 @@ def assemble_pack_pptx(
                 if not picture_shapes:
                     raise ValueError(f"Placeholder '{placeholder_id}' not found on template '{slide.template}'")
 
+                image_path = _lookup_placeholder(slide_slug, placeholder_id)
+                if image_path is None:
+                    if allow_missing_pngs:
+                        logger.warning(
+                            "Missing PNG for placeholder; leaving template unchanged",
+                            extra={"slide": slide_slug, "placeholder": placeholder_id, "template": slide.template},
+                        )
+                        continue
+                    raise ValueError(f"Missing PNG for placeholder '{placeholder_id}' on slide '{slide_slug}'")
+
                 _replace_picture(picture_shapes[0], image_path)
         elif has_visual or has_image:
-            image_path = slide_pngs.get(slide_slug)
-            if image_path is None:
-                raise ValueError(f"Missing PNG for slide '{slide_slug}'")
-
             picture_shapes = _picture_placeholder_shapes(cloned)
             if len(picture_shapes) != 1:
                 raise ValueError(
                     f"Slide '{slide_slug}' uses single-visual shorthand but template '{slide.template}' "
                     f"has {len(picture_shapes)} picture picture-placeholders."
                 )
+
+            image_path = slide_pngs.get(slide_slug)
+            if image_path is None:
+                if allow_missing_pngs:
+                    logger.warning(
+                        "Missing PNG for slide; leaving template unchanged",
+                        extra={"slide": slide_slug, "template": slide.template},
+                    )
+                    continue
+                raise ValueError(f"Missing PNG for slide '{slide_slug}'")
+
             _replace_picture(picture_shapes[0], image_path)
         else:
             logger.info(
