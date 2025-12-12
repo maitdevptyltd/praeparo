@@ -133,6 +133,40 @@ subcommands.
 - Context models stay typed (re-use `VisualContextModel` fields plus your own), and the pipeline still discovers metrics/datasources for you.
 - See [python_visuals.md](python_visuals.md) for the full quickstart.
 
+## CLI destination shorthand
+
+Both YAML and Python visual runs accept an optional positional `dest` to cut down
+on `--output-*` flags. Flags always override any defaults derived from `dest`.
+
+Examples:
+
+- Directory or extension-less `dest`:
+
+  ```bash
+  praeparo visual run governance_matrix visuals/performance_dashboard.yaml ./exports/
+  ```
+
+  Defaults to:
+  - HTML: `./exports/<slug>.html`
+  - PNG: `./exports/<slug>.png`
+  - Artefacts: `./exports/_artifacts/`
+
+- `.png` `dest`:
+
+  ```bash
+  praeparo visual run governance_matrix visuals/performance_dashboard.yaml ./exports/report.png
+  ```
+
+  Defaults to:
+  - PNG: `./exports/report.png`
+  - Artefacts: `./exports/report/_artifacts/`
+  - HTML remains enabled by default and follows the usual rules unless overridden.
+
+Python auto-detection:
+
+- `praeparo path/to/visual.py [dest]` and `praeparo visual run path/to/visual.py [dest]`
+  are routed to `praeparo python-visual run ...` automatically.
+
 ## Python Metric Dataset Builder (Planned)
 
 Prefer a notebook workflow over YAML when sketching visuals? Review the
