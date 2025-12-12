@@ -133,10 +133,11 @@ For display-only rendering, Praeparo automatically applies `bindings[].format`
 by swapping metric aliases for small wrapper objects that stringify using the
 format token.
 
-Display-only fields (Phase 8, intentionally narrow):
+Display-only fields (Phase 8):
 
 - PPTX text run rendering (`{{ ... }}` inside slide templates and placeholder text blocks).
-- Nested render of `context.governance_highlights` after metric injection.
+- Nested render of slide `context` values after metric injection, excluding keys named
+  `calculate`, `filters`, `define`, or `expression` (so execution surfaces keep raw numbers).
 
 Default behaviour:
 

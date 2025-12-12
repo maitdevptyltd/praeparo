@@ -128,21 +128,28 @@ def _render_slide_context_after_metric_injection(
 
     slide_payload.update(dict(rendered))
 
-    # Phase 8: apply metric-binding formats automatically for display-only
-    # narrative fields without leaking formatted strings into execution surfaces.
-    raw_highlights = raw_slide_context.get("governance_highlights")
-    if raw_highlights is None:
-        return
+    # Phase 8: apply metric-binding formats automatically for display-only slide
+    # context strings without leaking formatted values into execution surfaces.
+    #
+    # We only re-render fields that live outside known execution blocks (e.g.
+    # DAX filters, DEFINE blocks, or expression payloads). This keeps formatting
+    # predictable for narrative strings while preserving raw numeric values for
+    # anything that influences queries or pipeline execution.
+    excluded_display_blocks = {"calculate", "filters", "define", "expression"}
 
-    rendered_highlights = render_value(raw_highlights, env=env, context=display_payload)
-    if rendered_highlights is None:
-        slide_payload["governance_highlights"] = ""
-    elif isinstance(rendered_highlights, list):
-        slide_payload["governance_highlights"] = "\n".join(
-            str(item) for item in rendered_highlights if item is not None
-        )
-    else:
-        slide_payload["governance_highlights"] = str(rendered_highlights)
+    for key, raw_value in raw_slide_context.items():
+        if key in excluded_display_blocks:
+            continue
+        if raw_value is None:
+            continue
+
+        rendered_value = render_value(raw_value, env=env, context=display_payload)
+        if rendered_value is None:
+            slide_payload[key] = ""
+        elif isinstance(rendered_value, list):
+            slide_payload[key] = "\n".join(str(item) for item in rendered_value if item is not None)
+        else:
+            slide_payload[key] = str(rendered_value) if isinstance(rendered_value, (str, int, float)) else rendered_value
 
 
 def _build_display_payload(

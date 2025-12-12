@@ -116,6 +116,171 @@ def test_governance_highlights_formats_bindings_but_preserves_raw_context(monkey
     assert context_payload["governance_highlights"] == "Volume 7; raw 7.0."
 
 
+def test_key_insights_formats_bindings_but_preserves_raw_context(monkeypatch, tmp_path: Path) -> None:
+    metrics_root = tmp_path / "registry" / "metrics"
+    metrics_root.mkdir(parents=True)
+
+    pack = PackConfig.model_validate(
+        {
+            "schema": "test-pack",
+            "context": {
+                "customer": "Example Bank",
+                "metrics": {
+                    "bindings": [
+                        {
+                            "key": "instructions_received",
+                            "alias": "total_instructions",
+                            "format": "number:1",
+                        }
+                    ]
+                },
+            },
+            "slides": [
+                {
+                    "title": "Highlights",
+                    "context": {
+                        "key_insights": "Volume {{ total_instructions }}; raw {{ total_instructions.value }}.",
+                    },
+                    "visual": {"ref": "dummy.yaml"},
+                }
+            ],
+        }
+    )
+
+    def fake_resolve_metric_context(
+        *,
+        bindings,
+        inherited,
+        builder_context,
+        catalog,
+        env,
+        base_payload,
+        scope: str,
+        metrics_calculate=None,
+        artefact_dir=None,
+    ) -> ResolvedMetricContext:
+        if scope == "root":
+            return ResolvedMetricContext(
+                aliases={"total_instructions": 7.26},
+                by_key={"instructions_received": 7.26},
+                signatures_by_key={"instructions_received": ("instructions_received", tuple(), "number:1", None)},
+                formats_by_alias={"total_instructions": "number:1"},
+            )
+        assert inherited is not None
+        return inherited
+
+    monkeypatch.setattr(
+        "praeparo.pack.runner.resolve_metric_context",
+        fake_resolve_metric_context,
+    )
+
+    pipeline = _CapturingPipeline()
+
+    def dummy_loader(_: Path) -> BaseVisualConfig:
+        return BaseVisualConfig(type="dummy_formatted_bindings")
+
+    results = run_pack(
+        tmp_path / "pack.yaml",
+        pack,
+        project_root=tmp_path,
+        output_root=tmp_path / "artefacts",
+        base_options=PipelineOptions(metadata={"metrics_root": metrics_root, "data_mode": "mock"}),
+        visual_loader=dummy_loader,
+        pipeline=pipeline,
+    )
+
+    assert results
+    assert pipeline.contexts
+
+    context_payload = pipeline.contexts[0].options.metadata.get("context") or {}
+    assert isinstance(context_payload, Mapping)
+    assert context_payload["total_instructions"] == 7.26
+    assert isinstance(context_payload["total_instructions"], float)
+    assert context_payload["key_insights"] == "Volume 7.3; raw 7.26."
+
+
+def test_display_render_skips_execution_keys(monkeypatch, tmp_path: Path) -> None:
+    metrics_root = tmp_path / "registry" / "metrics"
+    metrics_root.mkdir(parents=True)
+
+    pack = PackConfig.model_validate(
+        {
+            "schema": "test-pack",
+            "context": {
+                "metrics": {
+                    "bindings": [
+                        {
+                            "key": "instructions_received",
+                            "alias": "total_instructions",
+                            "format": "number:1",
+                        }
+                    ]
+                },
+            },
+            "slides": [
+                {
+                    "title": "Highlights",
+                    "context": {
+                        "define": "Value {{ total_instructions }} (should stay raw)",
+                        "note": "Value {{ total_instructions }} (should format)",
+                    },
+                    "visual": {"ref": "dummy.yaml"},
+                }
+            ],
+        }
+    )
+
+    def fake_resolve_metric_context(
+        *,
+        bindings,
+        inherited,
+        builder_context,
+        catalog,
+        env,
+        base_payload,
+        scope: str,
+        metrics_calculate=None,
+        artefact_dir=None,
+    ) -> ResolvedMetricContext:
+        if scope == "root":
+            return ResolvedMetricContext(
+                aliases={"total_instructions": 7.26},
+                by_key={"instructions_received": 7.26},
+                signatures_by_key={"instructions_received": ("instructions_received", tuple(), "number:1", None)},
+                formats_by_alias={"total_instructions": "number:1"},
+            )
+        assert inherited is not None
+        return inherited
+
+    monkeypatch.setattr(
+        "praeparo.pack.runner.resolve_metric_context",
+        fake_resolve_metric_context,
+    )
+
+    pipeline = _CapturingPipeline()
+
+    def dummy_loader(_: Path) -> BaseVisualConfig:
+        return BaseVisualConfig(type="dummy_formatted_bindings")
+
+    results = run_pack(
+        tmp_path / "pack.yaml",
+        pack,
+        project_root=tmp_path,
+        output_root=tmp_path / "artefacts",
+        base_options=PipelineOptions(metadata={"metrics_root": metrics_root, "data_mode": "mock"}),
+        visual_loader=dummy_loader,
+        pipeline=pipeline,
+    )
+
+    assert results
+    assert pipeline.contexts
+
+    context_payload = pipeline.contexts[0].options.metadata.get("context") or {}
+    assert isinstance(context_payload, Mapping)
+    assert context_payload["define"] == "Value 7.26 (should stay raw)"
+    assert context_payload["note"] == "Value 7.3 (should format)"
+
+
 def test_invalid_metric_binding_format_fails_validation() -> None:
     with pytest.raises(ValueError, match=r"Invalid format token 'nonsense:3'.*count_instructions"):
         PackConfig.model_validate(
