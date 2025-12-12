@@ -1,5 +1,116 @@
 {
   "$defs": {
+    "PackContext": {
+      "additionalProperties": true,
+      "description": "Context payload shared by slides.\n\nExtra keys are allowed so packs can continue to pass arbitrary template values.",
+      "properties": {
+        "metrics": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/PackMetricBinding"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional metric bindings resolved into Jinja variables.",
+          "title": "Metrics"
+        }
+      },
+      "title": "PackContext",
+      "type": "object"
+    },
+    "PackMetricBinding": {
+      "additionalProperties": false,
+      "description": "Binding describing how a metric value becomes a Jinja variable.\n\nBindings may reference a catalogue metric (`key` + optional `variant`) or declare an\narithmetic `expression` over other metrics/aliases. When `alias` is omitted it is\nderived from the full metric key by replacing dots with underscores.",
+      "properties": {
+        "key": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Catalogue metric key (e.g., documents_verified) or dotted variant key.",
+          "title": "Key"
+        },
+        "alias": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Jinja-safe variable name exposed to templates.",
+          "title": "Alias"
+        },
+        "variant": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional variant path appended to `key` when `key` is not dotted.",
+          "title": "Variant"
+        },
+        "calculate": {
+          "description": "Optional extra DAX CALCULATE predicates for this binding.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Calculate",
+          "type": "array"
+        },
+        "format": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional formatting hint mirroring Praeparo format tokens.",
+          "title": "Format"
+        },
+        "expression": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional arithmetic expression referencing metric keys or aliases.",
+          "title": "Expression"
+        },
+        "override": {
+          "default": false,
+          "description": "True when intentionally shadowing an inherited alias.",
+          "title": "Override",
+          "type": "boolean"
+        }
+      },
+      "title": "PackMetricBinding",
+      "type": "object"
+    },
     "PackPlaceholder": {
       "additionalProperties": false,
       "description": "Placeholder binding used by PPTX assembly.",
@@ -74,6 +185,18 @@
           "description": "Optional stable identifier for the slide.",
           "title": "Id"
         },
+        "context": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PackSlideContext"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional template context merged with the pack-level context."
+        },
         "notes": {
           "anyOf": [
             {
@@ -146,6 +269,30 @@
         "title"
       ],
       "title": "PackSlide",
+      "type": "object"
+    },
+    "PackSlideContext": {
+      "additionalProperties": true,
+      "description": "Context payload specific to an individual slide.",
+      "properties": {
+        "metrics": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/PackMetricBinding"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional metric bindings resolved into Jinja variables.",
+          "title": "Metrics"
+        }
+      },
+      "title": "PackSlideContext",
       "type": "object"
     },
     "PackVisualRef": {
@@ -242,10 +389,8 @@
       "type": "string"
     },
     "context": {
-      "additionalProperties": true,
-      "description": "Template context shared by slides.",
-      "title": "Context",
-      "type": "object"
+      "$ref": "#/$defs/PackContext",
+      "description": "Template context shared by slides."
     },
     "define": {
       "anyOf": [

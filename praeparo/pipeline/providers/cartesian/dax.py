@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
+import threading
 import logging
 from pathlib import Path
 from typing import Callable, Mapping, Sequence
 
 from praeparo.data import ChartResultSet
 from praeparo.datasets import MetricDatasetBuilder, MetricDatasetBuilderContext
-from praeparo.datasets.models import MetricDatasetPlan
+from praeparo.datasets.models import MetricDatasetPlan, MetricDatasetResult
 from praeparo.datasets.context import normalise_filters
 from praeparo.dax import DaxQueryPlan
 from praeparo.datasources import DataSourceConfigError, ResolvedDataSource, resolve_datasource
@@ -231,7 +233,7 @@ class DaxBackedChartPlanner(ChartQueryPlanner):
             builder.use_mock(True)
             logger.info("Chart planner using mock provider", extra={"case": context.case_key})
 
-        dataset_result = asyncio.run(builder.aexecute())
+        dataset_result = _execute_builder_result(builder, case_key=context.case_key or "cartesian")
         return dataset_result.to_chart_result(config)
 
     def _resolve_provider_key(self, context, data_options) -> str | None:
@@ -259,5 +261,30 @@ class DaxBackedChartPlanner(ChartQueryPlanner):
             raise DataSourceConfigError(msg)
 
         return self._resolve_datasource(reference, visual_path)
+
+
+def _execute_builder_result(
+    builder: MetricDatasetBuilder, *, case_key: str
+) -> MetricDatasetResult:
+    """Execute builder.aexecute() safely when an event loop is already running."""
+
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(builder.aexecute())
+
+    future: concurrent.futures.Future[MetricDatasetResult] = concurrent.futures.Future()
+
+    def _runner() -> None:
+        try:
+            future.set_result(asyncio.run(builder.aexecute()))
+        except Exception as exc:  # noqa: BLE001
+            future.set_exception(exc)
+
+    thread = threading.Thread(
+        target=_runner, name=f"praeparo_cartesian_{case_key}", daemon=True
+    )
+    thread.start()
+    return future.result()
 
 __all__ = ["DaxBackedChartPlanner"]

@@ -11,7 +11,14 @@ from typing import Callable, Iterable, Mapping, Sequence
 from jinja2 import Environment
 
 from praeparo.models import BaseVisualConfig, FiltersType, PackConfig, PackPlaceholder, PackSlide, PackVisualRef
-from praeparo.pack.filters import merge_calculate_filters, merge_odata_filters
+from praeparo.pack.filters import merge_calculate_filters, merge_odata_filters, normalise_calculate_filters
+from praeparo.pack.metric_context import (
+    ResolvedMetricContext,
+    discover_builder_context_for_pack,
+    dump_context_payload,
+    load_catalog_for_context,
+    resolve_metric_context,
+)
 from praeparo.pack.pbi_queue import PowerBIExportJob, PowerBIExportQueue, PowerBIExportResult
 from praeparo.pack.templating import create_pack_jinja_env, render_value
 from praeparo.pack.pptx import PlaceholderSize, assemble_pack_pptx, resolve_template_geometry
@@ -314,21 +321,52 @@ def run_pack(
     resolved_project_root = project_root.expanduser().resolve(strict=False)
 
     jinja_env = env or create_pack_jinja_env()
-    context_payload = dict(pack.context or {})
 
-    rendered_global_filters = render_value(pack.filters, env=jinja_env, context=context_payload)
-    rendered_global_calculate = render_value(pack.calculate, env=jinja_env, context=context_payload)
-    rendered_define = render_value(pack.define, env=jinja_env, context=context_payload)
-    _render_slide_metadata(pack=pack, env=jinja_env, context=context_payload)
-    visual_context_base: dict[str, object] = {}
-    if context_payload:
-        for key, value in context_payload.items():
-            visual_context_base[str(key)] = value
+    # Start by preparing the raw pack context and rendering global DAX/OData filters.
+    pack_payload = dump_context_payload(pack.context)
+    rendered_global_filters = render_value(pack.filters, env=jinja_env, context=pack_payload)
+    rendered_global_calculate = render_value(pack.calculate, env=jinja_env, context=pack_payload)
+    rendered_define = render_value(pack.define, env=jinja_env, context=pack_payload)
+
+    base = base_options or PipelineOptions()
+    root_bindings = pack.context.metrics or []
+    slide_bindings_present = any(
+        slide.context is not None and slide.context.metrics for slide in pack.slides
+    )
+    has_metric_bindings = bool(root_bindings) or slide_bindings_present
+
+    builder_context = None
+    catalog = None
+    if has_metric_bindings:
+        metrics_calculate = normalise_calculate_filters(rendered_global_calculate)
+        builder_context = discover_builder_context_for_pack(
+            pack_path=pack_path,
+            project_root=resolved_project_root,
+            metadata=base.metadata if isinstance(base.metadata, Mapping) else None,
+            calculate=metrics_calculate,
+            define=rendered_define,
+        )
+        catalog = load_catalog_for_context(builder_context)
+
+        # Resolve root-level metric bindings once and expose them as pack-wide Jinja variables.
+        global_metrics_context = resolve_metric_context(
+            bindings=root_bindings,
+            inherited=None,
+            builder_context=builder_context,
+            catalog=catalog,
+            env=jinja_env,
+            base_payload=pack_payload,
+            scope="root",
+            artefact_dir=output_root,
+        )
+    else:
+        global_metrics_context = ResolvedMetricContext(aliases={}, by_key={}, signatures_by_key={})
+    global_payload: dict[str, object] = dict(pack_payload)
+    global_payload.update(global_metrics_context.aliases)
 
     resolved_pipeline = pipeline or VisualPipeline(
         planner_provider=build_default_query_planner_provider(),
     )
-    base = base_options or PipelineOptions()
     effective_concurrency = max_powerbi_concurrency or DEFAULT_POWERBI_CONCURRENCY
     # VisualPipeline is currently stateless per execute() call and relies on per-call
     # ExecutionContext plus per-visual planners/clients. If future changes add shared
@@ -350,8 +388,13 @@ def run_pack(
         },
     )
 
-    if context_payload:
-        logger.debug("Rendered pack context", extra={"keys": sorted(context_payload.keys())})
+    if global_payload:
+        logger.debug("Rendered pack context", extra={"keys": sorted(global_payload.keys())})
+    if global_metrics_context.aliases:
+        logger.debug(
+            "Resolved root context.metrics",
+            extra={"aliases": sorted(global_metrics_context.aliases.keys())},
+        )
     if rendered_global_filters:
         if isinstance(rendered_global_filters, Mapping):
             logger.debug("Rendered global filters", extra={"keys": sorted(rendered_global_filters.keys())})
@@ -369,6 +412,7 @@ def run_pack(
     ordered_results: list[tuple[int, PackSlideResult]] = []
     slide_png_map: dict[str, Path] = {}
     placeholder_png_map: dict[str, dict[str, Path]] = {}
+    slide_contexts_by_slug: dict[str, dict[str, object]] = {}
     pack_root = pack_path.parent
 
     # Resolve PPTX template geometry once per pack so visuals can size their canvases.
@@ -386,12 +430,45 @@ def run_pack(
                 extra={"template_path": str(template_for_geometry)},
             )
 
-    def _render_filters(value: object | None) -> FiltersType:
-        return render_value(value, env=jinja_env, context=context_payload)
-
     for index, slide in enumerate(pack.slides, start=1):
+        # Build the slide context by inheriting pack values, then applying slide overrides.
+        slide_payload: dict[str, object] = dict(global_payload)
+        if slide.context is not None:
+            slide_payload.update(dump_context_payload(slide.context))
+
+        if has_metric_bindings and builder_context is not None and catalog is not None:
+            slide_metrics_context = resolve_metric_context(
+                bindings=slide.context.metrics if slide.context else None,
+                inherited=global_metrics_context,
+                builder_context=builder_context,
+                catalog=catalog,
+                env=jinja_env,
+                base_payload=slide_payload,
+                scope=f"slide_{index}",
+                artefact_dir=output_root,
+            )
+            slide_payload.update(slide_metrics_context.aliases)
+
+        # Render title/notes using the full slide context so slugging aligns with outputs.
+        slide.title = render_value(slide.title, env=jinja_env, context=slide_payload)
+        if slide.notes:
+            slide.notes = render_value(slide.notes, env=jinja_env, context=slide_payload)
+
         slide_slug = _slug_for_slide(slide, index)
         ordinal = f"{index:02d}"
+
+        slide_payload.update(
+            {
+                "title": slide.title,
+                "slide_index": index,
+                "slide_id": slide.id,
+                "slide_slug": slide_slug,
+            }
+        )
+        slide_contexts_by_slug[slide_slug] = dict(slide_payload)
+
+        def _render_filters(value: object | None) -> FiltersType:
+            return render_value(value, env=jinja_env, context=slide_payload)
 
         if slide_filter and not _should_run_slide(slide, only=slide_filter):
             _reuse_existing_assets(
@@ -465,8 +542,8 @@ def run_pack(
             )
 
             metadata_update: dict[str, object] = {}
-            if visual_context_base:
-                metadata_update["context"] = visual_context_base
+            if slide_payload:
+                metadata_update["context"] = slide_payload
 
             width_px: int | None = None
             height_px: int | None = None
@@ -722,6 +799,8 @@ def run_pack(
                 assemble_pack_pptx(
                     pack=pack,
                     results=sorted_results,
+                    context_payload=global_payload,
+                    slide_contexts=slide_contexts_by_slug,
                     slide_pngs=slide_png_map,
                     placeholder_pngs=placeholder_png_map,
                     result_path=result_file,
@@ -748,19 +827,87 @@ def restitch_pack_pptx(
     output_root.mkdir(parents=True, exist_ok=True)
     result_file.parent.mkdir(parents=True, exist_ok=True)
 
-    # Align slide metadata with full runs so slug calculation matches previously
-    # rendered artefacts when titles/notes use Jinja placeholders.
+    # Resolve the same metric context as full runs so PPTX-only restitches can
+    # render text placeholders consistently.
     jinja_env = create_pack_jinja_env()
-    context_payload: dict[str, object] = dict(pack.context or {})
-    _render_slide_metadata(pack=pack, env=jinja_env, context=context_payload)
+    pack_payload = dump_context_payload(pack.context)
+
+    rendered_global_calculate = render_value(pack.calculate, env=jinja_env, context=pack_payload)
+    rendered_define = render_value(pack.define, env=jinja_env, context=pack_payload)
+
+    root_bindings = pack.context.metrics or []
+    slide_bindings_present = any(
+        slide.context is not None and slide.context.metrics for slide in pack.slides
+    )
+    has_metric_bindings = bool(root_bindings) or slide_bindings_present
+
+    builder_context = None
+    catalog = None
+    if has_metric_bindings:
+        metrics_calculate = normalise_calculate_filters(rendered_global_calculate)
+        builder_context = discover_builder_context_for_pack(
+            pack_path=pack_path,
+            project_root=pack_path.parent.expanduser().resolve(strict=False),
+            metadata=base_options.metadata if isinstance(base_options.metadata, Mapping) else None,
+            calculate=metrics_calculate,
+            define=rendered_define,
+        )
+        catalog = load_catalog_for_context(builder_context)
+
+        global_metrics_context = resolve_metric_context(
+            bindings=root_bindings,
+            inherited=None,
+            builder_context=builder_context,
+            catalog=catalog,
+            env=jinja_env,
+            base_payload=pack_payload,
+            scope="root",
+            artefact_dir=output_root,
+        )
+    else:
+        global_metrics_context = ResolvedMetricContext(aliases={}, by_key={}, signatures_by_key={})
+    global_payload: dict[str, object] = dict(pack_payload)
+    global_payload.update(global_metrics_context.aliases)
 
     slide_png_map: dict[str, Path] = {}
     placeholder_png_map: dict[str, dict[str, Path]] = {}
+    slide_contexts_by_slug: dict[str, dict[str, object]] = {}
     pack_root = pack_path.parent
 
     for index, slide in enumerate(pack.slides, start=1):
+        slide_payload: dict[str, object] = dict(global_payload)
+        if slide.context is not None:
+            slide_payload.update(dump_context_payload(slide.context))
+
+        if has_metric_bindings and builder_context is not None and catalog is not None:
+            slide_metrics_context = resolve_metric_context(
+                bindings=slide.context.metrics if slide.context else None,
+                inherited=global_metrics_context,
+                builder_context=builder_context,
+                catalog=catalog,
+                env=jinja_env,
+                base_payload=slide_payload,
+                scope=f"slide_{index}",
+                artefact_dir=output_root,
+            )
+            slide_payload.update(slide_metrics_context.aliases)
+
+        slide.title = render_value(slide.title, env=jinja_env, context=slide_payload)
+        if slide.notes:
+            slide.notes = render_value(slide.notes, env=jinja_env, context=slide_payload)
+
         slide_slug = _slug_for_slide(slide, index)
         ordinal = f"{index:02d}"
+
+        slide_payload.update(
+            {
+                "title": slide.title,
+                "slide_index": index,
+                "slide_id": slide.id,
+                "slide_slug": slide_slug,
+            }
+        )
+        slide_contexts_by_slug[slide_slug] = dict(slide_payload)
 
         _reuse_existing_assets(
             slide=slide,
@@ -792,6 +939,8 @@ def restitch_pack_pptx(
     assemble_pack_pptx(
         pack=pack,
         results=[],
+        context_payload=global_payload,
+        slide_contexts=slide_contexts_by_slug,
         slide_pngs=slide_png_map,
         placeholder_pngs=placeholder_png_map,
         result_path=result_file,

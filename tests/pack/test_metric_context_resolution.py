@@ -1,0 +1,182 @@
+from __future__ import annotations
+
+from pathlib import Path
+import asyncio
+import json
+
+import pytest
+
+from praeparo.datasets import MetricDatasetBuilderContext
+from praeparo.metrics import load_metric_catalog
+from praeparo.models import PackMetricBinding
+from praeparo.pack.metric_context import ResolvedMetricContext, resolve_metric_context
+from praeparo.pack.templating import create_pack_jinja_env
+
+
+def _empty_context(tmp_path: Path):
+    metrics_root = tmp_path / "registry" / "metrics"
+    metrics_root.mkdir(parents=True, exist_ok=True)
+    builder_context = MetricDatasetBuilderContext.discover(
+        project_root=tmp_path,
+        metrics_root=metrics_root,
+        use_mock=True,
+    )
+    catalog = load_metric_catalog([metrics_root])
+    env = create_pack_jinja_env()
+    return builder_context, catalog, env
+
+
+def test_resolve_metric_context_runs_inside_active_event_loop(tmp_path: Path) -> None:
+    metrics_root = tmp_path / "registry" / "metrics"
+    metrics_root.mkdir(parents=True, exist_ok=True)
+    (metrics_root / "documents_sent.yaml").write_text(
+        """
+key: documents_sent
+display_name: Documents Sent
+section: documents
+define: "COUNTROWS('fact_documents')"
+""",
+        encoding="utf-8",
+    )
+
+    builder_context = MetricDatasetBuilderContext.discover(
+        project_root=tmp_path,
+        metrics_root=metrics_root,
+        use_mock=True,
+    )
+    catalog = load_metric_catalog([metrics_root])
+    env = create_pack_jinja_env()
+
+    bindings = [PackMetricBinding(key="documents_sent", alias="total_documents")]
+
+    async def _runner() -> None:
+        resolved = resolve_metric_context(
+            bindings=bindings,
+            inherited=None,
+            builder_context=builder_context,
+            catalog=catalog,
+            env=env,
+            base_payload={},
+            scope="root",
+        )
+        assert "total_documents" in resolved.aliases
+
+    asyncio.run(_runner())
+
+
+def test_expression_evaluated_in_dependency_order(tmp_path: Path) -> None:
+    builder_context, catalog, env = _empty_context(tmp_path)
+    inherited = ResolvedMetricContext(aliases={"a": 2.0}, by_key={}, signatures_by_key={})
+
+    bindings = [
+        PackMetricBinding(alias="b", expression="a * 3"),
+        PackMetricBinding(alias="c", expression="b + 1"),
+    ]
+
+    resolved = resolve_metric_context(
+        bindings=bindings,
+        inherited=inherited,
+        builder_context=builder_context,
+        catalog=catalog,
+        env=env,
+        base_payload={},
+        scope="root",
+    )
+
+    assert resolved.aliases["b"] == 6.0
+    assert resolved.aliases["c"] == 7.0
+
+
+def test_expression_cycle_raises(tmp_path: Path) -> None:
+    builder_context, catalog, env = _empty_context(tmp_path)
+
+    bindings = [
+        PackMetricBinding(alias="a", expression="b + 1"),
+        PackMetricBinding(alias="b", expression="a + 1"),
+    ]
+
+    with pytest.raises(ValueError, match="cyclic"):
+        resolve_metric_context(
+            bindings=bindings,
+            inherited=None,
+            builder_context=builder_context,
+            catalog=catalog,
+            env=env,
+            base_payload={},
+            scope="root",
+        )
+
+
+def test_expression_missing_identifier_raises(tmp_path: Path) -> None:
+    builder_context, catalog, env = _empty_context(tmp_path)
+    bindings = [PackMetricBinding(alias="a", expression="missing + 1")]
+
+    with pytest.raises(ValueError, match="unknown identifier"):
+        resolve_metric_context(
+            bindings=bindings,
+            inherited=None,
+            builder_context=builder_context,
+            catalog=catalog,
+            env=env,
+            base_payload={},
+            scope="root",
+        )
+
+
+def test_unknown_metric_key_raises_before_query(tmp_path: Path) -> None:
+    builder_context, catalog, env = _empty_context(tmp_path)
+    bindings = [PackMetricBinding(key="unknown_metric", alias="unknown_metric")]
+
+    with pytest.raises(ValueError, match="unknown metric key"):
+        resolve_metric_context(
+            bindings=bindings,
+            inherited=None,
+            builder_context=builder_context,
+            catalog=catalog,
+            env=env,
+            base_payload={},
+            scope="root",
+        )
+
+
+def test_metric_context_emits_data_artifact(tmp_path: Path) -> None:
+    metrics_root = tmp_path / "registry" / "metrics"
+    metrics_root.mkdir(parents=True, exist_ok=True)
+    (metrics_root / "documents_sent.yaml").write_text(
+        """
+key: documents_sent
+display_name: Documents Sent
+section: documents
+define: "COUNTROWS('fact_documents')"
+""",
+        encoding="utf-8",
+    )
+
+    builder_context = MetricDatasetBuilderContext.discover(
+        project_root=tmp_path,
+        metrics_root=metrics_root,
+        use_mock=True,
+    )
+    catalog = load_metric_catalog([metrics_root])
+    env = create_pack_jinja_env()
+
+    bindings = [PackMetricBinding(key="documents_sent", alias="total_documents")]
+    artefact_dir = tmp_path / "artefacts"
+
+    resolve_metric_context(
+        bindings=bindings,
+        inherited=None,
+        builder_context=builder_context,
+        catalog=catalog,
+        env=env,
+        base_payload={},
+        scope="root",
+        artefact_dir=artefact_dir,
+    )
+
+    data_path = artefact_dir / "metric_context.root.data.json"
+    assert data_path.exists()
+    payload = json.loads(data_path.read_text(encoding="utf-8"))
+    assert isinstance(payload, list)
+    assert len(payload) == 1
+    assert "total_documents" in payload[0]

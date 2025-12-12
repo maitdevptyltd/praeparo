@@ -1269,10 +1269,12 @@ def _handle_pack_run(args: argparse.Namespace) -> int:
         else:
             effective_strategy = "full"
 
+    from praeparo.pack.metric_context import dump_context_payload
+
     revision_info = allocate_revision(
         pack_path,
         artefact_root=artefact_dir,
-        pack_context=pack.context or {},
+        pack_context=dump_context_payload(pack.context),
         strategy=effective_strategy,
         override=override_revision,
         dry_run=getattr(args, "revision_dry_run", False),

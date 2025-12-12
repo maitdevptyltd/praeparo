@@ -1,14 +1,192 @@
-"""Pydantic models describing pack definitions."""
+"""Pydantic models describing pack definitions.
+
+Phase 6 adds declarative metric bindings under `context.metrics` at both the pack root
+and per-slide. These bindings are normalised and validated here so pack runs fail
+fast before any Power BI or PPTX work begins.
+"""
 
 from __future__ import annotations
 
 from pathlib import Path
+import re
 from typing import Any, Mapping, Sequence
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from praeparo.visuals.metrics import normalise_str_sequence
+
 
 FiltersType = str | Sequence[str] | Mapping[str, str] | None
+
+
+_JINJA_ALIAS_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+class PackMetricBinding(BaseModel):
+    """Binding describing how a metric value becomes a Jinja variable.
+
+    Bindings may reference a catalogue metric (`key` + optional `variant`) or declare an
+    arithmetic `expression` over other metrics/aliases. When `alias` is omitted it is
+    derived from the full metric key by replacing dots with underscores.
+    """
+
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    key: str | None = Field(
+        default=None,
+        description="Catalogue metric key (e.g., documents_verified) or dotted variant key.",
+    )
+    alias: str | None = Field(
+        default=None,
+        description="Jinja-safe variable name exposed to templates.",
+    )
+    variant: str | None = Field(
+        default=None,
+        description="Optional variant path appended to `key` when `key` is not dotted.",
+    )
+    calculate: list[str] = Field(
+        default_factory=list,
+        description="Optional extra DAX CALCULATE predicates for this binding.",
+    )
+    format: str | None = Field(
+        default=None,
+        description="Optional formatting hint mirroring Praeparo format tokens.",
+    )
+    expression: str | None = Field(
+        default=None,
+        description="Optional arithmetic expression referencing metric keys or aliases.",
+    )
+    override: bool = Field(
+        default=False,
+        description="True when intentionally shadowing an inherited alias.",
+    )
+
+    _normalise_calculate = field_validator("calculate", mode="before")(normalise_str_sequence)
+
+    @field_validator("key", "alias", "variant", "format", "expression", mode="before")
+    @classmethod
+    def _normalise_strings(cls, value: object) -> object:
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            raise TypeError("must be a string")
+        cleaned = value.strip()
+        return cleaned or None
+
+    @model_validator(mode="after")
+    def _apply_defaults_and_validate(self) -> "PackMetricBinding":
+        if not self.key and not self.expression:
+            raise ValueError("metric binding requires either 'key' or 'expression'")
+
+        if self.variant:
+            if not self.key:
+                raise ValueError("variant requires a base key")
+            if "." in self.key:
+                raise ValueError("variant cannot be supplied when key is already dotted")
+
+        full_key = self.full_key
+
+        if not self.alias:
+            if full_key:
+                self.alias = full_key.replace(".", "_")
+            elif self.expression:
+                raise ValueError("alias is required for expression-only bindings")
+
+        if not self.alias or not _JINJA_ALIAS_PATTERN.match(self.alias):
+            raise ValueError(
+                f"Invalid alias '{self.alias}'. Aliases must be valid Jinja identifiers."
+            )
+
+        return self
+
+    @property
+    def full_key(self) -> str | None:
+        """Return the fully qualified metric key including variant."""
+
+        if not self.key:
+            return None
+        if self.variant:
+            return f"{self.key}.{self.variant}"
+        return self.key
+
+    def signature(self) -> tuple[str | None, tuple[str, ...], str | None, str | None]:
+        """Return a hashable signature used for reuse checks."""
+
+        calculate_sig = tuple(sorted(set(self.calculate or [])))
+        return (self.full_key, calculate_sig, self.format, self.expression)
+
+
+class PackContext(BaseModel):
+    """Context payload shared by slides.
+
+    Extra keys are allowed so packs can continue to pass arbitrary template values.
+    """
+
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    metrics: list[PackMetricBinding] | None = Field(
+        default=None,
+        description="Optional metric bindings resolved into Jinja variables.",
+    )
+
+    @field_validator("metrics", mode="before")
+    @classmethod
+    def _normalise_metrics(cls, value: object) -> list[PackMetricBinding] | None:
+        if value is None:
+            return None
+
+        if isinstance(value, Mapping):
+            bindings: list[PackMetricBinding] = []
+            for raw_key, raw_alias in value.items():
+                metric_key = str(raw_key).strip()
+                if not metric_key:
+                    raise ValueError("metrics mapping keys cannot be empty")
+                if raw_alias is None:
+                    bindings.append(PackMetricBinding(key=metric_key))
+                elif isinstance(raw_alias, str):
+                    bindings.append(PackMetricBinding(key=metric_key, alias=raw_alias))
+                else:
+                    raise TypeError("metrics mapping values must be strings")
+            return bindings or None
+
+        if isinstance(value, Sequence) and not isinstance(value, str):
+            bindings = []
+            for item in value:
+                if isinstance(item, PackMetricBinding):
+                    bindings.append(item)
+                elif isinstance(item, str):
+                    bindings.append(PackMetricBinding(key=item))
+                elif isinstance(item, Mapping):
+                    bindings.append(PackMetricBinding.model_validate(item))
+                else:
+                    raise TypeError("metrics list entries must be strings or binding objects")
+            return bindings or None
+
+        raise TypeError("metrics must be a mapping or list")
+
+    @model_validator(mode="after")
+    def _validate_unique_aliases(self) -> "PackContext":
+        if not self.metrics:
+            return self
+
+        seen: set[str] = set()
+        duplicates: set[str] = set()
+        for binding in self.metrics:
+            alias = binding.alias or ""
+            if alias in seen:
+                duplicates.add(alias)
+            else:
+                seen.add(alias)
+
+        if duplicates:
+            dup_list = ", ".join(sorted(duplicates))
+            raise ValueError(f"context.metrics defines duplicate aliases: {dup_list}")
+
+        return self
+
+
+class PackSlideContext(PackContext):
+    """Context payload specific to an individual slide."""
 
 
 class PackVisualRef(BaseModel):
@@ -109,6 +287,10 @@ class PackSlide(BaseModel):
 
     title: str = Field(..., description="Human-friendly slide title.")
     id: str | None = Field(default=None, description="Optional stable identifier for the slide.")
+    context: PackSlideContext | None = Field(
+        default=None,
+        description="Optional template context merged with the pack-level context.",
+    )
     notes: str | None = Field(default=None, description="Free-form notes for authors/reviewers.")
     visual: PackVisualRef | None = Field(
         default=None,
@@ -229,7 +411,7 @@ class PackConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", populate_by_name=True, protected_namespaces=())
 
     schema: str = Field(..., description="Schema or contract identifier for the pack.")
-    context: dict[str, Any] = Field(default_factory=dict, description="Template context shared by slides.")
+    context: PackContext = Field(default_factory=PackContext, description="Template context shared by slides.")
     define: str | None = Field(
         default=None,
         description="Optional DAX DEFINE block applied to DAX-backed visuals.",
@@ -253,5 +435,44 @@ class PackConfig(BaseModel):
             raise ValueError(msg)
         return cleaned
 
+    @model_validator(mode="after")
+    def _validate_slide_metric_overrides(self) -> "PackConfig":
+        root_bindings = self.context.metrics or []
+        root_by_alias = {binding.alias: binding for binding in root_bindings if binding.alias}
 
-__all__ = ["FiltersType", "PackConfig", "PackPlaceholder", "PackSlide", "PackVisualRef"]
+        if not root_by_alias:
+            return self
+
+        for slide in self.slides:
+            slide_metrics = slide.context.metrics if slide.context else None
+            if not slide_metrics:
+                continue
+
+            for binding in slide_metrics:
+                alias = binding.alias or ""
+                root_binding = root_by_alias.get(alias)
+                if root_binding is None:
+                    continue
+                if binding.override:
+                    continue
+                if binding.signature() == root_binding.signature():
+                    continue
+                slide_label = slide.id or slide.title
+                raise ValueError(
+                    f"Slide '{slide_label}' declares context.metrics alias '{alias}' "
+                    "that shadows a root binding; set override: true to override."
+                )
+
+        return self
+
+
+__all__ = [
+    "FiltersType",
+    "PackConfig",
+    "PackContext",
+    "PackMetricBinding",
+    "PackPlaceholder",
+    "PackSlide",
+    "PackSlideContext",
+    "PackVisualRef",
+]

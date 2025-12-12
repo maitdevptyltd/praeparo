@@ -38,6 +38,9 @@ context:
   customer: "Example Bank"
   lender_id: 201
   month: "2025-10-01"
+  metrics:
+    instructions_received: total_instructions
+    documents_sent: total_documents
 
 define: |
   DEFINE VAR LenderId = {{ lender_id }}
@@ -68,7 +71,8 @@ slides:
 
 - `schema` – free-form identifier for the pack contract.
 - `context` – key/value pairs exposed to Jinja templates (for example,
-  `lender_id`, `month`, `customer`).
+  `lender_id`, `month`, `customer`). May also include a `metrics` block that
+  declaratively fetches catalogue KPIs into Jinja variables.
 - `define` – optional DAX DEFINE block (single string). Rendered via Jinja using
   `context` and forwarded to DAX-backed pipelines through
   `metadata["context"]["define"]`. Ignored by Power BI visuals.
@@ -89,12 +93,71 @@ slides:
   - `id` – optional stable identifier (used for filtering and slug generation).
   - `title` – human-readable slide title.
   - `notes` – free-form author notes.
+  - `context` – optional per-slide context merged over the pack context,
+    including optional `context.metrics` bindings.
   - `visual.ref` – path (relative to the pack file) to a visual YAML
     (matrix, frame, Power BI, etc.).
   - `visual.filters` – slide-level OData filters (merged with pack-level
     `filters`).
   - `visual.calculate` – slide-level DAX filters (merged with pack-level
     `calculate`).
+
+## Metric Context Bindings (`context.metrics`)
+
+Packs can declare scalar KPI dependencies under `context.metrics`. Praeparo
+fetches these values via DAX and injects them as top-level Jinja variables so
+text placeholders, YAML shapes, and tables can reference them directly.
+
+Root-level metrics are resolved **once per pack** and inherited by every slide.
+Slides may extend the inherited metric dict or override an alias only when
+`override: true` is set.
+
+Mapping shorthand (key → alias):
+
+```yaml
+context:
+  metrics:
+    instructions_received: total_instructions
+    documents_sent: total_documents
+```
+
+List shorthand (alias derived from key by replacing `.` with `_`):
+
+```yaml
+slides:
+  - title: Highlights
+    context:
+      metrics:
+        - documents_verified
+        - documents_verified.within_1_day
+```
+
+Object form (future-ready; accepted now):
+
+```yaml
+context:
+  metrics:
+    - key: documents_verified
+      alias: verified_total
+      variant: within_1_day
+      calculate:
+        - dim_customer[CustomerName] = "{{ customer }}"
+      format: "percent:0"
+    - alias: pct_verified_1d
+      expression: documents_verified.within_1_day / documents_verified
+      format: "percent:0"
+    - key: documents_sent
+      alias: total_documents
+      override: true
+```
+
+Notes:
+
+- `variant` is a shortcut for `key.variant` and is disallowed when `key` is already dotted.
+- Expression bindings require an `alias` and may reference catalogue keys and/or previously
+  resolved aliases. Cycles and unknown identifiers fail validation.
+- Per-binding `calculate` filters apply only to that binding and do not implicitly
+  affect other identifiers used in expressions.
 
 ## CLI usage
 
@@ -236,12 +299,18 @@ At a high level, `praeparo pack run` does the following:
 2. **Build a Jinja environment** mirroring Data.Slick helpers:
    - `odata_date`, `odata_between`, `odata_months_back_range`, `relativedelta`,
      etc.
-3. **Render templates**:
+3. **Resolve root metric context**:
+   - Pack-level `context.metrics` bindings are fetched once and merged into the
+     pack context as top-level Jinja variables.
+4. **Resolve per-slide context and render templates**:
+   - Slide-level `context` values are merged over the pack context.
+   - Slide-level `context.metrics` bindings are fetched (reusing root values
+     when compatible) and merged into the slide context.
    - Pack-level `filters`, `calculate`, and `define` are rendered using the pack
-     `context`.
+     context.
    - Slide-level `visual.filters` and `visual.calculate` are rendered using the
-     same context.
-4. **Merge filters**:
+     full slide context.
+5. **Merge filters**:
    - For Power BI visuals:
      - Pack-level and slide-level filters are merged (dict + dict, list + list,
        string coerced to list) and passed via `metadata["powerbi_filters"]`.
@@ -253,11 +322,11 @@ At a high level, `praeparo pack run` does the following:
        source of truth.
     - Power BI visuals ignore `define`; they rely on the merged OData filters in
       `metadata["powerbi_filters"]`.
-5. **Resolve visuals**:
+6. **Resolve visuals**:
    - Each `visual.ref` is resolved to a `BaseVisualConfig` via the YAML loader.
    - A shared `VisualPipeline` uses the visual type and registry registrations
      to select the correct pipeline.
-6. **Execute and persist**:
+7. **Execute and persist**:
    - Each slide’s visual is executed with per-slide options:
      - PNG outputs are targeted at `<artefact-dir>/[NN]_<slide-slug>.png`.
      - `options.artefact_dir` is set to `<artefact-dir>/[NN]_<slide-slug>/` so

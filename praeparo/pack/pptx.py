@@ -25,6 +25,7 @@ import pptx.shapes.picture as pptx_picture
 from pptx.text.text import _Run
 
 from praeparo.models import PackConfig, PackSlide
+from praeparo.pack.metric_context import dump_context_payload
 from praeparo.pack.templating import create_pack_jinja_env, render_value
 from praeparo.visuals.dax.planner_core import slugify
 
@@ -283,6 +284,8 @@ def assemble_pack_pptx(
     *,
     pack: PackConfig,
     results: Sequence[object] | None,
+    context_payload: Mapping[str, object] | None = None,
+    slide_contexts: Mapping[str, Mapping[str, object]] | None = None,
     slide_pngs: Mapping[str, Path],
     placeholder_pngs: Mapping[str, Mapping[str, Path]] | None = None,
     result_path: Path,
@@ -301,9 +304,11 @@ def assemble_pack_pptx(
     placeholder_pngs = placeholder_pngs or {}
 
     jinja_env = create_pack_jinja_env()
-    context_payload: dict[str, object] = {}
-    if pack.context:
-        context_payload.update(dict(pack.context))
+    base_context: dict[str, object]
+    if context_payload is not None:
+        base_context = dict(context_payload)
+    else:
+        base_context = dump_context_payload(pack.context)
 
     if template_path:
         presentation = Presentation(template_path)
@@ -343,15 +348,17 @@ def assemble_pack_pptx(
                 except ValueError:
                     continue
 
-        slide_context: dict[str, object] = dict(context_payload)
-        slide_context.update(
-            {
-                "title": slide.title,
-                "slide_index": index,
-                "slide_id": slide.id,
-                "slide_slug": slide_slug,
-            }
-        )
+        if slide_contexts and slide_slug in slide_contexts:
+            slide_context: dict[str, object] = dict(slide_contexts[slide_slug])
+        else:
+            slide_context = dict(base_context)
+            if slide.context is not None:
+                slide_context.update(dump_context_payload(slide.context))
+
+        slide_context.setdefault("title", slide.title)
+        slide_context.setdefault("slide_index", index)
+        slide_context.setdefault("slide_id", slide.id)
+        slide_context.setdefault("slide_slug", slide_slug)
         _render_jinja_in_slide(cloned, jinja_env, slide_context)
 
         has_placeholders = bool(slide.placeholders)

@@ -20,6 +20,7 @@ from praeparo.models import BaseVisualConfig, PackConfig, PackPlaceholder, PackS
 from praeparo.pack.filters import merge_odata_filters
 from praeparo.pack.loader import load_pack_config
 from praeparo.pack.runner import PackPowerBIFailure, restitch_pack_pptx, run_pack
+from praeparo.pack.metric_context import dump_context_payload
 from praeparo.pack.templating import create_pack_jinja_env, render_value
 from praeparo.pipeline import PipelineOptions, VisualExecutionResult, VisualPipeline, build_default_query_planner_provider
 from praeparo.pipeline.outputs import OutputKind, PipelineOutputArtifact
@@ -49,8 +50,9 @@ slides:
 
     pack = load_pack_config(pack_path)
     env = create_pack_jinja_env()
-    rendered_filters = render_value(pack.filters, env=env, context=pack.context)
-    rendered_define = render_value(pack.define, env=env, context=pack.context)
+    context_payload = dump_context_payload(pack.context)
+    rendered_filters = render_value(pack.filters, env=env, context=context_payload)
+    rendered_define = render_value(pack.define, env=env, context=context_payload)
 
     assert rendered_filters["lender"] == "dim_lender/LenderId eq 201"
     assert rendered_filters["dates"] == "dim_calendar/month ge 2025-08-01 and dim_calendar/month le 2025-10-01"
