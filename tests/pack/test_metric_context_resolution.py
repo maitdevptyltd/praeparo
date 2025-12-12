@@ -267,3 +267,54 @@ define: "COUNTROWS('fact_documents')"
 
     dax_path = artefact_dir / "metric_context.slide_1.dax"
     assert dax_path.exists()
+
+
+def test_binding_evaluate_filters_emit_in_evaluate_section(tmp_path: Path) -> None:
+    metrics_root = tmp_path / "registry" / "metrics"
+    metrics_root.mkdir(parents=True, exist_ok=True)
+    (metrics_root / "documents_sent.yaml").write_text(
+        """
+key: documents_sent
+display_name: Documents Sent
+section: documents
+define: "COUNTROWS('fact_documents')"
+""",
+        encoding="utf-8",
+    )
+
+    builder_context = MetricDatasetBuilderContext.discover(
+        project_root=tmp_path,
+        metrics_root=metrics_root,
+        use_mock=True,
+    )
+    catalog = load_metric_catalog([metrics_root])
+    env = create_pack_jinja_env()
+
+    binding = PackMetricBinding.model_validate(
+        {
+            "key": "documents_sent",
+            "alias": "total_documents",
+            "calculate": {
+                "period": {
+                    "evaluate": "'Time Intelligence'[Period] = \"Current Month\"",
+                }
+            },
+        }
+    )
+    artefact_dir = tmp_path / "artefacts"
+
+    resolve_metric_context(
+        bindings=[binding],
+        inherited=None,
+        builder_context=builder_context,
+        catalog=catalog,
+        env=env,
+        base_payload={},
+        scope="root",
+        artefact_dir=artefact_dir,
+    )
+
+    dax_text = (artefact_dir / "metric_context.root.dax").read_text(encoding="utf-8")
+    before_eval, after_eval = dax_text.split("EVALUATE", 1)
+    assert "Time Intelligence" not in before_eval
+    assert "Time Intelligence" in after_eval

@@ -28,6 +28,7 @@ from praeparo.datasets.context import resolve_default_metrics_root_for_pack
 from praeparo.datasets.expression_eval import evaluate_expression
 from praeparo.metrics import MetricCatalog, load_metric_catalog
 from praeparo.models import FiltersType, PackMetricBinding
+from praeparo.models.scoped_calculate import ScopedCalculateFilters
 from praeparo.pack.templating import render_value
 from praeparo.visuals.dax.expressions import ParsedExpression, parse_metric_expression
 
@@ -128,16 +129,21 @@ def resolve_metric_context(
     # Render any templated calculate/expression payloads before we build query plans.
     rendered_bindings: list[PackMetricBinding] = []
     for binding in bindings:
-        rendered_calculate = render_value(binding.calculate or None, env=env, context=base_payload)
+        rendered_define = render_value(binding.calculate.define or None, env=env, context=base_payload)
+        rendered_evaluate = render_value(binding.calculate.evaluate or None, env=env, context=base_payload)
         rendered_expression = (
             render_value(binding.expression, env=env, context=base_payload) if binding.expression else None
         )
         rendered_format = render_value(binding.format, env=env, context=base_payload) if binding.format else None
 
+        scoped_calculate = ScopedCalculateFilters(
+            define=_normalise_rendered_calculate(rendered_define),
+            evaluate=_normalise_rendered_calculate(rendered_evaluate),
+        )
         rendered_bindings.append(
             binding.model_copy(
                 update={
-                    "calculate": _normalise_rendered_calculate(rendered_calculate),
+                    "calculate": scoped_calculate,
                     "expression": str(rendered_expression).strip() if rendered_expression else None,
                     "format": str(rendered_format).strip() if rendered_format else None,
                 }
@@ -223,7 +229,12 @@ def resolve_metric_context(
         for binding in bindings_to_fetch:
             full_key = binding.full_key
             assert full_key is not None
-            builder.metric(full_key, alias=binding.alias, calculate=binding.calculate)
+            builder.metric(
+                full_key,
+                alias=binding.alias,
+                calculate=binding.calculate.define,
+                evaluate=binding.calculate.evaluate,
+            )
 
         for dep_alias, full_key in dependency_fetches.items():
             builder.metric(full_key, alias=dep_alias)

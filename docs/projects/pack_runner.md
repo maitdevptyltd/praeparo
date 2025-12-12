@@ -162,6 +162,17 @@ Notes:
   resolved aliases. Cycles and unknown identifiers fail validation.
 - Per-binding `calculate` filters apply only to that binding and do not implicitly
   affect other identifiers used in expressions.
+- Named `calculate` entries default to DEFINE scope (inside the adhoc MEASURE). To
+  apply a predicate at EVALUATE scope (around the measure reference in
+  `SUMMARIZECOLUMNS`), use `calculate.<name>.evaluate`:
+  ```yaml
+  bindings:
+    - key: instructions_received
+      alias: count_instructions
+      calculate:
+        period:
+          evaluate: "'Time Intelligence'[Period] = \"Current Month\""
+  ```
 - `metrics.calculate` (pack root and/or slide context) adds DAX predicates to the
   **outer** CALCULATETABLE wrapping the metric context query, letting you scope
   the SUMMARIZECOLUMNS grain for scalar results (for example, filter to a single month).

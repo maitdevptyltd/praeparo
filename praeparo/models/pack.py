@@ -14,7 +14,7 @@ from typing import Any, Mapping, Sequence
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from praeparo.visuals.metrics import normalise_str_sequence
+from .scoped_calculate import ScopedCalculateFilters
 
 
 FiltersType = str | Sequence[str] | Mapping[str, str] | None
@@ -103,9 +103,13 @@ class PackMetricBinding(BaseModel):
         default=None,
         description="Optional variant path appended to `key` when `key` is not dotted.",
     )
-    calculate: list[str] = Field(
-        default_factory=list,
-        description="Optional extra DAX CALCULATE predicates for this binding.",
+    calculate: ScopedCalculateFilters = Field(
+        default_factory=ScopedCalculateFilters,
+        description=(
+            "Optional DAX CALCULATE predicates for this binding. "
+            "Named entries default to DEFINE scope; use calculate.<name>.evaluate to "
+            "apply a predicate around the measure in SUMMARIZECOLUMNS."
+        ),
     )
     format: str | None = Field(
         default=None,
@@ -120,7 +124,10 @@ class PackMetricBinding(BaseModel):
         description="True when intentionally shadowing an inherited alias.",
     )
 
-    _normalise_calculate = field_validator("calculate", mode="before")(normalise_str_sequence)
+    @field_validator("calculate", mode="before")
+    @classmethod
+    def _normalise_calculate(cls, value: object) -> ScopedCalculateFilters:
+        return ScopedCalculateFilters.from_raw(value)
 
     @field_validator("key", "alias", "variant", "format", "expression", mode="before")
     @classmethod
@@ -171,7 +178,7 @@ class PackMetricBinding(BaseModel):
     def signature(self) -> tuple[str | None, tuple[str, ...], str | None, str | None]:
         """Return a hashable signature used for reuse checks."""
 
-        calculate_sig = tuple(sorted(set(self.calculate or [])))
+        calculate_sig = self.calculate.combined_signature() if self.calculate else tuple()
         return (self.full_key, calculate_sig, self.format, self.expression)
 
 

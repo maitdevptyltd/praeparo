@@ -89,12 +89,8 @@
           "title": "Variant"
         },
         "calculate": {
-          "description": "Optional extra DAX CALCULATE predicates for this binding.",
-          "items": {
-            "type": "string"
-          },
-          "title": "Calculate",
-          "type": "array"
+          "$ref": "#/$defs/ScopedCalculateFilters",
+          "description": "Optional DAX CALCULATE predicates for this binding. Named entries default to DEFINE scope; use calculate.<name>.evaluate to apply a predicate around the measure in SUMMARIZECOLUMNS."
         },
         "format": {
           "anyOf": [
@@ -468,6 +464,30 @@
         }
       },
       "title": "PackVisualRef",
+      "type": "object"
+    },
+    "ScopedCalculateFilters": {
+      "additionalProperties": false,
+      "description": "Split calculate predicates between DEFINE and EVALUATE scopes.",
+      "properties": {
+        "define": {
+          "description": "Predicates applied inside adhoc MEASURE definitions.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Define",
+          "type": "array"
+        },
+        "evaluate": {
+          "description": "Predicates applied around measures in SUMMARIZECOLUMNS.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Evaluate",
+          "type": "array"
+        }
+      },
+      "title": "ScopedCalculateFilters",
       "type": "object"
     }
   },

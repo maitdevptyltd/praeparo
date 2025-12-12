@@ -161,3 +161,35 @@ def test_context_metrics_wrapper_supports_calculate_and_bindings() -> None:
     assert pack.context.metrics.calculate is not None
     bindings = pack.context.metrics.bindings or []
     assert bindings[0].alias == "total_verified"
+
+
+def test_binding_calculate_named_shorthand_defaults_to_define() -> None:
+    binding = PackMetricBinding.model_validate(
+        {
+            "key": "instructions_received",
+            "alias": "count_instructions",
+            "calculate": {
+                "period": "'Time Intelligence'[Period] = \"Current Month\"",
+            },
+        }
+    )
+
+    assert "'Time Intelligence'[Period] = \"Current Month\"" in binding.calculate.define
+    assert binding.calculate.evaluate == []
+
+
+def test_binding_calculate_named_evaluate_scope_supported() -> None:
+    binding = PackMetricBinding.model_validate(
+        {
+            "key": "instructions_received",
+            "alias": "count_instructions_mom",
+            "calculate": {
+                "period": {
+                    "evaluate": "'Time Intelligence'[Period] = \"MoM %\"",
+                }
+            },
+        }
+    )
+
+    assert binding.calculate.define == []
+    assert "'Time Intelligence'[Period] = \"MoM %\"" in binding.calculate.evaluate

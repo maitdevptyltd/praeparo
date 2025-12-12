@@ -44,6 +44,7 @@ class _MetricDatasetSeries:
     reference: str
     label: str
     filters: tuple[str, ...]
+    group_filters: tuple[str, ...]
     allow_placeholder: bool
     source: str
     expression: str | None = None
@@ -112,6 +113,7 @@ class MetricDatasetBuilder:
         alias: str | None = None,
         label: str | None = None,
         calculate: Sequence[str] | str | None = None,
+        evaluate: Sequence[str] | str | None = None,
         allow_placeholder: bool | None = None,
         value_type: str | None = None,
         ratio_to: bool | str | None = None,
@@ -144,6 +146,7 @@ class MetricDatasetBuilder:
             reference=key,
             label=label or alias or key,
             filters=normalise_filters(calculate),
+            group_filters=normalise_filters(evaluate),
             allow_placeholder=bool(effective_allow_placeholder),
             source="metric",
             value_type=value_type,
@@ -175,6 +178,7 @@ class MetricDatasetBuilder:
             reference=denominator_key,
             label=denominator_key,
             filters=(),
+            group_filters=(),
             allow_placeholder=bool(self._ignore_placeholders),
             source="metric",
         )
@@ -188,6 +192,7 @@ class MetricDatasetBuilder:
         alias: str | None = None,
         label: str | None = None,
         calculate: Sequence[str] | str | None = None,
+        evaluate: Sequence[str] | str | None = None,
         value_type: str | None = None,
     ) -> "MetricDatasetBuilder":
         series_id = self._allocate_series_id(alias or identifier)
@@ -197,6 +202,7 @@ class MetricDatasetBuilder:
             reference=identifier,
             label=label or alias or identifier,
             filters=normalise_filters(calculate),
+            group_filters=normalise_filters(evaluate),
             allow_placeholder=bool(effective_allow_placeholder),
             source="expression",
             expression=expression,
@@ -425,7 +431,7 @@ class MetricDatasetBuilder:
                     expression=expression,
                     display_name=series.label,
                     metric_filters=series.filters,
-                    group_filters=(),
+                    group_filters=series.group_filters,
                 )
             )
 

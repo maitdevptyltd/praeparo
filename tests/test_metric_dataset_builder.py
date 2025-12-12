@@ -294,14 +294,14 @@ def test_mock_controls_shape_rows(tmp_path: Path) -> None:
     builder = _builder(tmp_path)
     builder.use_mock(True)
     builder.mock_rows(3)
-    builder.mock_column("'dim_calendar'[Month]", ["Jan-25", "Feb-25", "Mar-25"])
+    builder.mock_column("'dim_calendar'[month]", ["Jan-25", "Feb-25", "Mar-25"])
     builder.metric("documents_sent", alias="total")
 
     rows = builder.execute()
 
     assert len(rows) == 3
-    assert rows[0]["'dim_calendar'[Month]"] == "Jan-25"
-    assert rows[-1]["'dim_calendar'[Month]"] == "Mar-25"
+    assert rows[0]["'dim_calendar'[month]"] == "Jan-25"
+    assert rows[-1]["'dim_calendar'[month]"] == "Mar-25"
 
 
 def test_mock_series_profiles_affect_values(tmp_path: Path) -> None:
