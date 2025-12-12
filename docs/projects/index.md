@@ -57,3 +57,10 @@ for details).
 ## Upcoming: Python Metric Dataset Builder
 
 Notebook-first metric exploration will lean on the planned [Metric Dataset Builder design](python_metric_dataset_builder_plan.md). The document tracks the scope, API surface, and implementation phases before work begins.
+
+## Metrics
+
+Need to compile registry YAML into canonical DAX snippets (for example to power a visual planner or a TMDL generator)?
+Start with:
+
+- [Metric → DAX Builder](../metrics/metric_dax_builder.md)

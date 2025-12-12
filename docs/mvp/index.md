@@ -11,7 +11,7 @@ Praeparo turns YAML-defined visuals into automated, Plotly-powered presentations
 ## Quick Links
 
 - [Visual model architecture](../visual_model_architecture.md)
-- [Metric → DAX builder](metric_dax_builder.md)
+- [Metric → DAX builder](../metrics/metric_dax_builder.md)
 - [Agent guidelines](../../AGENTS.md)
 
 ## How to Update
