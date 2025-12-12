@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -65,6 +66,10 @@ class PackPlaceholder(BaseModel):
         default=None,
         description="Optional static image path for this placeholder, relative to the pack file.",
     )
+    text: str | list[str] | None = Field(
+        default=None,
+        description="Plain text (optionally templated) injected into a named text shape.",
+    )
 
     @field_validator("image")
     @classmethod
@@ -74,13 +79,25 @@ class PackPlaceholder(BaseModel):
         cleaned = value.strip()
         return cleaned or None
 
+    @field_validator("text")
+    @classmethod
+    def _normalise_text(cls, value: str | list[str] | None) -> str | list[str] | None:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            cleaned = value.strip()
+            return cleaned or None
+        cleaned_items = [item.strip() for item in value if item and item.strip()]
+        return cleaned_items or None
+
     @model_validator(mode="after")
-    def _validate_image_or_visual(self) -> "PackPlaceholder":
-        if self.visual is None and not self.image:
-            msg = "placeholder must define either visual or image"
-            raise ValueError(msg)
-        if self.visual is not None and self.image:
-            msg = "placeholder cannot define both visual and image"
+    def _validate_exclusive_binding(self) -> "PackPlaceholder":
+        has_visual = self.visual is not None
+        has_image = bool(self.image)
+        has_text = bool(self.text)
+
+        if (has_visual + has_image + has_text) != 1:
+            msg = "placeholder must define exactly one of visual, image, or text"
             raise ValueError(msg)
         return self
 
@@ -135,6 +152,38 @@ class PackSlide(BaseModel):
         cleaned = value.strip()
         return cleaned or None
 
+    @field_validator("placeholders", mode="before")
+    @classmethod
+    def _normalise_placeholders(
+        cls, value: object
+    ) -> dict[str, PackPlaceholder] | None:
+        if value is None:
+            return None
+        if not isinstance(value, Mapping):
+            msg = "placeholders must be a mapping"
+            raise TypeError(msg)
+
+        normalised: dict[str, PackPlaceholder] = {}
+        for placeholder_id, raw in value.items():
+            if isinstance(raw, PackPlaceholder):
+                normalised[str(placeholder_id)] = raw
+                continue
+
+            if isinstance(raw, str):
+                placeholder = _placeholder_from_shorthand(raw)
+                normalised[str(placeholder_id)] = placeholder
+                continue
+
+            if isinstance(raw, Mapping):
+                placeholder = PackPlaceholder.model_validate(raw)
+                normalised[str(placeholder_id)] = placeholder
+                continue
+
+            msg = f"Invalid placeholder value for '{placeholder_id}'"
+            raise TypeError(msg)
+
+        return normalised
+
     @model_validator(mode="after")
     def _validate_image_with_visual_and_template(self) -> "PackSlide":
         if self.image and self.visual is not None:
@@ -144,6 +193,34 @@ class PackSlide(BaseModel):
             msg = "slide-level image requires a template"
             raise ValueError(msg)
         return self
+
+
+def _placeholder_from_shorthand(value: str) -> PackPlaceholder:
+    """Convert string shorthand to a concrete placeholder binding."""
+
+    cleaned = value.strip()
+    lower = cleaned.lower()
+
+    is_image = (
+        "/" in cleaned
+        or "\\" in cleaned
+        or lower.endswith(
+            (
+                ".png",
+                ".jpg",
+                ".jpeg",
+                ".gif",
+                ".bmp",
+                ".svg",
+                ".webp",
+            )
+        )
+    )
+
+    if is_image:
+        return PackPlaceholder(image=cleaned)
+
+    return PackPlaceholder(text=cleaned)
 
 
 class PackConfig(BaseModel):

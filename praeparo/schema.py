@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from .metrics import MetricDefinition
-from .models import CartesianChartConfig, MatrixConfig
+from .models import CartesianChartConfig, MatrixConfig, PackConfig
 
 
 def matrix_json_schema() -> dict[str, Any]:
@@ -46,6 +46,12 @@ def metric_json_schema() -> dict[str, Any]:
     return MetricDefinition.model_json_schema()
 
 
+def pack_json_schema() -> dict[str, Any]:
+    """Return the JSON schema for pack configurations."""
+
+    return PackConfig.model_json_schema()
+
+
 def _write_schema(path: Path, schema: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(schema, indent=2), encoding="utf-8")
@@ -61,6 +67,12 @@ def write_metric_schema(path: Path) -> None:
     """Write the metric definition schema to *path*."""
 
     _write_schema(path, metric_json_schema())
+
+
+def write_pack_schema(path: Path) -> None:
+    """Write the pack configuration schema to *path*."""
+
+    _write_schema(path, pack_json_schema())
 
 
 def cartesian_json_schema() -> dict[str, Any]:
@@ -118,6 +130,12 @@ def run(argv: list[str] | None = None) -> int:
         default=None,
         help="Destination for the metric schema JSON file (omit to skip).",
     )
+    parser.add_argument(
+        "--pack",
+        type=Path,
+        default=None,
+        help="Destination for the pack schema JSON file (omit to skip).",
+    )
     args = parser.parse_args(argv)
 
     write_matrix_schema(args.matrix)
@@ -131,6 +149,10 @@ def run(argv: list[str] | None = None) -> int:
         write_metric_schema(args.metrics)
         print(f"Wrote metric schema to {args.metrics}")
 
+    if args.pack is not None:
+        write_pack_schema(args.pack)
+        print(f"Wrote pack schema to {args.pack}")
+
     return 0
 
 
@@ -142,9 +164,11 @@ __all__ = [
     "matrix_json_schema",
     "cartesian_json_schema",
     "metric_json_schema",
+    "pack_json_schema",
     "write_matrix_schema",
     "write_cartesian_schema",
     "write_metric_schema",
+    "write_pack_schema",
     "run",
     "main",
 ]

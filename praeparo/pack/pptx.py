@@ -25,7 +25,7 @@ import pptx.shapes.picture as pptx_picture
 from pptx.text.text import _Run
 
 from praeparo.models import PackConfig, PackSlide
-from praeparo.pack.templating import create_pack_jinja_env
+from praeparo.pack.templating import create_pack_jinja_env, render_value
 from praeparo.visuals.dax.planner_core import slugify
 
 
@@ -360,7 +360,39 @@ def assemble_pack_pptx(
 
         if has_placeholders:
             placeholders = slide.placeholders or {}
-            for placeholder_id in placeholders:
+            for placeholder_id, placeholder in placeholders.items():
+                if placeholder.text:
+                    candidates = [
+                        shape
+                        for shape in cloned.shapes
+                        if getattr(shape, "name", None) == placeholder_id
+                        and getattr(shape, "has_text_frame", False)
+                    ]
+                    if not candidates:
+                        raise ValueError(f"Placeholder '{placeholder_id}' not found on template '{slide.template}'")
+
+                    rendered = render_value(placeholder.text, env=jinja_env, context=slide_context)
+                    if isinstance(rendered, list):
+                        rendered_text = "\n".join(str(item) for item in rendered if item is not None)
+                    else:
+                        rendered_text = str(rendered or "")
+
+                    text_frame = candidates[0].text_frame
+                    if (
+                        text_frame is not None
+                        and text_frame.paragraphs
+                        and text_frame.paragraphs[0].runs
+                    ):
+                        runs = text_frame.paragraphs[0].runs
+                        runs[0].text = rendered_text
+                        for run in runs[1:]:
+                            run.text = ""
+                        for paragraph in text_frame.paragraphs[1:]:
+                            paragraph.text = ""
+                    else:
+                        candidates[0].text = rendered_text
+                    continue
+
                 picture_shapes = [shape for shape in cloned.shapes if getattr(shape, "name", None) == placeholder_id]
                 if not picture_shapes:
                     picture_shapes = _picture_shapes(cloned)

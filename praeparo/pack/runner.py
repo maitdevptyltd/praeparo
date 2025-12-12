@@ -622,6 +622,9 @@ def run_pack(
                     placeholder_map[placeholder_slug] = image_path
                     continue
 
+                if placeholder.text:
+                    continue
+
                 if placeholder.visual is None:
                     raise ValueError(f"Placeholder '{placeholder_id}' on slide '{slide_slug}' is missing both visual and image")
 

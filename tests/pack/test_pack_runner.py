@@ -108,10 +108,10 @@ def test_run_pack_uses_project_root_for_discovery(monkeypatch, tmp_path: Path) -
         captured["metrics_root"] = context.dataset_context.metrics_root
         return SchemaArtifact(value={})
 
-    def dataset_builder(pipeline, config, schema_artifact, context):
+    def dataset_builder(pipeline, config, schema, context):
         return DatasetArtifact(value={}, filename="data.json")
 
-    def renderer(pipeline, config, schema_artifact, dataset_artifact, context, outputs):
+    def renderer(pipeline, config, schema, dataset, context, outputs):
         return RenderOutcome(outputs=[])
 
     register_visual_type("dummy_pack_noctx", dummy_loader, overwrite=True, context_model=None)
@@ -269,6 +269,29 @@ def _build_pack_template(path: Path) -> None:
     left.name = "left_chart"
     right = two_up.shapes.add_picture(str(tmp_img), Inches(4), Inches(1), width=Inches(3), height=Inches(2.5))
     right.name = "right_chart"
+    two_up.notes_slide.notes_text_frame.text = "TEMPLATE_TAG=two_up"
+
+    prs.save(path)
+    tmp_img.unlink(missing_ok=True)
+
+
+def _build_two_up_template_with_text(path: Path) -> None:
+    prs = Presentation()
+    blank = prs.slide_layouts[6]
+
+    tmp_img = path.parent / "tmp.png"
+    _write_png(tmp_img)
+
+    two_up = prs.slides.add_slide(blank)
+    left = two_up.shapes.add_picture(str(tmp_img), Inches(0.5), Inches(1), width=Inches(3), height=Inches(2.5))
+    left.name = "left_chart"
+    right = two_up.shapes.add_picture(str(tmp_img), Inches(4), Inches(1), width=Inches(3), height=Inches(2.5))
+    right.name = "right_chart"
+
+    tb = two_up.shapes.add_textbox(Inches(0.5), Inches(0.2), width=Inches(6.5), height=Inches(0.5))
+    tb.name = "display_date_text"
+    tb.text_frame.text = "seed"
+
     two_up.notes_slide.notes_text_frame.text = "TEMPLATE_TAG=two_up"
 
     prs.save(path)
@@ -1259,6 +1282,63 @@ def test_run_pack_builds_pptx_with_template_only_slide(tmp_path: Path) -> None:
     assert picture_placeholders
 
 
+def test_run_pack_renders_named_text_placeholders(tmp_path: Path) -> None:
+    pack_path = tmp_path / "pack.yaml"
+    pack_path.write_text("", encoding="utf-8")
+
+    template_path = tmp_path / "pack_template.pptx"
+    _build_two_up_template_with_text(template_path)
+
+    result_path = tmp_path / "deck" / "text_placeholders.pptx"
+
+    pack = PackConfig(
+        schema="test-pack",
+        context={"month": "2025-10-01"},
+        slides=[
+            PackSlide(
+                title="Two Up With Text",
+                id="two-up-text",
+                template="two_up",
+                placeholders={
+                    "display_date_text": PackPlaceholder(text="{{ month }}"),
+                    "left_chart": PackPlaceholder(visual=PackVisualRef(ref="left.yaml")),
+                    "right_chart": PackPlaceholder(visual=PackVisualRef(ref="right.yaml")),
+                },
+            )
+        ],
+    )
+
+    visuals: Dict[str, BaseVisualConfig] = {
+        "left.yaml": BaseVisualConfig(type="matrix"),
+        "right.yaml": BaseVisualConfig(type="matrix"),
+    }
+
+    def _loader(path: Path, payload: Mapping[str, object] | None = None, stack: tuple[Path, ...] = ()) -> BaseVisualConfig:
+        return visuals[path.name]
+
+    pipeline = _PngPipeline()
+    base_options = PipelineOptions(metadata={"result_file": result_path, "pptx_template": template_path})
+    run_pack(
+        pack_path,
+        pack,
+        project_root=pack_path.parent,
+        output_root=tmp_path / "artefacts",
+        base_options=base_options,
+        visual_loader=_loader,
+        pipeline=cast(VisualPipeline[Any], pipeline),
+        env=create_pack_jinja_env(),
+    )
+
+    assert len(pipeline.calls) == 2
+
+    deck = Presentation(result_path)
+    assert len(deck.slides) == 1
+    slide = deck.slides[0]
+    text_shapes = [shape for shape in slide.shapes if getattr(shape, "name", None) == "display_date_text"]
+    assert text_shapes
+    assert text_shapes[0].text_frame.text.strip() == "2025-10-01"
+
+
 def test_run_pack_binds_static_slide_image(tmp_path: Path) -> None:
     pack_path = tmp_path / "pack.yaml"
     pack_path.write_text("", encoding="utf-8")
@@ -1429,6 +1509,9 @@ def test_pack_models_validate_static_image_rules() -> None:
         PackPlaceholder(visual=PackVisualRef(ref="one.yaml"), image="logo.png")
 
     with pytest.raises(ValidationError):
+        PackPlaceholder(visual=PackVisualRef(ref="one.yaml"), text="hello")
+
+    with pytest.raises(ValidationError):
         PackPlaceholder()
 
     with pytest.raises(ValidationError):
@@ -1436,6 +1519,31 @@ def test_pack_models_validate_static_image_rules() -> None:
 
     with pytest.raises(ValidationError):
         PackSlide(title="Image With Visual", template="single", visual=PackVisualRef(ref="one.yaml"), image="logo.png")
+
+
+def test_pack_slide_placeholders_support_string_shorthand() -> None:
+    pack = PackConfig.model_validate(
+        {
+            "schema": "test-pack",
+            "slides": [
+                {
+                    "title": "Home",
+                    "template": "home",
+                    "placeholders": {
+                        "logo": "./assets/amp_logo.png",
+                        "text": "{{ display_date }}",
+                    },
+                }
+            ],
+        }
+    )
+
+    placeholders = pack.slides[0].placeholders
+    assert placeholders is not None
+    assert placeholders["logo"].image == "./assets/amp_logo.png"
+    assert placeholders["logo"].text is None
+    assert placeholders["text"].text == "{{ display_date }}"
+    assert placeholders["text"].image is None
 
 
 def test_pack_visual_ref_requires_ref_or_type() -> None:
