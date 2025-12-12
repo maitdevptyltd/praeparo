@@ -98,6 +98,34 @@ def _format_powerbi_failure_summary(failed_exports: Sequence[PowerBIExportResult
     return "\n".join(lines)
 
 
+def _render_slide_context_after_metric_injection(
+    *,
+    env: Environment,
+    slide_payload: dict[str, object],
+    raw_slide_context: Mapping[str, object],
+) -> None:
+    """Render slide-context values once after metric bindings are injected.
+
+    Packs often store "display-ish" slide context strings (for example,
+    governance highlight narratives) that are later referenced by another
+    template layer via `{{ governance_highlights }}`. If those strings contain
+    nested Jinja templates that reference metric-binding aliases, we need a
+    second render pass once the alias values exist in the payload.
+
+    This helper only updates the ephemeral `slide_payload` dict used by the pack
+    runner and metadata. It never mutates the PackSlide models.
+    """
+
+    if not raw_slide_context:
+        return
+
+    rendered = render_value(raw_slide_context, env=env, context=slide_payload)
+    if not isinstance(rendered, Mapping):
+        return
+
+    slide_payload.update(dict(rendered))
+
+
 def _slug_for_slide(slide: PackSlide, index: int) -> str:
     if slide.id:
         return slugify(slide.id)
@@ -439,8 +467,10 @@ def run_pack(
     for index, slide in enumerate(pack.slides, start=1):
         # Build the slide context by inheriting pack values, then applying slide overrides.
         slide_payload: dict[str, object] = dict(global_payload)
+        raw_slide_context: dict[str, object] = {}
         if slide.context is not None:
-            slide_payload.update(dump_context_payload(slide.context))
+            raw_slide_context = dump_context_payload(slide.context)
+            slide_payload.update(raw_slide_context)
 
         if has_metric_bindings and builder_context is not None and catalog is not None:
             slide_metrics_config = slide.context.metrics if slide.context else None
@@ -460,6 +490,13 @@ def run_pack(
                 artefact_dir=output_root,
             )
             slide_payload.update(slide_metrics_context.aliases)
+
+        if has_metric_bindings:
+            _render_slide_context_after_metric_injection(
+                env=jinja_env,
+                slide_payload=slide_payload,
+                raw_slide_context=raw_slide_context,
+            )
 
         # Render title/notes using the full slide context so slugging aligns with outputs.
         slide.title = render_value(slide.title, env=jinja_env, context=slide_payload)
@@ -894,8 +931,10 @@ def restitch_pack_pptx(
 
     for index, slide in enumerate(pack.slides, start=1):
         slide_payload: dict[str, object] = dict(global_payload)
+        raw_slide_context: dict[str, object] = {}
         if slide.context is not None:
-            slide_payload.update(dump_context_payload(slide.context))
+            raw_slide_context = dump_context_payload(slide.context)
+            slide_payload.update(raw_slide_context)
 
         if has_metric_bindings and builder_context is not None and catalog is not None:
             slide_metrics_config = slide.context.metrics if slide.context else None
@@ -915,6 +954,13 @@ def restitch_pack_pptx(
                 artefact_dir=output_root,
             )
             slide_payload.update(slide_metrics_context.aliases)
+
+        if has_metric_bindings:
+            _render_slide_context_after_metric_injection(
+                env=jinja_env,
+                slide_payload=slide_payload,
+                raw_slide_context=raw_slide_context,
+            )
 
         slide.title = render_value(slide.title, env=jinja_env, context=slide_payload)
         if slide.notes:

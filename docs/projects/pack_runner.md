@@ -112,6 +112,14 @@ Root-level metrics are resolved **once per pack** and inherited by every slide.
 Slides may extend the inherited metric dict or override an alias only when
 `override: true` is set.
 
+Templating note:
+
+- Slide context values (excluding `context.metrics`) are rendered **once** after
+  metric bindings are injected, so nested templates inside slide strings (for
+  example `governance_highlights: "MoM is {{ count_instructions_mom }}"`) can
+  reference binding aliases. This render pass is not affected by
+  `--ignore-placeholders`.
+
 Recommended wrapper form (bindings + optional metrics-only calculate):
 
 ```yaml
