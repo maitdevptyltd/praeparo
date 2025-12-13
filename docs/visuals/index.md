@@ -64,6 +64,10 @@ scenarios, or visual-specific switches), subclass `VisualContextModel` and
 register it via `context_model=` on `register_visual_type`. See
 `visual_context_model.md` for the base fields and lifecycle.
 
+For deeper implementation context (planner/provider structure, execution
+clients, output handling), see the pipeline reference in
+[`docs/visual_pipeline_engine.md`](../visual_pipeline_engine.md).
+
 ## Relationship to Metric Catalog
 
 Visuals can list metric keys directly, or they can bundle them with
