@@ -171,7 +171,7 @@ Python auto-detection:
 - `praeparo path/to/visual.py [dest]` and `praeparo visual run path/to/visual.py [dest]`
   are routed to `praeparo python-visual run ...` automatically.
 
-## Python Metric Dataset Builder (Planned)
+## Python Metric Dataset Builder
 
 Prefer a notebook workflow over YAML when sketching visuals? Review the
 [Python Metric Dataset Builder](python_metric_dataset_builder.md) design notes.

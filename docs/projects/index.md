@@ -54,9 +54,13 @@ they are WARNING+. Override Praeparo verbosity with `--log-level` or
 `--include-third-party-logs` or `PRAEPARO_INCLUDE_THIRD_PARTY_LOGS=1` (see [Pack Runner](pack_runner.md)
 for details).
 
-## Upcoming: Python Metric Dataset Builder
+## Python Metric Dataset Builder (Notebook API)
 
-Notebook-first metric exploration will lean on the planned [Metric Dataset Builder design](python_metric_dataset_builder_plan.md). The document tracks the scope, API surface, and implementation phases before work begins.
+The `praeparo.datasets.MetricDatasetBuilder` is the code-first companion to YAML visuals.
+
+- **Current status:** the core builder API is available; planner refactors and deeper notebook examples remain in progress.
+- **How to use it:** see [`docs/visuals/python_metric_dataset_builder.md`](../visuals/python_metric_dataset_builder.md).
+- **Roadmap / design history:** see [`docs/projects/python_metric_dataset_builder_plan.md`](python_metric_dataset_builder_plan.md).
 
 ## Metrics
 
