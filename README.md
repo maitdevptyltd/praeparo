@@ -142,3 +142,12 @@ poetry run praeparo-metrics validate path/to/metrics
 - Use `define` to capture the canonical expression (e.g., DAX `CALCULATE(...)`) for a base metric. Variants and extending metrics can then layer additional `calculate` predicates without duplicating the core definition.
 - Use `extends` in a metric YAML when a definition builds on another metric (e.g. discharge metrics inherit the base instructions filters). Inheritance is validated by the CLI and reflected in the generated JSON schema.
 - Use YAML `compose` when you need to merge multiple files before validation (e.g. sharing large configuration scaffolds). Compose is a loader-level feature and complements logical inheritance.
+
+## Documentation
+
+Start with [`docs/index.md`](docs/index.md), then drill into:
+
+- Packs: [`docs/projects/pack_runner.md`](docs/projects/pack_runner.md)
+- Visuals + CLI: [`docs/visuals/index.md`](docs/visuals/index.md)
+- Metrics: [`docs/metrics/metric_dax_builder.md`](docs/metrics/metric_dax_builder.md)
+- Datasources: [`docs/datasources/index.md`](docs/datasources/index.md)
