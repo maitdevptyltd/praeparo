@@ -2,22 +2,60 @@
 
 from __future__ import annotations
 
-from typing import Iterable, Iterator, Sequence
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 
 from praeparo.visuals.metrics import VisualGroupConfig, VisualMetricConfig
 
 from .planner_core import NameStrategy, default_name_strategy
 
 
-def normalise_define_blocks(blocks: str | Sequence[str] | None) -> tuple[str, ...]:
-    """Return a tuple of DEFINE blocks stripped of surrounding whitespace."""
+def normalise_define_blocks(blocks: object | None) -> tuple[str, ...]:
+    """
+    Return a tuple of DEFINE blocks stripped of surrounding whitespace.
+
+    DEFINE blocks can be supplied as:
+    - a string (split on blank lines)
+    - a sequence of strings
+    - a mapping of named blocks (values are strings)
+    - a mixed sequence of strings and one-item mappings (named blocks)
+
+    This mirrors the context-layer contract where `define` supports named entries
+    for last-writer-wins overrides.
+    """
 
     if not blocks:
         return ()
+
+    candidates: list[str] = []
+
     if isinstance(blocks, str):
-        candidates: Iterable[str] = blocks.split("\n\n")
+        candidates.extend(blocks.split("\n\n"))
+    elif isinstance(blocks, Mapping):
+        for value in blocks.values():
+            if value is None:
+                continue
+            if not isinstance(value, str):
+                raise TypeError("DEFINE mapping values must be strings.")
+            candidates.append(value)
+    elif isinstance(blocks, Sequence):
+        for entry in blocks:
+            if entry is None:
+                continue
+            if isinstance(entry, str):
+                candidates.append(entry)
+                continue
+            if isinstance(entry, Mapping):
+                for value in entry.values():
+                    if value is None:
+                        continue
+                    if not isinstance(value, str):
+                        raise TypeError("DEFINE mapping values must be strings.")
+                    candidates.append(value)
+                continue
+            raise TypeError("DEFINE blocks must be strings or mappings of strings.")
     else:
-        candidates = blocks
+        raise TypeError("DEFINE blocks must be supplied as strings, mappings, or sequences thereof.")
+
     cleaned: list[str] = []
     for block in candidates:
         if not block:

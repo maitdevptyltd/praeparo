@@ -2,25 +2,46 @@
 
 from __future__ import annotations
 
-from typing import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 
 from praeparo import normalize_dax_expression
 
 
-def normalise_filter_group(values: Sequence[str] | str | None) -> tuple[str, ...]:
-    """Normalise a filter group into a tuple of unique, formatted expressions."""
+def normalise_filter_group(values: object | None) -> tuple[str, ...]:
+    """Normalise a filter group into a tuple of unique, formatted expressions.
+
+    Filters are typically provided as strings, but context layering can yield
+    sequences containing one-item mappings for "named" entries. We flatten those
+    mapping values so downstream DAX never receives Python repr strings such as
+    ``{'lender': \"'dim_lender'[LenderId] = 201\"}``.
+    """
 
     if not values:
         return ()
+    iterable: Iterable[object]
     if isinstance(values, str):
-        iterable: Iterable[str] = [values]
-    else:
+        iterable = (values,)
+    elif isinstance(values, Mapping):
+        iterable = tuple(values.values())
+    elif isinstance(values, Sequence) and not isinstance(values, (bytes, bytearray)):
         iterable = values
+    else:
+        iterable = (values,)
 
     normalised: list[str] = []
     seen: set[str] = set()
     for item in iterable:
-        if not item:
+        if item is None:
+            continue
+        if isinstance(item, Mapping):
+            for value in item.values():
+                if value is None:
+                    continue
+                stripped = normalize_dax_expression(str(value).strip())
+                if not stripped or stripped in seen:
+                    continue
+                seen.add(stripped)
+                normalised.append(stripped)
             continue
         stripped = normalize_dax_expression(str(item).strip())
         if not stripped or stripped in seen:
@@ -30,7 +51,7 @@ def normalise_filter_group(values: Sequence[str] | str | None) -> tuple[str, ...
     return tuple(normalised)
 
 
-def combine_filter_groups(*groups: Sequence[str] | str | None) -> tuple[str, ...]:
+def combine_filter_groups(*groups: object | None) -> tuple[str, ...]:
     """Combine multiple filter groups ensuring uniqueness and stable order."""
 
     combined: list[str] = []

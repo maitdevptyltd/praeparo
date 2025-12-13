@@ -6,12 +6,12 @@ import copy
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Iterable, Mapping, Sequence
+from typing import Callable, Iterable, Mapping, Sequence, cast
 
 from jinja2 import Environment
 
 from praeparo.models import BaseVisualConfig, FiltersType, PackConfig, PackPlaceholder, PackSlide, PackVisualRef
-from praeparo.pack.filters import merge_calculate_filters, merge_odata_filters, normalise_calculate_filters
+from praeparo.pack.filters import merge_calculate_filters, merge_odata_filters
 from praeparo.pack.metric_context import (
     ResolvedMetricContext,
     discover_builder_context_for_pack,
@@ -39,6 +39,7 @@ from praeparo.pipeline.python_visual_loader import load_python_visual
 from praeparo.visuals.dax.planner_core import slugify
 from praeparo.io.yaml_loader import load_visual_config, load_visual_from_payload
 from praeparo.visuals.context import merge_context_payload, resolve_dax_context
+from praeparo.visuals.context_layers import merge_context_layer_payload, resolve_layered_context_payload
 from praeparo.visuals.registry import VisualTypeRegistration, get_visual_registration, _is_python_visual_type
 from praeparo.visuals.context_models import VisualContextModel
 from praeparo.models.scoped_calculate import ScopedCalculateMap
@@ -98,6 +99,41 @@ def _format_powerbi_failure_summary(failed_exports: Sequence[PowerBIExportResult
     )
 
     return "\n".join(lines)
+
+
+def _resolve_pack_base_context_payload(
+    *,
+    pack_path: Path,
+    metadata: Mapping[str, object] | None,
+    env: Environment,
+) -> dict[str, object]:
+    """Resolve registry context layers, then merge any caller-supplied metadata context.
+
+    Pack execution needs the same "global" DAX helpers as ad-hoc visual runs, so
+    we start by loading `registry/context/**` (relative to the discovered
+    metrics_root). Any context supplied via PipelineOptions metadata is then
+    merged on top so explicit overrides win.
+    """
+
+    from praeparo.datasets.context import resolve_default_metrics_root_for_pack
+
+    raw_metrics_root = metadata.get("metrics_root") if metadata else None
+    if isinstance(raw_metrics_root, (str, Path)):
+        metrics_root = Path(raw_metrics_root).expanduser().resolve(strict=False)
+    else:
+        metrics_root = resolve_default_metrics_root_for_pack(pack_path)
+
+    # Start with registry-owned layers so downstream repos can ship default
+    # helper definitions without repeating them in every pack.
+    registry_payload = resolve_layered_context_payload(metrics_root=metrics_root, env=env)
+
+    # With registry defaults loaded, merge any explicit context payload supplied
+    # via PipelineOptions metadata (for example, CLI or programmatic overrides).
+    raw_context = metadata.get("context") if metadata else None
+    if isinstance(raw_context, Mapping):
+        return merge_context_layer_payload(base=registry_payload, incoming=dict(raw_context))
+
+    return registry_payload
 
 
 def _render_slide_context_after_metric_injection(
@@ -391,13 +427,24 @@ def run_pack(
 
     jinja_env = env or create_pack_jinja_env()
 
-    # Start by preparing the raw pack context and rendering global DAX/OData filters.
-    pack_payload = dump_context_payload(pack.context)
+    base = base_options or PipelineOptions()
+    base_metadata = base.metadata if isinstance(base.metadata, Mapping) else None
+
+    # Start by loading registry context layers, then apply any explicit context
+    # payload provided via PipelineOptions metadata.
+    base_context_payload = _resolve_pack_base_context_payload(
+        pack_path=pack_path,
+        metadata=base_metadata,
+        env=jinja_env,
+    )
+
+    # With base layers resolved, inherit pack context values so packs and slides
+    # can override defaults while still benefiting from shared helpers.
+    pack_payload = merge_context_layer_payload(base=base_context_payload, incoming=dump_context_payload(pack.context))
     rendered_global_filters = render_value(pack.filters, env=jinja_env, context=pack_payload)
     rendered_global_calculate = render_value(pack.calculate, env=jinja_env, context=pack_payload)
     rendered_define = render_value(pack.define, env=jinja_env, context=pack_payload)
 
-    base = base_options or PipelineOptions()
     root_metrics_context = pack.context.metrics
     root_bindings = root_metrics_context.bindings if root_metrics_context else []
     root_metrics_calculate = root_metrics_context.calculate if root_metrics_context else None
@@ -412,13 +459,17 @@ def run_pack(
     builder_context = None
     catalog = None
     if has_metric_bindings:
-        metrics_calculate = normalise_calculate_filters(rendered_global_calculate)
+        metrics_calculate, metrics_define = resolve_dax_context(
+            base=pack_payload,
+            calculate=rendered_global_calculate,
+            define=rendered_define,
+        )
         builder_context = discover_builder_context_for_pack(
             pack_path=pack_path,
             project_root=resolved_project_root,
-            metadata=base.metadata if isinstance(base.metadata, Mapping) else None,
+            metadata=base_metadata,
             calculate=metrics_calculate,
-            define=rendered_define,
+            define=metrics_define,
         )
         catalog = load_catalog_for_context(builder_context)
 
@@ -939,7 +990,13 @@ def restitch_pack_pptx(
     # Resolve the same metric context as full runs so PPTX-only restitches can
     # render text placeholders consistently.
     jinja_env = create_pack_jinja_env()
-    pack_payload = dump_context_payload(pack.context)
+    base_metadata = base_options.metadata if isinstance(base_options.metadata, Mapping) else None
+    base_context_payload = _resolve_pack_base_context_payload(
+        pack_path=pack_path,
+        metadata=base_metadata,
+        env=jinja_env,
+    )
+    pack_payload = merge_context_layer_payload(base=base_context_payload, incoming=dump_context_payload(pack.context))
 
     rendered_global_calculate = render_value(pack.calculate, env=jinja_env, context=pack_payload)
     rendered_define = render_value(pack.define, env=jinja_env, context=pack_payload)
@@ -958,13 +1015,17 @@ def restitch_pack_pptx(
     builder_context = None
     catalog = None
     if has_metric_bindings:
-        metrics_calculate = normalise_calculate_filters(rendered_global_calculate)
+        metrics_calculate, metrics_define = resolve_dax_context(
+            base=pack_payload,
+            calculate=rendered_global_calculate,
+            define=rendered_define,
+        )
         builder_context = discover_builder_context_for_pack(
             pack_path=pack_path,
             project_root=pack_path.parent.expanduser().resolve(strict=False),
-            metadata=base_options.metadata if isinstance(base_options.metadata, Mapping) else None,
+            metadata=base_metadata,
             calculate=metrics_calculate,
-            define=rendered_define,
+            define=metrics_define,
         )
         catalog = load_catalog_for_context(builder_context)
 

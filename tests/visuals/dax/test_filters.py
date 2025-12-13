@@ -7,6 +7,7 @@ def test_normalise_filter_group_removes_duplicates() -> None:
     result = normalise_filter_group([
         " 'dim_calendar'[Month] = ""2025-01"" ",
         "'dim_calendar'[Month] = ""2025-01""",
+        {"month": "'dim_calendar'[Month] = 2025-01"},
         "",
     ])
     assert len(result) == 1

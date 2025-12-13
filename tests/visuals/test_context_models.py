@@ -26,7 +26,7 @@ def test_merge_context_payload_handles_mapping_calculate() -> None:
 
     ctx = merge_context_payload(base=base, calculate=None, define=None)
 
-    assert ctx["calculate"] == ["'dim_lender'[LenderId] = 201"]
+    assert ctx["calculate"] == [{"lender": "'dim_lender'[LenderId] = 201"}]
 
 
 def test_merge_context_payload_overrides_named_calculate() -> None:
@@ -34,7 +34,10 @@ def test_merge_context_payload_overrides_named_calculate() -> None:
 
     ctx = merge_context_payload(base=base, calculate={"lender": "'dim_lender'[LenderId] = 301"}, define=None)
 
-    assert ctx["calculate"] == ["'dim_lender'[LenderId] = 301", "'dim_channel'[Name] = \"Broker\""]
+    assert ctx["calculate"] == [
+        {"lender": "'dim_lender'[LenderId] = 301"},
+        {"channel": "'dim_channel'[Name] = \"Broker\""},
+    ]
 
 
 def test_merge_context_payload_appends_unlabelled_after_named() -> None:
@@ -42,7 +45,7 @@ def test_merge_context_payload_appends_unlabelled_after_named() -> None:
 
     ctx = merge_context_payload(base=base, calculate=["'dim_region'[Name] = \"NSW\""], define=None)
 
-    assert ctx["calculate"] == ["'dim_lender'[LenderId] = 201", "'dim_region'[Name] = \"NSW\""]
+    assert ctx["calculate"] == [{"lender": "'dim_lender'[LenderId] = 201"}, "'dim_region'[Name] = \"NSW\""]
 
 
 def test_merge_context_payload_honours_last_mapping_in_sequence() -> None:
@@ -56,4 +59,48 @@ def test_merge_context_payload_honours_last_mapping_in_sequence() -> None:
 
     ctx = merge_context_payload(base=base, calculate=None, define=None)
 
-    assert ctx["calculate"] == ["'dim_lender'[LenderId] = 301", "'dim_region'[Name] = \"NSW\""]
+    assert ctx["calculate"] == [{"lender": "'dim_lender'[LenderId] = 301"}, "'dim_region'[Name] = \"NSW\""]
+
+
+def test_merge_context_payload_handles_mapping_define() -> None:
+    base = {"define": {"business_time_holidays": "FUNCTION Holidays = () => TRUE()"}}
+
+    ctx = merge_context_payload(base=base, calculate=None, define=None)
+
+    assert ctx["define"] == [{"business_time_holidays": "FUNCTION Holidays = () => TRUE()"}]
+
+
+def test_merge_context_payload_overrides_named_define() -> None:
+    base = {
+        "define": {
+            "get_business_days": "FUNCTION GetCustomerBusinessDays = () => 1",
+            "get_business_hours": "FUNCTION GetCustomerBusinessHours = () => 2",
+        }
+    }
+
+    ctx = merge_context_payload(
+        base=base,
+        calculate=None,
+        define={"get_business_hours": "FUNCTION GetCustomerBusinessHours = () => 3"},
+    )
+
+    assert ctx["define"] == [
+        {"get_business_days": "FUNCTION GetCustomerBusinessDays = () => 1"},
+        {"get_business_hours": "FUNCTION GetCustomerBusinessHours = () => 3"},
+    ]
+
+
+def test_merge_context_payload_appends_unlabelled_define_after_named() -> None:
+    base = {"define": {"get_business_hours": "FUNCTION GetCustomerBusinessHours = () => 2"}}
+
+    ctx = merge_context_payload(base=base, calculate=None, define=["VAR X = 1"])
+
+    assert ctx["define"] == [{"get_business_hours": "FUNCTION GetCustomerBusinessHours = () => 2"}, "VAR X = 1"]
+
+
+def test_merge_context_payload_honours_last_mapping_define_in_sequence() -> None:
+    base = {"define": [{"get_business_days": "FUNCTION A = () => 1"}, "VAR X = 1", {"get_business_days": "FUNCTION A = () => 2"}]}
+
+    ctx = merge_context_payload(base=base, calculate=None, define=None)
+
+    assert ctx["define"] == [{"get_business_days": "FUNCTION A = () => 2"}, "VAR X = 1"]
