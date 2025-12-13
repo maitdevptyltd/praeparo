@@ -109,7 +109,12 @@ def _default_export_paths(config: PowerBIVisualConfig, context) -> tuple[Path, P
 
     base.mkdir(parents=True, exist_ok=True)
     main_path = base / f"{stem}.{config.render.format}"
-    data_path = base / f"{stem}.json"
+
+    # Keep the manifest filename stable while avoiding collisions when multiple visuals export
+    # into the same build-artifacts directory.
+    manifest_dir = base / stem
+    manifest_dir.mkdir(parents=True, exist_ok=True)
+    data_path = manifest_dir / "data.json"
     return main_path, data_path
 
 
@@ -161,6 +166,7 @@ def _powerbi_dataset_builder(
             "visual_id": config.source.visual_id,
             "filter_count": len(merged_filters),
             "export_path": str(main_path),
+            "manifest_path": str(data_path),
         },
     )
 
