@@ -7,6 +7,11 @@ from typing import Mapping
 
 from praeparo.visuals.dax.expressions import ParsedExpression
 
+_EXPRESSION_CALL_ALIASES = {
+    "MIN": "min",
+    "MAX": "max",
+}
+
 
 def evaluate_expression(parsed: ParsedExpression, substitutions: Mapping[str, float]) -> float | None:
     """Evaluate *parsed* using numeric substitutions for each referenced identifier."""
@@ -57,12 +62,27 @@ def _evaluate_node(node: ast.AST, env: Mapping[str, float]) -> float | None:
         identifier = _flatten_attribute(node)
         return env.get(identifier, 0.0)
     if isinstance(node, ast.Call):
-        numerator_id, denominator_id = _parse_ratio_to_call(node)
-        numerator_value = env.get(numerator_id)
-        denominator_value = env.get(denominator_id)
-        if numerator_value is None or denominator_value is None or denominator_value == 0:
-            return None
-        return float(numerator_value) / float(denominator_value)
+        func = _parse_expression_call(node)
+        if func == "ratio_to":
+            numerator_id, denominator_id = _parse_ratio_to_call(node)
+            numerator_value = env.get(numerator_id)
+            denominator_value = env.get(denominator_id)
+            if numerator_value is None or denominator_value is None or denominator_value == 0:
+                return None
+            return float(numerator_value) / float(denominator_value)
+
+        if node.keywords:
+            raise TypeError(f"{func}() does not accept keyword arguments.")
+        if len(node.args) < 2:
+            raise ValueError(f"{func}() requires at least two arguments.")
+
+        values: list[float] = []
+        for arg in node.args:
+            value = _evaluate_node(arg, env)
+            if value is None:
+                return None
+            values.append(float(value))
+        return min(values) if func == "min" else max(values)
     msg = f"Unsupported expression node: {ast.dump(node)}"
     raise TypeError(msg)
 
@@ -102,6 +122,16 @@ def _parse_ratio_to_call(node: ast.Call) -> tuple[str, str]:
     if not denominator_id:
         raise ValueError("Second argument to ratio_to() must be a non-empty string metric key.")
     return numerator_id, denominator_id
+
+
+def _parse_expression_call(node: ast.Call) -> str:
+    if not isinstance(node.func, ast.Name):
+        raise TypeError("Only ratio_to(), min(), max(), MIN(), and MAX() calls are supported in expressions.")
+
+    name = _EXPRESSION_CALL_ALIASES.get(node.func.id, node.func.id)
+    if name not in ("ratio_to", "min", "max"):
+        raise TypeError("Only ratio_to(), min(), max(), MIN(), and MAX() calls are supported in expressions.")
+    return name
 
 
 def _flatten_metric_identifier(node: ast.AST) -> str:

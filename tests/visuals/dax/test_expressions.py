@@ -62,6 +62,40 @@ def test_parse_metric_expression_ratio_to_emits_divide_dax() -> None:
     assert dax == "DIVIDE(([Numerator]), ([Denominator]))"
 
 
+def test_parse_metric_expression_min_collects_references_in_order() -> None:
+    parsed = parse_metric_expression("min(documents_sent.manual, documents_sent.automated)")
+    identifiers = [ref.identifier for ref in parsed.references]
+    assert identifiers == ["documents_sent.manual", "documents_sent.automated"]
+
+
+def test_parse_metric_expression_max_collects_references_in_order() -> None:
+    parsed = parse_metric_expression("max(a, b)")
+    identifiers = [ref.identifier for ref in parsed.references]
+    assert identifiers == ["a", "b"]
+
+
+def test_parse_metric_expression_min_emits_blank_safe_minx() -> None:
+    expr = parse_metric_expression("min(ratio_to(a.b) / 0.85, 1)")
+    dax = expr.to_dax({"a": "[Denominator]", "a.b": "[Numerator]"})
+    assert "DIVIDE" in dax
+    assert "VAR __values_" in dax
+    assert "FILTER" in dax
+    assert "ISBLANK([Value])" in dax
+    assert "BLANK()" in dax
+    assert "MINX" in dax
+
+
+def test_parse_metric_expression_max_emits_blank_safe_maxx() -> None:
+    expr = parse_metric_expression("MAX(ratio_to(a.b) / 0.85, 1)")
+    dax = expr.to_dax({"a": "[Denominator]", "a.b": "[Numerator]"})
+    assert "DIVIDE" in dax
+    assert "VAR __values_" in dax
+    assert "FILTER" in dax
+    assert "ISBLANK([Value])" in dax
+    assert "BLANK()" in dax
+    assert "MAXX" in dax
+
+
 def test_parse_metric_expression_ratio_to_invalid_usage_raises() -> None:
     with pytest.raises(ValueError, match="requires a dotted metric key"):
         parse_metric_expression("ratio_to(a)")
@@ -69,6 +103,13 @@ def test_parse_metric_expression_ratio_to_invalid_usage_raises() -> None:
         parse_metric_expression('ratio_to(a.b, "")')
     with pytest.raises(TypeError, match="string metric key"):
         parse_metric_expression("ratio_to(a.b, 123)")
+
+
+def test_parse_metric_expression_min_invalid_usage_raises() -> None:
+    with pytest.raises(ValueError, match="requires at least two arguments"):
+        parse_metric_expression("min(a)")
+    with pytest.raises(TypeError, match="does not accept keyword arguments"):
+        parse_metric_expression("min(a, b=1)")
 
 
 def _sample_catalog() -> tuple[MetricCatalog, MetricDaxBuilder]:

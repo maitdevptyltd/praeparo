@@ -32,6 +32,17 @@ _UNARY_SYMBOLS = {
     ast.USub: "-",
 }
 
+_EXPRESSION_CALL_ALIASES = {
+    "MIN": "min",
+    "MAX": "max",
+}
+
+_EXPRESSION_CALLS = {
+    "ratio_to",
+    "min",
+    "max",
+}
+
 
 @dataclass(frozen=True)
 class MetricReference:
@@ -56,7 +67,11 @@ class ParsedExpression:
             names = ", ".join(f"'{name}'" for name in missing)
             raise KeyError(f"Missing DAX substitution(s) for expression reference(s): {names}")
 
+        call_counter = 0
+
         def _emit(node: ast.AST) -> str:
+            nonlocal call_counter
+
             if isinstance(node, ast.BinOp):
                 operator = _BINOP_SYMBOLS.get(type(node.op))
                 if operator is None:
@@ -82,11 +97,36 @@ class ParsedExpression:
                 identifier = _flatten_attribute(node)
                 return f"({substitutions[identifier]})"
             if isinstance(node, ast.Call):
-                numerator_id, _ = _parse_ratio_to_call(node)
-                denominator_id = _lookup_ratio_to_denominator(self.references, numerator_id)
-                numerator_expr = f"({substitutions[numerator_id]})"
-                denominator_expr = f"({substitutions[denominator_id]})"
-                return f"DIVIDE({numerator_expr}, {denominator_expr})"
+                func = _parse_expression_call(node)
+                if func == "ratio_to":
+                    numerator_id, _ = _parse_ratio_to_call(node)
+                    denominator_id = _lookup_ratio_to_denominator(self.references, numerator_id)
+                    numerator_expr = f"({substitutions[numerator_id]})"
+                    denominator_expr = f"({substitutions[denominator_id]})"
+                    return f"DIVIDE({numerator_expr}, {denominator_expr})"
+
+                if node.keywords:
+                    raise TypeError(f"{func}() does not accept keyword arguments.")
+                if len(node.args) < 2:
+                    raise ValueError(f"{func}() requires at least two arguments.")
+
+                call_counter += 1
+                values_var = f"__values_{call_counter}"
+                values_expr = ", ".join(_emit(arg) for arg in node.args)
+                reducer = "MINX" if func == "min" else "MAXX"
+
+                # Keep blank propagation explicit so clamp-style expressions do not
+                # convert missing ratios into a misleading "met" score.
+                return (
+                    "("
+                    f"VAR {values_var} = {{{values_expr}}} "
+                    f"RETURN IF("
+                    f"COUNTROWS(FILTER({values_var}, ISBLANK([Value]))) > 0, "
+                    "BLANK(), "
+                    f"{reducer}({values_var}, [Value])"
+                    ")"
+                    ")"
+                )
             raise TypeError(f"Unsupported expression node: {ast.dump(node)}")
 
         return _emit(self.root)
@@ -183,6 +223,17 @@ class _ExpressionVisitor(ast.NodeVisitor):
         self._record_reference(identifier)
 
     def visit_Call(self, node: ast.Call) -> None:  # noqa: N802
+        func = _parse_expression_call(node)
+        if func in ("min", "max"):
+            if node.keywords:
+                raise TypeError(f"{func}() does not accept keyword arguments.")
+            if len(node.args) < 2:
+                raise ValueError(f"{func}() requires at least two arguments.")
+
+            for arg in node.args:
+                self.visit(arg)
+            return
+
         numerator_id, denominator_id = _parse_ratio_to_call(node)
 
         # Record denominator first so dependency discovery works even if the only
@@ -237,7 +288,7 @@ def _parse_ratio_to_call(node: ast.Call) -> tuple[str, str]:
     """Validate and extract identifiers from a ratio_to() call."""
 
     if not isinstance(node.func, ast.Name) or node.func.id != "ratio_to":
-        raise TypeError("Only ratio_to() calls are supported in expressions.")
+        raise TypeError("Only ratio_to() calls are supported by this helper.")
     if node.keywords:
         raise TypeError("ratio_to() does not accept keyword arguments.")
     if len(node.args) not in (1, 2):
@@ -261,6 +312,22 @@ def _parse_ratio_to_call(node: ast.Call) -> tuple[str, str]:
     return numerator_id, denominator_id
 
 
+def _parse_expression_call(node: ast.Call) -> str:
+    if not isinstance(node.func, ast.Name):
+        raise TypeError(_unsupported_expression_call_message())
+
+    name = _EXPRESSION_CALL_ALIASES.get(node.func.id, node.func.id)
+    if name not in _EXPRESSION_CALLS:
+        raise TypeError(_unsupported_expression_call_message())
+    return name
+
+
+def _unsupported_expression_call_message() -> str:
+    supported = ["ratio_to()", "min()", "max()", "MIN()", "MAX()"]
+    formatted = ", ".join(f"`{name}`" for name in supported)
+    return f"Only {formatted} calls are supported in expressions."
+
+
 def _flatten_metric_identifier(node: ast.AST) -> str:
     if isinstance(node, ast.Name):
         return node.id
@@ -277,4 +344,3 @@ def _lookup_ratio_to_denominator(references: List[MetricReference], numerator_id
 
 
 __all__ = ["MetricReference", "ParsedExpression", "parse_metric_expression", "resolve_expression_metric"]
-

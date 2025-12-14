@@ -40,3 +40,14 @@ def test_expression_eval_ratio_to_weighted_expression() -> None:
     parsed = parse_metric_expression("ratio_to(a.b) * 0.85 + ratio_to(a.c) * 1.0")
     value = evaluate_expression(parsed, {"a.b": 5, "a.c": 2, "a": 10})
     assert value == pytest.approx(0.625)
+
+
+def test_expression_eval_min_max_functions() -> None:
+    parsed = parse_metric_expression("min(a, b) + max(a, b)")
+    value = evaluate_expression(parsed, {"a": 2, "b": 5})
+    assert value == 7
+
+
+def test_expression_eval_min_propagates_ratio_to_missing_value() -> None:
+    parsed = parse_metric_expression("min(ratio_to(a.b) / 0.85, 1)")
+    assert evaluate_expression(parsed, {"a.b": 5, "a": 0}) is None

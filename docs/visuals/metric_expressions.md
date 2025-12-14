@@ -1,4 +1,4 @@
-# Metric Expressions (Arithmetic + `ratio_to()`)
+# Metric Expressions (Arithmetic + `ratio_to()` + `min/max`)
 
 Praeparo supports lightweight **metric expressions** anywhere a config accepts an `expression:` field (for example inline visual series, registry expression metrics, and pack metric bindings).
 
@@ -45,13 +45,15 @@ Semantics:
 
 Validation rules:
 
-- Only the `ratio_to()` call is supported (no other functions).
+- Supported function calls: `ratio_to()`, `min()`, `max()` (plus aliases `MIN()` and `MAX()`).
 - No keyword arguments.
-- Exactly 1 or 2 positional args.
-- First argument must be a metric reference (a bare identifier or dotted attribute chain).
-- If using the 1-arg form, the numerator must be dotted so the denominator can be inferred.
-- If using the 2-arg form, the second argument must be a non-empty string metric key.
+- `ratio_to()` expects exactly 1 or 2 positional args:
+  - First argument must be a metric reference (a bare identifier or dotted attribute chain).
+  - If using the 1-arg form, the numerator must be dotted so the denominator can be inferred.
+  - If using the 2-arg form, the second argument must be a non-empty string metric key.
+- `min()` / `max()` expect 2+ positional arguments.
 
 ## Notes and related features
 
 - Series-level `ratio_to` (a separate feature) computes ratios post-query for simple numerator/denominator pairs without embedding the ratio in DAX. Use expression `ratio_to()` when you need ratioed values inside a larger arithmetic expression.
+- `min()/max()` compilation uses a blank-safe pattern: if any argument evaluates to `BLANK()` (for example a missing `ratio_to()` denominator), the `min/max` result is `BLANK()` rather than silently falling back to the non-blank argument.
