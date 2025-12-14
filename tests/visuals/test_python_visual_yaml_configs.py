@@ -31,6 +31,82 @@ def test_yaml_python_visual_uses_declared_config_model() -> None:
     assert definition is not None
 
 
+def test_yaml_python_visual_supports_registry_root_anchor(tmp_path: Path) -> None:
+    module_path = tmp_path / "registry" / "visuals" / "simple_yaml_visual.py"
+    module_path.parent.mkdir(parents=True, exist_ok=True)
+    module_path.write_text(
+        dedent(
+            """
+            from __future__ import annotations
+
+            from pydantic import ConfigDict
+
+            from praeparo.models import BaseVisualConfig
+            from praeparo.pipeline import OutputTarget, PythonVisualBase
+            from praeparo.pipeline.core import ExecutionContext, VisualPipeline
+            from praeparo.pipeline.registry import DatasetArtifact, RenderOutcome
+            from praeparo.visuals.context_models import VisualContextModel
+
+
+            class SimpleYamlConfig(BaseVisualConfig):
+                model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+                message: str
+                type: str | None = None
+
+
+            class SimpleYamlContext(VisualContextModel):
+                pass
+
+
+            class SimpleYamlVisual(PythonVisualBase[list[str], SimpleYamlContext]):
+                config_model = SimpleYamlConfig
+                context_model = SimpleYamlContext
+                name = "Simple YAML Visual"
+
+                def build_dataset(
+                    self,
+                    pipeline: VisualPipeline[SimpleYamlContext],
+                    config: SimpleYamlConfig,
+                    schema_artifact,
+                    context: ExecutionContext[SimpleYamlContext],
+                ) -> DatasetArtifact[list[str]]:
+                    return DatasetArtifact(value=[config.message], filename="message.json")
+
+                def render(
+                    self,
+                    pipeline: VisualPipeline[SimpleYamlContext],
+                    config: SimpleYamlConfig,
+                    schema_artifact,
+                    dataset_artifact: DatasetArtifact[list[str]],
+                    context: ExecutionContext[SimpleYamlContext],
+                    outputs: list[OutputTarget],
+                ) -> RenderOutcome:
+                    return RenderOutcome(outputs=[])
+            """
+        ).lstrip(),
+        encoding="utf-8",
+    )
+
+    visual_yaml_path = tmp_path / "registry" / "customers" / "foo" / "visuals" / "dashboard" / "visual.yaml"
+    visual_yaml_path.parent.mkdir(parents=True, exist_ok=True)
+    visual_yaml_path.write_text(
+        dedent(
+            """
+            schema: draft-1
+            type: "@/visuals/simple_yaml_visual.py"
+
+            title: Sample YAML-driven Python Visual
+            message: hello world
+            """
+        ).lstrip(),
+        encoding="utf-8",
+    )
+
+    visual_config = load_visual_config(visual_yaml_path)
+    assert getattr(visual_config, "type", None) == PYTHON_VISUAL_TYPE
+
+
 def test_python_cartesian_visual_receives_cartesian_config() -> None:
     config_path = FIXTURES / "cartesian_python_visual.yaml"
     visual_config = load_visual_config(config_path)

@@ -102,8 +102,9 @@ slides:
     including optional `context.metrics` bindings.
   - `template` – optional PPTX template identifier (`TEMPLATE_TAG`) used during
     deck assembly.
-  - `visual.ref` – path (relative to the pack file) to a visual YAML
-    (matrix, frame, Power BI, etc.).
+  - `visual.ref` – path to a visual YAML (matrix, frame, Power BI, etc.).
+    By default this is relative to the pack file, but `@/…` anchors the path
+    to the project `registry/` directory.
   - `visual.filters` – slide-level OData filters (merged with pack-level
     `filters`).
   - `visual.calculate` – slide-level DAX filters (merged with pack-level

@@ -12,6 +12,7 @@ from typing import Mapping
 from pydantic import BaseModel, ConfigDict
 
 from praeparo.models import BaseVisualConfig
+from praeparo.paths.registry_root import is_registry_anchored_path, resolve_registry_anchored_path
 from praeparo.pipeline.python_visual import PYTHON_VISUAL_TYPE, PythonVisualBase
 
 
@@ -106,7 +107,10 @@ def load_python_visual_from_yaml(
     """
 
     raw_type = str(payload.get("type") or "").strip() if payload is not None else ""
-    module_path = (context_path.parent / raw_type).resolve()
+    if is_registry_anchored_path(raw_type):
+        module_path = resolve_registry_anchored_path(raw_type, context_path=context_path)
+    else:
+        module_path = (context_path.parent / raw_type).resolve()
 
     visual_cls = load_python_visual_module(module_path)
     try:

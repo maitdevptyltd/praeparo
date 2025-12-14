@@ -16,7 +16,7 @@ from pptx.enum.shapes import MSO_SHAPE_TYPE, PP_PLACEHOLDER  # type: ignore[attr
 from pptx.util import Inches
 from PIL import Image
 
-from praeparo.models import BaseVisualConfig, PackConfig, PackPlaceholder, PackSlide, PackVisualRef
+from praeparo.models import BaseVisualConfig, PackConfig, PackContext, PackPlaceholder, PackSlide, PackVisualRef
 from praeparo.pack.filters import merge_odata_filters
 from praeparo.pack.loader import load_pack_config
 from praeparo.pack.runner import PackPowerBIFailure, restitch_pack_pptx, run_pack
@@ -141,6 +141,74 @@ def test_run_pack_uses_project_root_for_discovery(monkeypatch, tmp_path: Path) -
     assert results
     assert captured["project_root"] == tmp_path.resolve()
     assert captured["metrics_root"] == (tmp_path / "registry" / "metrics").resolve()
+
+
+def test_run_pack_resolves_registry_anchored_visual_refs(tmp_path: Path) -> None:
+    (tmp_path / "registry" / "metrics").mkdir(parents=True)
+
+    pack_path = tmp_path / "registry" / "customers" / "foo" / "pack.yaml"
+    pack_path.parent.mkdir(parents=True, exist_ok=True)
+    pack_path.write_text("{}", encoding="utf-8")
+
+    visual_path = tmp_path / "registry" / "visuals" / "powerbi" / "pbi.yaml"
+    visual_path.parent.mkdir(parents=True, exist_ok=True)
+    visual_path.write_text("type: matrix\n", encoding="utf-8")
+
+    pack = PackConfig(
+        schema="test-pack",
+        slides=[
+            PackSlide(title="Anchored ref", visual=PackVisualRef(ref='@/visuals/powerbi/pbi.yaml')),
+        ],
+    )
+
+    captured: Dict[str, Path] = {}
+
+    def stub_visual_loader(path: Path) -> BaseVisualConfig:
+        captured["visual_path"] = path
+        return BaseVisualConfig(type="matrix")
+
+    pipeline = _StubPipeline()
+    run_pack(
+        pack_path,
+        pack,
+        project_root=tmp_path,
+        output_root=tmp_path / "artefacts",
+        base_options=PipelineOptions(),
+        visual_loader=stub_visual_loader,
+        pipeline=cast(Any, pipeline),
+        env=create_pack_jinja_env(),
+    )
+
+    assert captured["visual_path"] == visual_path.resolve()
+
+
+def test_run_pack_rejects_registry_anchored_visual_refs_that_escape(tmp_path: Path) -> None:
+    (tmp_path / "registry" / "metrics").mkdir(parents=True)
+
+    pack_path = tmp_path / "registry" / "customers" / "foo" / "pack.yaml"
+    pack_path.parent.mkdir(parents=True, exist_ok=True)
+    pack_path.write_text("{}", encoding="utf-8")
+
+    pack = PackConfig(
+        schema="test-pack",
+        slides=[
+            PackSlide(title="Escaping ref", visual=PackVisualRef(ref='@/../x.yaml')),
+        ],
+    )
+
+    pipeline = _StubPipeline()
+    with pytest.raises(ValueError) as excinfo:
+        run_pack(
+            pack_path,
+            pack,
+            project_root=tmp_path,
+            output_root=tmp_path / "artefacts",
+            base_options=PipelineOptions(),
+            visual_loader=lambda _: BaseVisualConfig(type="matrix"),
+            pipeline=cast(Any, pipeline),
+            env=create_pack_jinja_env(),
+        )
+    assert "@/../x.yaml" in str(excinfo.value)
 
 
 class _StubPipeline:
@@ -484,7 +552,7 @@ def test_run_pack_templates_slide_metadata(tmp_path: Path) -> None:
 
     pack = PackConfig(
         schema="test-pack",
-        context={"customer": "AMP"},
+        context=PackContext.model_validate({"customer": "AMP"}),
         slides=[
             PackSlide(
                 title="{{customer}} Dashboard",
@@ -529,7 +597,7 @@ def test_run_pack_templates_slide_title_for_pptx(tmp_path: Path) -> None:
 
     pack = PackConfig(
         schema="test-pack",
-        context={"customer": "AMP"},
+        context=PackContext.model_validate({"customer": "AMP"}),
         slides=[
             PackSlide(
                 title="{{customer}} Dashboard",
@@ -602,7 +670,7 @@ def test_run_pack_routes_visuals_and_emits_pngs(tmp_path: Path) -> None:
 
     pack = PackConfig(
         schema="test-pack",
-        context={"lender_id": 7, "month": "2025-11-01"},
+        context=PackContext.model_validate({"lender_id": 7, "month": "2025-11-01"}),
         define="DEFINE VAR Lender = {{ lender_id }}",
         calculate={"lender": "'dim_lender'[LenderId] = {{ lender_id }}"},
         filters={"lender": "dim_lender/LenderId eq {{ lender_id }}"},
@@ -753,7 +821,7 @@ def test_run_pack_forwards_pack_context_into_visual_context(tmp_path: Path) -> N
 
     pack = PackConfig(
         schema="test-pack",
-        context={"month": "2025-10-01", "trailing_months": 3},
+        context=PackContext.model_validate({"month": "2025-10-01", "trailing_months": 3}),
         slides=[
             PackSlide(
                 title="Context Slide",
@@ -800,7 +868,7 @@ def test_run_pack_named_calculate_overrides_global(tmp_path: Path) -> None:
 
     pack = PackConfig(
         schema="test-pack",
-        context={"lender_id": 7},
+        context=PackContext.model_validate({"lender_id": 7}),
         calculate={
             "lender": "'dim_lender'[LenderId] = {{ lender_id }}",
             "channel": "'dim_channel'[Name] = \"Base\"",
@@ -1295,7 +1363,7 @@ def test_run_pack_renders_named_text_placeholders(tmp_path: Path) -> None:
 
     pack = PackConfig(
         schema="test-pack",
-        context={"month": "2025-10-01"},
+        context=PackContext.model_validate({"month": "2025-10-01"}),
         slides=[
             PackSlide(
                 title="Two Up With Text",
@@ -1567,7 +1635,7 @@ def test_run_pack_supports_python_visual_ref(tmp_path: Path, monkeypatch) -> Non
 
     pack = PackConfig(
         schema="test-pack",
-        context={"title": "Demo"},
+        context=PackContext.model_validate({"title": "Demo"}),
         slides=[
             PackSlide(
                 title="Python Visual Slide",
@@ -1630,7 +1698,7 @@ def test_run_pack_supports_inline_visual_config(tmp_path: Path, monkeypatch) -> 
 
     pack = PackConfig(
         schema="test-pack",
-        context={"title": "Inline Demo"},
+        context=PackContext.model_validate({"title": "Inline Demo"}),
         slides=[
             PackSlide(
                 title="Inline Visual Slide",
@@ -1686,7 +1754,7 @@ def test_restitch_pack_pptx_honours_templated_titles(tmp_path: Path) -> None:
 
     pack = PackConfig(
         schema="test-pack",
-        context={"customer": "AMP"},
+        context=PackContext.model_validate({"customer": "AMP"}),
         slides=[
             PackSlide(
                 title="{{customer}} Dashboard",

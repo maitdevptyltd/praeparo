@@ -36,6 +36,7 @@ from praeparo.pipeline import (
     register_visual_pipeline,
 )
 from praeparo.pipeline.python_visual_loader import load_python_visual
+from praeparo.paths.registry_root import is_registry_anchored_path, resolve_registry_anchored_path
 from praeparo.visuals.dax.planner_core import slugify
 from praeparo.io.yaml_loader import load_visual_config, load_visual_from_payload
 from praeparo.visuals.context import merge_context_payload, resolve_dax_context
@@ -655,7 +656,11 @@ def run_pack(
             visual_path: Path
 
             if visual_ref.ref:
-                visual_path = (pack_path.parent / visual_ref.ref).resolve()
+                raw_ref = str(visual_ref.ref).strip()
+                if is_registry_anchored_path(raw_ref):
+                    visual_path = resolve_registry_anchored_path(raw_ref, context_path=pack_path)
+                else:
+                    visual_path = (pack_path.parent / raw_ref).resolve()
                 is_python_visual = visual_path.suffix.lower() == ".py"
 
                 if is_python_visual:
