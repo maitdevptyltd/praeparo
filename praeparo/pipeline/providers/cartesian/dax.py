@@ -17,6 +17,7 @@ from praeparo.dax import DaxQueryPlan
 from praeparo.datasources import DataSourceConfigError, ResolvedDataSource, resolve_datasource
 from praeparo.models import CartesianChartConfig
 from praeparo.visuals.dax import DEFAULT_MEASURE_TABLE, slugify
+from praeparo.pipeline.core import write_dax_plan_files
 
 from .base import ChartPlannerResult, ChartQueryPlanner
 
@@ -25,6 +26,7 @@ if __name__ == "__main__":  # pragma: no cover - module import guard
 
 
 logger = logging.getLogger(__name__)
+CHART_DATA_FILENAME = "chart.data.json"
 
 
 class DaxBackedChartPlanner(ChartQueryPlanner):
@@ -62,6 +64,14 @@ class DaxBackedChartPlanner(ChartQueryPlanner):
             values=tuple(dataset_plan.measure_map.get(series.id, series.id) for series in config.series),
             define=None,
         )
+
+        if context.options.artefact_dir is not None:
+            write_dax_plan_files(
+                plans=[dax_plan],
+                config=config,
+                dataset_filename=CHART_DATA_FILENAME,
+                artefact_dir=context.options.artefact_dir,
+            )
 
         dataset = self._resolve_dataset(config, builder, context)
         logger.info(

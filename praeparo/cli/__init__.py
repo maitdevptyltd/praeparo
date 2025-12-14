@@ -31,6 +31,7 @@ from praeparo.pipeline.python_visual_loader import load_python_visual
 from praeparo.pack import (
     DEFAULT_POWERBI_CONCURRENCY,
     PackConfigError,
+    PackExecutionError,
     PackPowerBIFailure,
     allocate_revision,
     create_pack_jinja_env,
@@ -1297,6 +1298,8 @@ def _handle_pack_run(args: argparse.Namespace) -> int:
         )
     except ConfigLoadError as exc:
         raise ValueError(str(exc)) from exc
+    except PackExecutionError:
+        raise
     except PackPowerBIFailure as exc:
         # Surface the richer summary to the user while preserving successful artefacts.
         if args.allow_partial:
@@ -1304,15 +1307,7 @@ def _handle_pack_run(args: argparse.Namespace) -> int:
             results = exc.successful_results
             partial_failure = True
         else:
-            raise RuntimeError(str(exc)) from exc
-    except (
-        DataSourceConfigError,
-        PowerBIConfigurationError,
-        PowerBIAuthenticationError,
-        PowerBIQueryError,
-        RuntimeError,
-    ) as exc:
-        raise RuntimeError(str(exc)) from exc
+            raise
 
     png_count = sum(1 for item in results if item.png_path)
     if png_count:

@@ -19,11 +19,13 @@ from PIL import Image
 from praeparo.models import BaseVisualConfig, PackConfig, PackContext, PackPlaceholder, PackSlide, PackVisualRef
 from praeparo.pack.filters import merge_odata_filters
 from praeparo.pack.loader import load_pack_config
+from praeparo.pack import PackExecutionError
 from praeparo.pack.runner import PackPowerBIFailure, restitch_pack_pptx, run_pack
 from praeparo.pack.metric_context import dump_context_payload
 from praeparo.pack.templating import create_pack_jinja_env, render_value
 from praeparo.pipeline import PipelineOptions, VisualExecutionResult, VisualPipeline, build_default_query_planner_provider
 from praeparo.pipeline.outputs import OutputKind, PipelineOutputArtifact
+from praeparo.powerbi import PowerBIQueryError
 from praeparo.visuals.dax.planner_core import slugify
 from praeparo.visuals import VisualContextModel, register_visual_type
 
@@ -197,7 +199,7 @@ def test_run_pack_rejects_registry_anchored_visual_refs_that_escape(tmp_path: Pa
     )
 
     pipeline = _StubPipeline()
-    with pytest.raises(ValueError) as excinfo:
+    with pytest.raises(PackExecutionError) as excinfo:
         run_pack(
             pack_path,
             pack,
@@ -208,7 +210,9 @@ def test_run_pack_rejects_registry_anchored_visual_refs_that_escape(tmp_path: Pa
             pipeline=cast(Any, pipeline),
             env=create_pack_jinja_env(),
         )
-    assert "@/../x.yaml" in str(excinfo.value)
+    exc = excinfo.value
+    assert isinstance(exc.__cause__, ValueError)
+    assert "@/../x.yaml" in str(exc.__cause__)
 
 
 class _StubPipeline:
@@ -1133,9 +1137,52 @@ def test_run_pack_raises_when_powerbi_job_fails(tmp_path: Path) -> None:
     message = str(excinfo.value)
     assert "Power BI slide(s) failed" in message
     assert failing_slug in message
-    assert "RuntimeError" in message
+    assert "PackExecutionError" in message
     ok_png = tmp_path / "artefacts" / f"[01]_{slugify('ok-pbi')}.png"
     assert ok_png.exists()
+
+
+def test_run_pack_wraps_slide_failures_with_pack_execution_error(tmp_path: Path) -> None:
+    (tmp_path / "registry" / "metrics").mkdir(parents=True)
+
+    pack_path = tmp_path / "pack.yaml"
+    pack_path.write_text("", encoding="utf-8")
+
+    pack = PackConfig(
+        schema="test-pack",
+        slides=[
+            PackSlide(title="Broken Slide", id="broken", visual=PackVisualRef(ref="visuals/broken.yaml")),
+        ],
+    )
+
+    def _loader(path: Path, payload: Mapping[str, object] | None = None, stack: tuple[Path, ...] = ()) -> BaseVisualConfig:
+        return BaseVisualConfig(type="matrix")
+
+    class _FailingPipeline:
+        def execute(self, visual: BaseVisualConfig, context):  # noqa: ANN001
+            raise PowerBIQueryError("400 Bad Request: DAX execution failed")
+
+    pipeline = _FailingPipeline()
+
+    with pytest.raises(PackExecutionError) as excinfo:
+        run_pack(
+            pack_path,
+            pack,
+            project_root=pack_path.parent,
+            output_root=tmp_path / "artefacts",
+            base_options=PipelineOptions(),
+            visual_loader=_loader,
+            pipeline=cast(Any, pipeline),
+            env=create_pack_jinja_env(),
+        )
+
+    exc = excinfo.value
+    message = str(exc)
+    assert str(pack_path) in message
+    assert "phase=visual_execute" in message
+    assert "Broken Slide" in message
+    assert "visual_ref=visuals/broken.yaml" in message
+    assert isinstance(exc.__cause__, PowerBIQueryError)
 
 
 def test_run_pack_renders_slides_without_template(tmp_path: Path) -> None:

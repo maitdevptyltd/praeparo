@@ -108,26 +108,49 @@ def _emit_dax_artifacts(
     dataset_filename: str,
     directory: Path,
 ) -> List[PipelineOutputArtifact]:
-    emitted: List[PipelineOutputArtifact] = []
-    if not plans:
-        return emitted
+    paths = write_dax_plan_files(
+        plans=plans,
+        config=config,
+        dataset_filename=dataset_filename,
+        artefact_dir=directory,
+    )
+    return [PipelineOutputArtifact(kind=OutputKind.DAX, path=path) for path in paths]
 
-    directory.mkdir(parents=True, exist_ok=True)
+
+def write_dax_plan_files(
+    *,
+    plans: Sequence[DaxQueryPlan],
+    config: BaseVisualConfig,
+    dataset_filename: str,
+    artefact_dir: Path,
+) -> list[Path]:
+    """Write DAX plan statements to disk for debugging.
+
+    This helper is intentionally idempotent and can be invoked before or after
+    dataset execution. Callers use it to persist compiled DAX plans even when
+    downstream Power BI execution fails.
+    """
+
+    if not plans:
+        return []
+
     valid_plans = [
         plan
         for plan in plans
         if isinstance(plan, DaxQueryPlan) and isinstance(plan.statement, str) and plan.statement.strip()
     ]
     if not valid_plans:
-        return emitted
+        return []
+
+    artefact_dir.mkdir(parents=True, exist_ok=True)
 
     total = len(valid_plans)
-
+    emitted: list[Path] = []
     for index, plan in enumerate(valid_plans, start=1):
         filename = _build_dax_filename(config, dataset_filename, index, total)
-        path = directory / filename
+        path = artefact_dir / filename
         path.write_text(plan.statement.rstrip() + "\n", encoding="utf-8")
-        emitted.append(PipelineOutputArtifact(kind=OutputKind.DAX, path=path))
+        emitted.append(path)
     return emitted
 
 

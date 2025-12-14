@@ -496,6 +496,8 @@ Use these flags to narrow failures and keep successful outputs:
 - `--max-pbi-concurrency 1` – force serial Power BI exports to avoid concurrency noise while debugging.
 - `--allow-partial` – keep successful slide artefacts and print the summary without a traceback; exit code remains non-zero so automation can detect the failure.
 
+For DAX-backed visuals (matrix/cartesian and Python visuals that return a `MetricDatasetBuilder`), Praeparo writes the compiled `.dax` plans to each slide’s `artefact_dir` *before* execution. Check `<artefact-dir>/[NN]_<slide-slug>/*.dax` even when a slide fails.
+
 ## Integration with existing visuals
 
 Because the pack runner delegates to the visual registry:

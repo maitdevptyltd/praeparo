@@ -3,16 +3,19 @@
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import inspect
 import logging
+import threading
 from pathlib import Path
-from typing import Awaitable, Mapping, Sequence, TYPE_CHECKING, Callable
+from typing import Awaitable, Mapping, Sequence, TYPE_CHECKING, Callable, cast
 
 from praeparo.data import MatrixResultSet, mock_matrix_data
 from praeparo.dax import DaxQueryPlan, build_matrix_query
 from praeparo.datasources import DataSourceConfigError, ResolvedDataSource, resolve_datasource
 from praeparo.models import MatrixConfig
 from praeparo.templating import FieldReference, extract_field_references
+from praeparo.pipeline.core import write_dax_plan_files
 
 from .base import MatrixPlannerResult, MatrixQueryPlanner
 from ...dax.clients.base import DaxExecutionClient
@@ -22,6 +25,7 @@ if TYPE_CHECKING:  # pragma: no cover
 
 
 logger = logging.getLogger(__name__)
+MATRIX_DATA_FILENAME = "matrix.data.json"
 
 
 class DaxBackedMatrixPlanner(MatrixQueryPlanner):
@@ -46,6 +50,14 @@ class DaxBackedMatrixPlanner(MatrixQueryPlanner):
     def plan(self, config: MatrixConfig, *, context: "ExecutionContext") -> MatrixPlannerResult:
         row_fields = tuple(self._extract_row_fields(config))
         plan = build_matrix_query(config, row_fields)
+
+        if context.options.artefact_dir is not None:
+            write_dax_plan_files(
+                plans=[plan],
+                config=config,
+                dataset_filename=MATRIX_DATA_FILENAME,
+                artefact_dir=context.options.artefact_dir,
+            )
 
         context_payload = context.options.metadata.get("context") if isinstance(context.options.metadata, Mapping) else {}
         calculate_filters = context_payload.get("calculate") if isinstance(context_payload, Mapping) else None
@@ -128,7 +140,7 @@ class DaxBackedMatrixPlanner(MatrixQueryPlanner):
             dataset_id=dataset_id,
             workspace_id=workspace_override,
         )
-        return self._resolve_result(result)
+        return self._resolve_result(result, case_key=None)
 
     def _execute_from_datasource(
         self,
@@ -172,21 +184,40 @@ class DaxBackedMatrixPlanner(MatrixQueryPlanner):
             workspace_id=workspace_override or datasource.workspace_id,
             settings=datasource.settings,
         )
-        return self._resolve_result(result)
+        return self._resolve_result(result, case_key=context.case_key)
 
     def _resolve_result(
         self,
         result: MatrixResultSet | Awaitable[MatrixResultSet],
+        *,
+        case_key: str | None = None,
     ) -> MatrixResultSet:
         if inspect.isawaitable(result):
+            awaitable = cast(Awaitable[MatrixResultSet], result)
+
+            async def _await_result() -> MatrixResultSet:
+                return await awaitable
+
             try:
-                resolved = asyncio.run(result)  # type: ignore[arg-type]
-            except RuntimeError as exc:  # pragma: no cover
-                msg = (
-                    "DAX execution returned an awaitable while an event loop is already running. "
-                    "Provide a synchronous client or adapt the call site to handle async planners."
+                asyncio.get_running_loop()
+            except RuntimeError:
+                resolved = asyncio.run(_await_result())
+            else:
+                future: concurrent.futures.Future[MatrixResultSet] = concurrent.futures.Future()
+
+                def _runner() -> None:
+                    try:
+                        future.set_result(asyncio.run(_await_result()))
+                    except Exception as exc:  # noqa: BLE001
+                        future.set_exception(exc)
+
+                thread = threading.Thread(
+                    target=_runner,
+                    name=f"praeparo_matrix_{case_key or 'run'}",
+                    daemon=True,
                 )
-                raise RuntimeError(msg) from exc
+                thread.start()
+                resolved = future.result()
         else:
             resolved = result
         if not isinstance(resolved, MatrixResultSet):

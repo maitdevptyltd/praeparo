@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
+import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -11,6 +13,7 @@ from typing import Mapping, MutableMapping, Sequence
 from praeparo.dax import DaxQueryPlan
 from praeparo.datasources import DataSourceConfigError, ResolvedDataSource, resolve_datasource
 from praeparo.metrics import MetricDaxBuilder, load_metric_catalog
+from praeparo.models import BaseVisualConfig
 from praeparo.powerbi import PowerBIClient, PowerBISettings
 from praeparo.pipeline.registry import DatasetArtifact
 from praeparo.visuals.dax import expressions as dax_expressions
@@ -362,6 +365,10 @@ class MetricDatasetBuilder:
     def to_dataset_artifact(
         self,
         filename: str | None = None,
+        *,
+        artefact_dir: Path | None = None,
+        visual_config: BaseVisualConfig | None = None,
+        case_key: str | None = None,
     ) -> DatasetArtifact[list[dict[str, object]]]:
         """Execute the builder plan and wrap it as a DatasetArtifact.
 
@@ -371,8 +378,9 @@ class MetricDatasetBuilder:
         emitted alongside other outputs.
         """
 
+        # Compile the plan up front so callers can persist DAX artifacts even when
+        # downstream execution fails (for example, Power BI returning a 400 payload).
         plan = self.plan()
-        rows = self.execute()
 
         define_block = "\n".join(plan.define_blocks) if plan.define_blocks else None
         dax_plan = DaxQueryPlan(
@@ -384,11 +392,58 @@ class MetricDatasetBuilder:
 
         dataset_filename = filename or f"{plan.slug}.data.json"
 
+        # Emit the compiled DAX before execution when the pipeline supplied a target
+        # directory and the calling visual config (needed for filename semantics).
+        if artefact_dir is not None and visual_config is not None:
+            from praeparo.pipeline.core import write_dax_plan_files
+
+            write_dax_plan_files(
+                plans=[dax_plan],
+                config=visual_config,
+                dataset_filename=dataset_filename,
+                artefact_dir=artefact_dir,
+            )
+
+        rows = self._execute_rows_for_artifact(case_key=case_key or plan.slug)
+
         return DatasetArtifact(
             value=rows,
             filename=dataset_filename,
             plans=[dax_plan],
         )
+
+    def _execute_rows_for_artifact(self, *, case_key: str) -> list[dict[str, object]]:
+        """Execute builder.aexecute() without raising event-loop wrapper errors.
+
+        The synchronous MetricDatasetBuilder.execute() uses asyncio.run(), which raises
+        a RuntimeError when called from within an active event loop. Pack runs and
+        some notebook environments already own a loop, so we run the async execution
+        on a dedicated thread in that scenario to preserve the original exception
+        (e.g. PowerBIQueryError) and keep debug artifacts available on disk.
+        """
+
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            result = asyncio.run(self.aexecute())
+            return result.rows
+
+        future: concurrent.futures.Future[list[dict[str, object]]] = concurrent.futures.Future()
+
+        def _runner() -> None:
+            try:
+                result = asyncio.run(self.aexecute())
+                future.set_result(result.rows)
+            except Exception as exc:  # noqa: BLE001
+                future.set_exception(exc)
+
+        thread = threading.Thread(
+            target=_runner,
+            name=f"praeparo_metric_dataset_{case_key}",
+            daemon=True,
+        )
+        thread.start()
+        return future.result()
 
     # ------------------------------------------------------------------
     # Internal helpers

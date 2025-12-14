@@ -8,13 +8,14 @@ import types
 import pytest
 
 from praeparo.datasets import MetricDatasetBuilder, MetricDatasetBuilderContext
-from praeparo.models import CartesianChartConfig
+from praeparo.models import BaseVisualConfig, CartesianChartConfig
 from praeparo.models.cartesian import AxisConfig, CartesianSeriesConfig, CategoryConfig, ValueAxesConfig
 from praeparo.visuals.context_models import VisualContextModel
 from praeparo.visuals.dax_context import DAXContextModel
 from praeparo.visuals.metrics import VisualMetricConfig
 from praeparo.pipeline.registry import DatasetArtifact
 from praeparo.dax import DaxQueryPlan
+from praeparo.powerbi import PowerBIQueryError
 
 
 def _write_metric(path: Path) -> None:
@@ -334,3 +335,49 @@ def test_builder_to_dataset_artifact_wraps_plan_and_rows(tmp_path: Path) -> None
     assert artifact.plans
     assert isinstance(artifact.plans[0], DaxQueryPlan)
     assert isinstance(artifact.plans[0].statement, str)
+
+
+def test_metric_dataset_builder_emits_dax_before_execution_failure(tmp_path: Path, monkeypatch) -> None:
+    builder = _builder(tmp_path)
+    builder.metric("documents_sent")
+
+    artefact_dir = tmp_path / "artefacts"
+
+    async def _fail(self):  # noqa: ANN001
+        raise PowerBIQueryError("400 Bad Request: DAX execution failed")
+
+    monkeypatch.setattr(builder, "aexecute", types.MethodType(_fail, builder))
+
+    with pytest.raises(PowerBIQueryError):
+        builder.to_dataset_artifact(
+            artefact_dir=artefact_dir,
+            visual_config=BaseVisualConfig(type="python"),
+            case_key="failure",
+        )
+
+    assert (artefact_dir / "python.dax").exists()
+
+
+@pytest.mark.asyncio
+async def test_metric_dataset_builder_to_dataset_artifact_preserves_exception_inside_event_loop(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    builder = _builder(tmp_path)
+    builder.metric("documents_sent")
+
+    artefact_dir = tmp_path / "artefacts"
+
+    async def _fail(self):  # noqa: ANN001
+        raise ValueError("boom")
+
+    monkeypatch.setattr(builder, "aexecute", types.MethodType(_fail, builder))
+
+    with pytest.raises(ValueError, match="boom"):
+        builder.to_dataset_artifact(
+            artefact_dir=artefact_dir,
+            visual_config=BaseVisualConfig(type="python"),
+            case_key="loop",
+        )
+
+    assert (artefact_dir / "python.dax").exists()

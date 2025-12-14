@@ -12,6 +12,7 @@ from jinja2 import Environment
 
 from praeparo.models import BaseVisualConfig, FiltersType, PackConfig, PackPlaceholder, PackSlide, PackVisualRef
 from praeparo.pack.filters import merge_calculate_filters, merge_odata_filters
+from praeparo.pack.errors import PackExecutionError
 from praeparo.pack.metric_context import (
     ResolvedMetricContext,
     discover_builder_context_for_pack,
@@ -221,6 +222,11 @@ def _select_png_output(result: VisualExecutionResult, requested_outputs: Sequenc
         if artifact.kind is OutputKind.PNG and artifact.path.resolve() in requested_paths:
             return artifact.path
     return png_targets[0]
+
+def _discover_dax_artifacts(directory: Path | None) -> tuple[Path, ...]:
+    if directory is None or not directory.exists():
+        return ()
+    return tuple(sorted(directory.glob("*.dax")))
 
 
 def _prepare_slide_options(
@@ -655,37 +661,56 @@ def run_pack(
             python_visual: PythonVisualBase | None = None
             visual_path: Path
 
-            if visual_ref.ref:
-                raw_ref = str(visual_ref.ref).strip()
-                if is_registry_anchored_path(raw_ref):
-                    visual_path = resolve_registry_anchored_path(raw_ref, context_path=pack_path)
+            visual_ref_label = visual_ref.ref or visual_ref.type
+            slide_slug_for_error = slide_label
+
+            try:
+                if visual_ref.ref:
+                    raw_ref = str(visual_ref.ref).strip()
+                    if is_registry_anchored_path(raw_ref):
+                        visual_path = resolve_registry_anchored_path(raw_ref, context_path=pack_path)
+                    else:
+                        visual_path = (pack_path.parent / raw_ref).resolve()
+                    is_python_visual = visual_path.suffix.lower() == ".py"
+
+                    if is_python_visual:
+                        python_visual = load_python_visual(visual_path, class_name=None)
+                        definition = python_visual.to_definition()
+                        register_visual_pipeline(PYTHON_VISUAL_TYPE, definition, overwrite=True)
+                        visual = python_visual.to_config()
+                    else:
+                        visual = visual_loader(visual_path)
                 else:
-                    visual_path = (pack_path.parent / raw_ref).resolve()
-                is_python_visual = visual_path.suffix.lower() == ".py"
+                    visual_path = pack_path
+                    payload = visual_ref.model_dump()
+                    payload.pop("ref", None)
+                    payload.pop("filters", None)
+                    payload.pop("calculate", None)
 
-                if is_python_visual:
-                    python_visual = load_python_visual(visual_path, class_name=None)
-                    definition = python_visual.to_definition()
-                    register_visual_pipeline(PYTHON_VISUAL_TYPE, definition, overwrite=True)
-                    visual = python_visual.to_config()
-                else:
-                    visual = visual_loader(visual_path)
-            else:
-                visual_path = pack_path
-                payload = visual_ref.model_dump()
-                payload.pop("ref", None)
-                payload.pop("filters", None)
-                payload.pop("calculate", None)
+                    visual = load_visual_from_payload(visual_path, payload, preprocess=True)
 
-                visual = load_visual_from_payload(visual_path, payload, preprocess=True)
+                    raw_type = payload.get("type")
+                    is_python_visual = isinstance(raw_type, str) and _is_python_visual_type(raw_type)
 
-                raw_type = payload.get("type")
-                is_python_visual = isinstance(raw_type, str) and _is_python_visual_type(raw_type)
-
-                if is_python_visual:
-                    module_path = (pack_path.parent / str(raw_type)).resolve()
-                    python_visual = load_python_visual(module_path, class_name=None)
-                    register_visual_pipeline(PYTHON_VISUAL_TYPE, python_visual.to_definition(), overwrite=True)
+                    if is_python_visual:
+                        module_path = (pack_path.parent / str(raw_type)).resolve()
+                        python_visual = load_python_visual(module_path, class_name=None)
+                        register_visual_pipeline(PYTHON_VISUAL_TYPE, python_visual.to_definition(), overwrite=True)
+            except PackExecutionError:
+                raise
+            except Exception as exc:
+                raise PackExecutionError(
+                    pack_path=pack_path,
+                    slide_index=index,
+                    slide_slug=slide_slug_for_error,
+                    slide_id=slide.id,
+                    slide_title=slide.title,
+                    visual_ref=visual_ref_label,
+                    visual_path=visual_path if "visual_path" in locals() else None,
+                    phase="visual_load",
+                    dax_artifact_paths=(),
+                    cause=exc,
+                ) from exc
 
             merged_filters = merge_odata_filters(rendered_global_filters, _render_filters(filters))
             calculate_filters = merge_calculate_filters(rendered_global_calculate, _render_filters(calculate))
@@ -759,17 +784,45 @@ def run_pack(
                 )
 
             if is_python_visual and python_visual is not None:
-                visual_context = _instantiate_python_visual_context(
-                    visual=python_visual,
-                    metadata=options.metadata,
-                )
+                try:
+                    visual_context = _instantiate_python_visual_context(
+                        visual=python_visual,
+                        metadata=options.metadata,
+                    )
+                except Exception as exc:
+                    raise PackExecutionError(
+                        pack_path=pack_path,
+                        slide_index=index,
+                        slide_slug=slide_slug_for_error,
+                        slide_id=slide.id,
+                        slide_title=slide.title,
+                        visual_ref=visual_ref_label,
+                        visual_path=visual_path,
+                        phase="visual_context",
+                        dax_artifact_paths=_discover_dax_artifacts(options.artefact_dir),
+                        cause=exc,
+                    ) from exc
             else:
                 registration = get_visual_registration(visual.type)
-                visual_context = _instantiate_slide_context(
-                    registration=registration,
-                    metadata=options.metadata,
-                    project_root=resolved_project_root,
-                )
+                try:
+                    visual_context = _instantiate_slide_context(
+                        registration=registration,
+                        metadata=options.metadata,
+                        project_root=resolved_project_root,
+                    )
+                except Exception as exc:
+                    raise PackExecutionError(
+                        pack_path=pack_path,
+                        slide_index=index,
+                        slide_slug=slide_slug_for_error,
+                        slide_id=slide.id,
+                        slide_title=slide.title,
+                        visual_ref=visual_ref_label,
+                        visual_path=visual_path,
+                        phase="visual_context",
+                        dax_artifact_paths=_discover_dax_artifacts(options.artefact_dir),
+                        cause=exc,
+                    ) from exc
 
             execution_context = ExecutionContext(
                 config_path=visual_path,
@@ -806,7 +859,9 @@ def run_pack(
                     },
                 )
                 result = resolved_pipeline.execute(visual, execution_context)
-            except Exception:
+            except PackExecutionError:
+                raise
+            except Exception as exc:
                 logger.exception(
                     "Slide failed",
                     extra={
@@ -815,7 +870,18 @@ def run_pack(
                         "visual_path": str(visual_path),
                     },
                 )
-                raise
+                raise PackExecutionError(
+                    pack_path=pack_path,
+                    slide_index=index,
+                    slide_slug=slide_slug_for_error,
+                    slide_id=slide.id,
+                    slide_title=slide.title,
+                    visual_ref=visual_ref_label,
+                    visual_path=visual_path,
+                    phase="visual_execute",
+                    dax_artifact_paths=_discover_dax_artifacts(options.artefact_dir),
+                    cause=exc,
+                ) from exc
             png_path = _select_png_output(result, options.outputs)
             logger.info(
                 "Slide completed",
@@ -891,6 +957,23 @@ def run_pack(
         slide_png_map[slide_slug] = image_path
 
     powerbi_results = powerbi_queue.drain()
+    for item in powerbi_results:
+        if item.exception is None:
+            continue
+        if isinstance(item.exception, PackExecutionError):
+            continue
+        item.exception = PackExecutionError(
+            pack_path=pack_path,
+            slide_index=item.job.slide_index,
+            slide_slug=item.job.slide_slug,
+            slide_id=item.job.slide.id,
+            slide_title=item.job.slide_title,
+            visual_ref=str(item.job.visual_path) if item.job.visual_path else None,
+            visual_path=item.job.visual_path,
+            phase="powerbi_export",
+            dax_artifact_paths=_discover_dax_artifacts(item.job.execution_context.options.artefact_dir),
+            cause=item.exception,
+        )
     failed_powerbi = [item for item in powerbi_results if item.exception]
     for item in powerbi_results:
         if item.result is None:

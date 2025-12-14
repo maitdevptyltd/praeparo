@@ -2,15 +2,11 @@
 
 from __future__ import annotations
 
-import asyncio
-import concurrent.futures
-import threading
 from dataclasses import dataclass
 from typing import Any, Generic, Sequence, Type, TypeVar, cast
 
 import plotly.graph_objects as go
 
-from praeparo.dax import DaxQueryPlan
 from praeparo.datasets import MetricDatasetBuilder
 from praeparo.models import BaseVisualConfig
 from pydantic import BaseModel
@@ -123,7 +119,11 @@ class PythonVisualBase(
                 return raw
 
             if isinstance(raw, MetricDatasetBuilder):
-                artifact = _builder_to_dataset_artifact(raw, case_key=context.case_key or "python_visual")
+                artifact = raw.to_dataset_artifact(
+                    artefact_dir=context.options.artefact_dir,
+                    visual_config=config,
+                    case_key=context.case_key or "python_visual",
+                )
                 return cast(DatasetArtifact[DatasetT], artifact)
 
             raise TypeError(
@@ -180,56 +180,6 @@ class PythonVisualBase(
                 "Python visual render must return RenderOutcome, Figure, or None, "
                 f"got {type(raw)!r}"
             )
-
-        def _builder_to_dataset_artifact(
-            builder: MetricDatasetBuilder,
-            *,
-            case_key: str,
-        ) -> DatasetArtifact[list[dict[str, object]]]:
-            """Execute a MetricDatasetBuilder, avoiding asyncio.run in active loops."""
-
-            plan = builder.plan()
-
-            try:
-                asyncio.get_running_loop()
-            except RuntimeError:
-                rows = builder.execute()
-            else:
-                rows = _execute_builder_async(builder, case_key=case_key)
-
-            define_block = "\n".join(plan.define_blocks) if plan.define_blocks else None
-            dax_plan = DaxQueryPlan(
-                statement=plan.statement,
-                rows=tuple(),
-                values=tuple(),
-                define=define_block,
-            )
-            filename = f"{plan.slug}.data.json"
-            return DatasetArtifact(value=rows, filename=filename, plans=[dax_plan])
-
-        def _execute_builder_async(
-            builder: MetricDatasetBuilder,
-            *,
-            case_key: str,
-        ) -> list[dict[str, object]]:
-            """Run builder.aexecute() on a dedicated thread and block for rows."""
-
-            future: concurrent.futures.Future[list[dict[str, object]]] = concurrent.futures.Future()
-
-            def _runner() -> None:
-                try:
-                    result = asyncio.run(builder.aexecute())
-                    future.set_result(result.rows)
-                except Exception as exc:  # noqa: BLE001
-                    future.set_exception(exc)
-
-            thread = threading.Thread(
-                target=_runner,
-                name=f"praeparo_python_visual_{case_key}",
-                daemon=True,
-            )
-            thread.start()
-            return future.result()
 
         return VisualPipelineDefinition(
             schema_builder=base_definition.schema_builder,
