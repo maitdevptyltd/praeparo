@@ -105,6 +105,11 @@ slides:
   - `visual.ref` – path to a visual YAML (matrix, frame, Power BI, etc.).
     By default this is relative to the pack file, but `@/…` anchors the path
     to the project `registry/` directory.
+  - `visual.<field>` – when `visual.ref` is set, any additional keys in the same
+    `visual:` mapping are treated as **top-level config overrides** for the referenced
+    visual (for example, `title`). Overrides are shallow (top-level only) and are
+    validated against the referenced visual’s Pydantic model, so unknown fields are
+    rejected.
   - `visual.filters` – slide-level OData filters (merged with pack-level
     `filters`).
   - `visual.calculate` – slide-level DAX filters (merged with pack-level

@@ -10,7 +10,7 @@ from typing import Any, Dict, Mapping, Tuple, cast
 
 import plotly.graph_objects as go
 import pytest
-from pydantic import ValidationError, model_validator
+from pydantic import ConfigDict, Field, ValidationError, model_validator
 from pptx import Presentation
 from pptx.enum.shapes import MSO_SHAPE_TYPE, PP_PLACEHOLDER  # type: ignore[attr-defined]
 from pptx.util import Inches
@@ -213,6 +213,187 @@ def test_run_pack_rejects_registry_anchored_visual_refs_that_escape(tmp_path: Pa
     exc = excinfo.value
     assert isinstance(exc.__cause__, ValueError)
     assert "@/../x.yaml" in str(exc.__cause__)
+
+
+def test_run_pack_applies_inline_overrides_to_referenced_slide_visual(tmp_path: Path) -> None:
+    (tmp_path / "registry" / "metrics").mkdir(parents=True)
+
+    pack_path = tmp_path / "pack.yaml"
+    pack_path.write_text("{}", encoding="utf-8")
+
+    referenced_visual = tmp_path / "one.yaml"
+    referenced_visual.write_text("type: matrix\n", encoding="utf-8")
+
+    pack = PackConfig(
+        schema="test-pack",
+        slides=[
+            PackSlide(
+                id="slide-1",
+                title="Inline override",
+                visual=PackVisualRef.model_validate({"ref": "one.yaml", "title": "Override"}),
+            ),
+        ],
+    )
+
+    pipeline = _StubPipeline()
+
+    def stub_visual_loader(path: Path) -> BaseVisualConfig:
+        assert path == referenced_visual.resolve()
+        return BaseVisualConfig(type="matrix", title="Base")
+
+    run_pack(
+        pack_path,
+        pack,
+        project_root=tmp_path,
+        output_root=tmp_path / "artefacts",
+        base_options=PipelineOptions(),
+        visual_loader=stub_visual_loader,
+        pipeline=cast(Any, pipeline),
+        env=create_pack_jinja_env(),
+    )
+
+    assert pipeline.calls
+    assert pipeline.calls[0][0].title == "Override"
+
+
+def test_run_pack_applies_inline_overrides_to_referenced_placeholder_visual(tmp_path: Path) -> None:
+    (tmp_path / "registry" / "metrics").mkdir(parents=True)
+
+    pack_path = tmp_path / "pack.yaml"
+    pack_path.write_text("{}", encoding="utf-8")
+
+    referenced_visual = tmp_path / "one.yaml"
+    referenced_visual.write_text("type: matrix\n", encoding="utf-8")
+
+    pack = PackConfig(
+        schema="test-pack",
+        slides=[
+            PackSlide(
+                id="slide-1",
+                title="Inline override placeholder",
+                placeholders={
+                    "chart": PackPlaceholder(
+                        visual=PackVisualRef.model_validate({"ref": "one.yaml", "title": "Override"})
+                    ),
+                },
+            ),
+        ],
+    )
+
+    pipeline = _StubPipeline()
+
+    def stub_visual_loader(path: Path) -> BaseVisualConfig:
+        assert path == referenced_visual.resolve()
+        return BaseVisualConfig(type="matrix", title="Base")
+
+    run_pack(
+        pack_path,
+        pack,
+        project_root=tmp_path,
+        output_root=tmp_path / "artefacts",
+        base_options=PipelineOptions(),
+        visual_loader=stub_visual_loader,
+        pipeline=cast(Any, pipeline),
+        env=create_pack_jinja_env(),
+    )
+
+    assert pipeline.calls
+    assert pipeline.calls[0][0].title == "Override"
+
+
+def test_run_pack_rejects_unknown_inline_overrides_for_referenced_visual_with_context(tmp_path: Path) -> None:
+    (tmp_path / "registry" / "metrics").mkdir(parents=True)
+
+    pack_path = tmp_path / "pack.yaml"
+    pack_path.write_text("{}", encoding="utf-8")
+
+    referenced_visual = tmp_path / "one.yaml"
+    referenced_visual.write_text("type: matrix\n", encoding="utf-8")
+
+    pack = PackConfig(
+        schema="test-pack",
+        slides=[
+            PackSlide(
+                id="slide-1",
+                title="Inline override failure",
+                visual=PackVisualRef.model_validate({"ref": "one.yaml", "not_a_field": 1}),
+            ),
+        ],
+    )
+
+    pipeline = _StubPipeline()
+
+    def stub_visual_loader(path: Path) -> BaseVisualConfig:
+        assert path == referenced_visual.resolve()
+        return BaseVisualConfig(type="matrix", title="Base")
+
+    with pytest.raises(PackExecutionError) as excinfo:
+        run_pack(
+            pack_path,
+            pack,
+            project_root=tmp_path,
+            output_root=tmp_path / "artefacts",
+            base_options=PipelineOptions(),
+            visual_loader=stub_visual_loader,
+            pipeline=cast(Any, pipeline),
+            env=create_pack_jinja_env(),
+        )
+
+    message = str(excinfo.value)
+    assert str(pack_path) in message
+    assert "id=slide-1" in message
+    assert "one.yaml" in message
+    assert "not_a_field" in message
+
+
+def test_run_pack_preserves_excluded_discriminator_when_applying_overrides(tmp_path: Path) -> None:
+    """Regression: override re-validation must not drop an excluded `type` discriminator."""
+
+    class _ExcludedTypeVisualConfig(BaseVisualConfig):
+        model_config = ConfigDict(extra="forbid", populate_by_name=True)
+        type: str | None = Field(default=None, exclude=True)
+        title: str | None = None
+
+    (tmp_path / "registry" / "metrics").mkdir(parents=True)
+
+    pack_path = tmp_path / "pack.yaml"
+    pack_path.write_text("{}", encoding="utf-8")
+
+    referenced_visual = tmp_path / "one.yaml"
+    referenced_visual.write_text("type: matrix\n", encoding="utf-8")
+
+    pack = PackConfig(
+        schema="test-pack",
+        slides=[
+            PackSlide(
+                id="slide-1",
+                title="Excluded type override",
+                visual=PackVisualRef.model_validate({"ref": "one.yaml", "title": "Override"}),
+            ),
+        ],
+    )
+
+    pipeline = _StubPipeline()
+
+    def stub_visual_loader(path: Path) -> BaseVisualConfig:
+        assert path == referenced_visual.resolve()
+        return _ExcludedTypeVisualConfig(type="matrix", title="Base")
+
+    run_pack(
+        pack_path,
+        pack,
+        project_root=tmp_path,
+        output_root=tmp_path / "artefacts",
+        base_options=PipelineOptions(),
+        visual_loader=stub_visual_loader,
+        pipeline=cast(Any, pipeline),
+        env=create_pack_jinja_env(),
+    )
+
+    assert pipeline.calls
+    executed = pipeline.calls[0][0]
+    assert executed.type == "matrix"
+    assert executed.title == "Override"
 
 
 class _StubPipeline:

@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Callable, Iterable, Mapping, Sequence, cast
 
 from jinja2 import Environment
+from pydantic import ValidationError
 
 from praeparo.models import BaseVisualConfig, FiltersType, PackConfig, PackPlaceholder, PackSlide, PackVisualRef
 from praeparo.pack.filters import merge_calculate_filters, merge_odata_filters
@@ -50,6 +51,21 @@ from praeparo.models.scoped_calculate import ScopedCalculateMap
 VisualLoader = Callable[[Path], BaseVisualConfig]
 
 logger = logging.getLogger(__name__)
+
+_PACK_VISUAL_REF_RESERVED_KEYS = frozenset({"ref", "type", "filters", "calculate"})
+
+
+def _extract_pack_visual_ref_overrides(visual_ref: PackVisualRef) -> dict[str, object]:
+    """Collect inline visual config overrides from a PackVisualRef.
+
+    Packs allow referencing file-backed visuals via `visual.ref`. Any additional keys
+    in that same `visual:` mapping should be treated as top-level config overrides
+    for the referenced visual (except execution-scoped fields like `filters` and
+    `calculate`).
+    """
+
+    payload = visual_ref.model_dump(mode="python", exclude_none=True)
+    return {key: value for key, value in payload.items() if key not in _PACK_VISUAL_REF_RESERVED_KEYS}
 
 
 @dataclass
@@ -680,6 +696,36 @@ def run_pack(
                         visual = python_visual.to_config()
                     else:
                         visual = visual_loader(visual_path)
+
+                    # Apply inline config overrides (e.g. title) after loading the file-backed visual
+                    # so pack authors can tweak presentation without duplicating the underlying YAML.
+                    inline_overrides = _extract_pack_visual_ref_overrides(visual_ref)
+                    if inline_overrides:
+                        base_payload = visual.model_dump(mode="python")
+                        # Some config models (notably Python visual configs that reuse shared base
+                        # models) intentionally exclude the discriminator from serialisation so the
+                        # YAML `type:` meta field does not conflict with their schema. Preserve the
+                        # resolved discriminator explicitly so we don't accidentally drop it during
+                        # override re-validation.
+                        merged = {**base_payload, "type": visual.type, **inline_overrides}
+                        try:
+                            visual = visual.__class__.model_validate(merged)
+                        except ValidationError as exc:
+                            keys = ", ".join(sorted(inline_overrides))
+                            wrapped = ValueError(f"Inline visual override validation failed for key(s): {keys}")
+                            wrapped.__cause__ = exc
+                            raise PackExecutionError(
+                                pack_path=pack_path,
+                                slide_index=index,
+                                slide_slug=slide_slug_for_error,
+                                slide_id=slide.id,
+                                slide_title=slide.title,
+                                visual_ref=visual_ref_label,
+                                visual_path=visual_path,
+                                phase="visual_override",
+                                dax_artifact_paths=(),
+                                cause=wrapped,
+                            )
                 else:
                     visual_path = pack_path
                     payload = visual_ref.model_dump()
