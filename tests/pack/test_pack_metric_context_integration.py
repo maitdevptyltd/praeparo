@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import cast
 
 from praeparo.models import BaseVisualConfig, PackConfig
 from praeparo.pack.metric_context import ResolvedMetricContext
 from praeparo.pack.runner import run_pack
-from praeparo.pipeline import PipelineOptions, VisualExecutionResult
+from praeparo.pipeline import PipelineOptions, VisualExecutionResult, VisualPipeline
 from praeparo.pipeline.outputs import PipelineOutputArtifact
 
 
@@ -87,7 +88,7 @@ def test_root_and_slide_metrics_injected_into_visual_context(monkeypatch, tmp_pa
         output_root=tmp_path / "artefacts",
         base_options=PipelineOptions(metadata={"metrics_root": metrics_root, "data_mode": "mock"}),
         visual_loader=dummy_loader,
-        pipeline=pipeline,
+        pipeline=cast(VisualPipeline, pipeline),
     )
 
     assert results
@@ -165,7 +166,7 @@ def test_governance_highlights_renders_after_metric_injection(monkeypatch, tmp_p
         output_root=tmp_path / "artefacts",
         base_options=PipelineOptions(metadata={"metrics_root": metrics_root, "data_mode": "mock"}),
         visual_loader=dummy_loader,
-        pipeline=pipeline,
+        pipeline=cast(VisualPipeline, pipeline),
     )
 
     assert results
@@ -175,3 +176,157 @@ def test_governance_highlights_renders_after_metric_injection(monkeypatch, tmp_p
         context_payload["governance_highlights"]
         == "Instruction volume is 7.0 and docs 3.0."
     )
+
+
+def test_registry_metrics_calculate_defaults_apply_to_slide_metric_context(tmp_path: Path) -> None:
+    metrics_root = tmp_path / "registry" / "metrics"
+    metrics_root.mkdir(parents=True)
+    (metrics_root / "documents_sent.yaml").write_text(
+        """
+key: documents_sent
+display_name: Documents Sent
+section: documents
+define: "COUNTROWS('fact_documents')"
+""",
+        encoding="utf-8",
+    )
+
+    context_root = tmp_path / "registry" / "context"
+    context_root.mkdir(parents=True)
+    (context_root / "month.yaml").write_text(
+        "\n".join(
+            [
+                "context:",
+                "  month: \"2025-11-01\"",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (context_root / "metrics.yaml").write_text(
+        "\n".join(
+            [
+                "context:",
+                "  metrics:",
+                "    calculate:",
+                "      month: |",
+                "        'dim_calendar'[month] = DATEVALUE(\"{{ month }}\")",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    pack = PackConfig.model_validate(
+        {
+            "schema": "test-pack",
+            "context": {"customer": "Example Bank"},
+            "slides": [
+                {
+                    "title": "Highlights",
+                    "context": {"metrics": {"documents_sent": "total_documents"}},
+                    "visual": {"ref": "dummy.yaml"},
+                }
+            ],
+        }
+    )
+
+    pipeline = _StubPipeline()
+
+    def dummy_loader(_: Path) -> BaseVisualConfig:
+        return BaseVisualConfig(type="dummy_metric_ctx")
+
+    output_root = tmp_path / "artefacts"
+    run_pack(
+        tmp_path / "pack.yaml",
+        pack,
+        project_root=tmp_path,
+        output_root=output_root,
+        base_options=PipelineOptions(metadata={"metrics_root": metrics_root, "data_mode": "mock"}),
+        visual_loader=dummy_loader,
+        pipeline=cast(VisualPipeline, pipeline),
+    )
+
+    dax_path = output_root / "metric_context.slide_1.dax"
+    assert dax_path.exists()
+    dax_text = dax_path.read_text(encoding="utf-8")
+    assert 'DATEVALUE("2025-11-01")' in dax_text
+
+
+def test_pack_metrics_calculate_overrides_registry_default(tmp_path: Path) -> None:
+    metrics_root = tmp_path / "registry" / "metrics"
+    metrics_root.mkdir(parents=True)
+    (metrics_root / "documents_sent.yaml").write_text(
+        """
+key: documents_sent
+display_name: Documents Sent
+section: documents
+define: "COUNTROWS('fact_documents')"
+""",
+        encoding="utf-8",
+    )
+
+    context_root = tmp_path / "registry" / "context"
+    context_root.mkdir(parents=True)
+    (context_root / "month.yaml").write_text(
+        "\n".join(
+            [
+                "context:",
+                "  month: \"2025-11-01\"",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (context_root / "metrics.yaml").write_text(
+        "\n".join(
+            [
+                "context:",
+                "  metrics:",
+                "    calculate:",
+                "      month: |",
+                "        'dim_calendar'[month] = DATEVALUE(\"{{ month }}\")",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    pack = PackConfig.model_validate(
+        {
+            "schema": "test-pack",
+            "context": {
+                "customer": "Example Bank",
+                "metrics": {"calculate": {"month": "TRUE()"}},
+            },
+            "slides": [
+                {
+                    "title": "Highlights",
+                    "context": {"metrics": {"documents_sent": "total_documents"}},
+                    "visual": {"ref": "dummy.yaml"},
+                }
+            ],
+        }
+    )
+
+    pipeline = _StubPipeline()
+
+    def dummy_loader(_: Path) -> BaseVisualConfig:
+        return BaseVisualConfig(type="dummy_metric_ctx")
+
+    output_root = tmp_path / "artefacts"
+    run_pack(
+        tmp_path / "pack.yaml",
+        pack,
+        project_root=tmp_path,
+        output_root=output_root,
+        base_options=PipelineOptions(metadata={"metrics_root": metrics_root, "data_mode": "mock"}),
+        visual_loader=dummy_loader,
+        pipeline=cast(VisualPipeline, pipeline),
+    )
+
+    dax_path = output_root / "metric_context.slide_1.dax"
+    assert dax_path.exists()
+    dax_text = dax_path.read_text(encoding="utf-8")
+    assert "TRUE()" in dax_text
+    assert "DATEVALUE" not in dax_text

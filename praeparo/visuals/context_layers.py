@@ -107,6 +107,12 @@ def _load_rendered_context_layer(path: Path, *, env: Environment) -> dict[str, o
     else:
         payload = dict(raw)
         template_context = _build_template_context(raw)
+        context_section = raw.get("context")
+        if isinstance(context_section, Mapping):
+            # Preserve the nested mapping for backwards compatibility while also
+            # making context keys available at the top level for downstream Jinja.
+            for key, value in context_section.items():
+                payload.setdefault(str(key), value)
 
     if payload:
         rendered = dict(payload)

@@ -55,6 +55,35 @@ logger = logging.getLogger(__name__)
 _PACK_VISUAL_REF_RESERVED_KEYS = frozenset({"ref", "type", "filters", "calculate"})
 
 
+def _resolve_registry_metrics_calculate_defaults(pack_payload: Mapping[str, object]) -> ScopedCalculateMap | None:
+    """Return default context.metrics.calculate entries loaded from registry context layers.
+
+    Downstream repos often store shared metric-context scoping predicates under
+    `registry/context/**` so packs can omit boilerplate like month pinning.
+
+    Registry context layers are merged into the pack payload (for templating),
+    but metric-context execution relies on typed `context.metrics.calculate`
+    models. This helper bridges the gap by extracting any discovered
+    `metrics.calculate` mapping and normalising it into a ScopedCalculateMap.
+    """
+
+    raw_metrics = pack_payload.get("metrics")
+    if not isinstance(raw_metrics, Mapping):
+        return None
+
+    raw_calculate = raw_metrics.get("calculate")
+    if raw_calculate is None:
+        return None
+
+    try:
+        return ScopedCalculateMap.from_raw(raw_calculate)
+    except Exception as exc:  # noqa: BLE001
+        raise ValueError(
+            "Registry context defines an invalid metrics.calculate payload; "
+            "expected a string/list/mapping compatible with context.metrics.calculate."
+        ) from exc
+
+
 def _extract_pack_visual_ref_overrides(visual_ref: PackVisualRef) -> dict[str, object]:
     """Collect inline visual config overrides from a PackVisualRef.
 
@@ -468,9 +497,12 @@ def run_pack(
     rendered_global_calculate = render_value(pack.calculate, env=jinja_env, context=pack_payload)
     rendered_define = render_value(pack.define, env=jinja_env, context=pack_payload)
 
+    registry_metrics_calculate = _resolve_registry_metrics_calculate_defaults(pack_payload)
+
     root_metrics_context = pack.context.metrics
     root_bindings = root_metrics_context.bindings if root_metrics_context else []
     root_metrics_calculate = root_metrics_context.calculate if root_metrics_context else None
+    root_metrics_calculate = ScopedCalculateMap.merge(registry_metrics_calculate, root_metrics_calculate)
     slide_bindings_present = any(
         slide.context is not None
         and slide.context.metrics is not None

@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from praeparo.pack.templating import create_pack_jinja_env
+from praeparo.pack.templating import create_pack_jinja_env, render_value
 from praeparo.visuals.context_layers import discover_registry_context_paths, resolve_layered_context_payload
 from praeparo.visuals.context import resolve_dax_context
 
@@ -91,3 +91,61 @@ def test_resolve_layered_context_payload_rejects_unrendered_templates(tmp_path: 
             define=["{{ broken }}"],
             env=create_pack_jinja_env(),
         )
+
+
+def test_resolve_layered_context_payload_hoists_mapping_context_keys_for_non_pack_layers(tmp_path: Path) -> None:
+    metrics_root = tmp_path / "registry" / "metrics"
+    metrics_root.mkdir(parents=True)
+
+    context_root = tmp_path / "registry" / "context"
+    context_root.mkdir(parents=True)
+    (context_root / "month.yaml").write_text(
+        "\n".join(
+            [
+                "context:",
+                "  month: \"2025-11-01\"",
+                "  display_date: \"November 2025\"",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    payload = resolve_layered_context_payload(metrics_root=metrics_root, env=create_pack_jinja_env())
+
+    assert payload["month"] == "2025-11-01"
+    assert payload["display_date"] == "November 2025"
+
+    context_section = payload.get("context")
+    assert isinstance(context_section, dict)
+    assert context_section["month"] == "2025-11-01"
+
+
+def test_render_value_can_use_hoisted_registry_context_keys(tmp_path: Path) -> None:
+    metrics_root = tmp_path / "registry" / "metrics"
+    metrics_root.mkdir(parents=True)
+
+    context_root = tmp_path / "registry" / "context"
+    context_root.mkdir(parents=True)
+    (context_root / "month.yaml").write_text(
+        "\n".join(
+            [
+                "context:",
+                "  month: \"2025-11-01\"",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    env = create_pack_jinja_env()
+    payload = resolve_layered_context_payload(metrics_root=metrics_root, env=env)
+
+    rendered = render_value(
+        "{{ odata_months_back_range('x', month, 3) }}",
+        env=env,
+        context=payload,
+    )
+
+    assert isinstance(rendered, str)
+    assert "x ge " in rendered
