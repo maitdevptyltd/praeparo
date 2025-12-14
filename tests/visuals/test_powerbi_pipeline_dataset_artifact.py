@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Mapping
 
 from praeparo.models import PowerBISource, PowerBIVisualConfig
 from praeparo.pipeline import ExecutionContext, PipelineOptions, VisualPipeline
@@ -32,7 +32,7 @@ def test_powerbi_pipeline_emits_stable_dataset_manifest(tmp_path: Path, monkeypa
             *,
             group_id: str,
             report_id: str,
-            payload: dict[str, Any],
+            payload: Mapping[str, object],
             dest_path: str | Path,
             mode: str = "report",
             poll_interval: float = 2.0,
@@ -54,6 +54,7 @@ def test_powerbi_pipeline_emits_stable_dataset_manifest(tmp_path: Path, monkeypa
         title="Matters On Hold",
         mode="report",
         source=PowerBISource(group_id="group", report_id="report", page="Page 1"),
+        filters=["MatterType eq 'Residential'"],
     )
     pipeline = VisualPipeline()
     context = ExecutionContext(
@@ -75,3 +76,17 @@ def test_powerbi_pipeline_emits_stable_dataset_manifest(tmp_path: Path, monkeypa
     payload = json.loads(result.dataset_path.read_text(encoding="utf-8"))
     assert isinstance(payload, dict)
 
+    assert payload.get("format") == "png"
+    export_payload = payload.get("export_payload")
+    assert isinstance(export_payload, dict)
+    assert export_payload.get("format") == "PNG"
+
+    report_configuration = export_payload.get("powerBIReportConfiguration")
+    assert isinstance(report_configuration, dict)
+    assert report_configuration.get("pages") == [{"pageName": "Page 1"}]
+    assert report_configuration.get("reportLevelFilters") == [{"filter": "MatterType eq 'Residential'"}]
+
+    # Ensure we never persist Power BI credentials in dataset manifests.
+    dataset_text = result.dataset_path.read_text(encoding="utf-8")
+    assert "client_secret" not in dataset_text
+    assert "refresh_token" not in dataset_text

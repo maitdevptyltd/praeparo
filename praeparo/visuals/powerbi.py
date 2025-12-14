@@ -60,26 +60,28 @@ def _build_export_payload(
     filters: Sequence[str],
     *,
     format: str,
-) -> dict:
+) -> dict[str, object]:
     """Shape the ExportTo payload for the chosen mode/format."""
     fmt = format.upper()
     if config.mode == "paginated":
-        payload: dict = {"format": fmt, "paginatedReportConfiguration": {}}
+        paginated_configuration: dict[str, object] = {}
+        payload: dict[str, object] = {"format": fmt, "paginatedReportConfiguration": paginated_configuration}
         if config.parameters:
-            payload["paginatedReportConfiguration"]["parameterValues"] = [
+            paginated_configuration["parameterValues"] = [
                 {"name": p.name, "value": p.value} for p in config.parameters
             ]
         return payload
 
-    payload = {"format": fmt, "powerBIReportConfiguration": {}}
+    report_configuration: dict[str, object] = {}
+    payload: dict[str, object] = {"format": fmt, "powerBIReportConfiguration": report_configuration}
     if config.source.page:
-        payload["powerBIReportConfiguration"]["pages"] = [{"pageName": config.source.page}]
+        report_configuration["pages"] = [{"pageName": config.source.page}]
     if config.mode == "visual" and config.source.visual_id:
-        payload["powerBIReportConfiguration"]["visuals"] = [
+        report_configuration["visuals"] = [
             {"visualName": config.source.visual_id, "pageName": config.source.page}
         ]
     if filters:
-        payload["powerBIReportConfiguration"]["reportLevelFilters"] = [
+        report_configuration["reportLevelFilters"] = [
             {"filter": " and ".join(filters)}
         ]
     return payload
@@ -126,6 +128,7 @@ class PowerBIExportDataset:
     format: str
     export_path: str
     image_path: str | None
+    export_payload: dict[str, object]
     artifacts: dict[str, str]
     filters: list[str]
 
@@ -171,16 +174,16 @@ def _powerbi_dataset_builder(
     )
 
     settings = PowerBISettings.from_env()
+    export_payload = _build_export_payload(config, merged_filters, format=config.render.format)
 
     async def _run_exports() -> tuple[str, dict[str, str]]:
         artifacts: dict[str, str] = {}
         async with PowerBIClient(settings) as client:
             # Kick off the primary export (PNG or PPTX depending on render.format).
-            payload = _build_export_payload(config, merged_filters, format=config.render.format)
             main_export = await client.export_to_file(
                 group_id=config.source.group_id,
                 report_id=config.source.report_id,
-                payload=payload,
+                payload=export_payload,
                 dest_path=main_path,
                 mode=config.mode,
             )
@@ -230,6 +233,7 @@ def _powerbi_dataset_builder(
         format=config.render.format,
         export_path=export_path,
         image_path=export_path if config.render.format == "png" else None,
+        export_payload=export_payload,
         artifacts=artifacts,
         filters=merged_filters,
     )

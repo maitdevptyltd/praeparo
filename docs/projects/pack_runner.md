@@ -308,6 +308,9 @@ Key flags:
     the 1-based slide position padded to two digits.
   - Visual-specific artefacts (for example Power BI exports) land under
     `<artefact-dir>/[NN]_<slide-slug>/`.
+    - Power BI dataset manifests (`data.json`) include `export_payload`, the
+      ExportTo request body used for the primary export, so failed exports can be
+      reproduced without needing access to live logs.
   - Omit this flag only when using the positional `dest` shorthand; the derived
     `artefact_dir` will be `dest/_artifacts` (or `<dest-stem>/_artifacts` when
     `dest` ends with `.pptx`).
