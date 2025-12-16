@@ -138,6 +138,7 @@ class PowerBIClient:
             url,
             headers={"Authorization": f"Bearer {token}"},
             json={"queries": [{"query": query}]},
+            timeout=600
         )
 
         if response.status_code != 200:
