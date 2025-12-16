@@ -52,6 +52,7 @@ def resolve_layered_context_payload(
     *,
     metrics_root: Path,
     context_paths: Sequence[Path] = (),
+    context_layers: Sequence[Mapping[str, object]] = (),
     calculate: Sequence[str] | str | None = None,
     define: Sequence[str] | str | None = None,
     env: Environment | None = None,
@@ -65,9 +66,9 @@ def resolve_layered_context_payload(
     3) CLI `--calculate` / `--define` flags (highest priority).
 
     Each layer's `calculate`/`define`/`filters` blocks are rendered with Jinja
-    using templating variables sourced from that same layer's `context` section
-    when present (otherwise falling back to a best-effort mapping of top-level
-    keys).
+    after all file-backed layers are merged, so overrides defined in later
+    layers can influence earlier definitions (for example, customer-specific
+    business hours affecting a shared `GetCustomerBusinessHours` wrapper).
     """
 
     jinja_env = env or create_pack_jinja_env()
@@ -77,14 +78,22 @@ def resolve_layered_context_payload(
     # Start with registry-owned layers so downstream repos can ship stable
     # helper definitions without repeating them in every pack.
     for path in discover_registry_context_paths(metrics_root=metrics_root):
-        layer = _load_rendered_context_layer(path, env=jinja_env)
+        layer = _load_context_layer(path)
         merged = merge_context_layer_payload(base=merged, incoming=layer)
 
     # With registry defaults applied, layer explicit context overrides in the
     # caller-supplied order (last-writer-wins for named fragments).
     for path in context_paths:
-        layer = _load_rendered_context_layer(path, env=jinja_env)
+        layer = _load_context_layer(path)
         merged = merge_context_layer_payload(base=merged, incoming=layer)
+
+    # Finally merge any programmatic context payloads (for example, pack context
+    # mappings) so they can influence templating before we render DAX fragments.
+    for layer in context_layers:
+        merged = merge_context_layer_payload(base=merged, incoming=dict(layer))
+
+    # Render file-backed fragments once after all context overrides are merged.
+    merged = _render_context_fragments(merged, env=jinja_env)
 
     # Finally apply any CLI fragments so they always win over file-based layers.
     merged = merge_context_payload(base=merged, calculate=calculate, define=define)
@@ -92,34 +101,22 @@ def resolve_layered_context_payload(
     return merged
 
 
-def _load_rendered_context_layer(path: Path, *, env: Environment) -> dict[str, object]:
-    """Load and Jinja-render a single context-layer file."""
+def _load_context_layer(path: Path) -> dict[str, object]:
+    """Load a single context-layer file and normalise it into a mergeable mapping."""
 
     raw = load_context_file(path)
     payload: dict[str, object]
-    template_context: Mapping[str, Any] = {}
 
     if _is_pack_shaped_payload(raw):
         payload = _pack_payload_to_layer_base(raw)
-        context_section = raw.get("context")
-        if isinstance(context_section, Mapping):
-            template_context = context_section
     else:
         payload = dict(raw)
-        template_context = _build_template_context(raw)
         context_section = raw.get("context")
         if isinstance(context_section, Mapping):
             # Preserve the nested mapping for backwards compatibility while also
             # making context keys available at the top level for downstream Jinja.
             for key, value in context_section.items():
                 payload.setdefault(str(key), value)
-
-    if payload:
-        rendered = dict(payload)
-        for key in ("calculate", "define", "filters"):
-            if key in rendered:
-                rendered[key] = render_value(rendered[key], env=env, context=template_context)
-        payload = rendered
 
     return payload
 
@@ -139,22 +136,6 @@ def _pack_payload_to_layer_base(payload: Mapping[str, object]) -> dict[str, obje
             base[key] = payload[key]
 
     return base
-
-
-def _build_template_context(payload: Mapping[str, object]) -> Mapping[str, object]:
-    """Derive a Jinja context mapping for templating within a layer file."""
-
-    context_section = payload.get("context")
-    if isinstance(context_section, Mapping):
-        return context_section
-
-    skip_keys = {"calculate", "define", "filters", "slides", "schema"}
-    fallback: dict[str, object] = {}
-    for key, value in payload.items():
-        if key in skip_keys:
-            continue
-        fallback[str(key)] = value
-    return fallback
 
 
 def _is_pack_shaped_payload(payload: Mapping[str, object]) -> bool:
@@ -197,6 +178,22 @@ def _deep_merge_mapping(base: Mapping[str, object], incoming: Mapping[str, objec
         else:
             result[str(key)] = value
     return result
+
+
+def _render_context_fragments(payload: Mapping[str, object], *, env: Environment) -> dict[str, object]:
+    """Render calculate/define/filters values against the merged context payload."""
+
+    if not payload:
+        return {}
+
+    # Render DAX/OData fragments once with the fully merged context so late
+    # overrides (for example, pack-level business hours) flow through into
+    # shared wrapper definitions.
+    rendered: dict[str, object] = dict(payload)
+    for key in ("calculate", "define", "filters"):
+        if key in rendered:
+            rendered[key] = render_value(rendered[key], env=env, context=rendered)
+    return rendered
 
 
 def _raise_on_unrendered_templates(payload: Mapping[str, object]) -> None:

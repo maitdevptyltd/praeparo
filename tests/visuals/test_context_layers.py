@@ -81,6 +81,62 @@ def test_resolve_layered_context_payload_last_context_wins_for_named_define(tmp_
     )
 
 
+def test_resolve_layered_context_payload_renders_define_against_merged_context(tmp_path: Path) -> None:
+    metrics_root = tmp_path / "registry" / "metrics"
+    metrics_root.mkdir(parents=True)
+
+    context_root = tmp_path / "registry" / "context"
+    context_root.mkdir(parents=True)
+    (context_root / "business_time.yaml").write_text(
+        "\n".join(
+            [
+                "context:",
+                "  business_time:",
+                "    work_start: \"09:00\"",
+                "    work_end: \"17:00\"",
+                "define:",
+                "  get_business_hours: |",
+                "    FUNCTION GetCustomerBusinessHours =",
+                "      () =>",
+                "        GetBusinessHours(",
+                "          BLANK(),",
+                "          BLANK(),",
+                "          \"{{ business_time.work_start }}\",",
+                "          \"{{ business_time.work_end }}\"",
+                "        )",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    override = tmp_path / "override.yaml"
+    override.write_text(
+        "\n".join(
+            [
+                "context:",
+                "  business_time:",
+                "    work_start: \"08:00\"",
+                "    work_end: \"18:00\"",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    payload = resolve_layered_context_payload(
+        metrics_root=metrics_root,
+        context_paths=[override],
+        env=create_pack_jinja_env(),
+    )
+
+    _, define_blocks = resolve_dax_context(base=payload, calculate=None, define=None)
+    assert len(define_blocks) == 1
+    assert "\"08:00\"" in define_blocks[0]
+    assert "\"18:00\"" in define_blocks[0]
+    assert "\"09:00\"" not in define_blocks[0]
+
+
 def test_resolve_layered_context_payload_rejects_unrendered_templates(tmp_path: Path) -> None:
     metrics_root = tmp_path / "registry" / "metrics"
     metrics_root.mkdir(parents=True)

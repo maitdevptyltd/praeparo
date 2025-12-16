@@ -26,6 +26,7 @@ from praeparo.pack.templating import create_pack_jinja_env, render_value
 from praeparo.pipeline import PipelineOptions, VisualExecutionResult, VisualPipeline, build_default_query_planner_provider
 from praeparo.pipeline.outputs import OutputKind, PipelineOutputArtifact
 from praeparo.powerbi import PowerBIQueryError
+from praeparo.visuals.context import resolve_dax_context
 from praeparo.visuals.dax.planner_core import slugify
 from praeparo.visuals import VisualContextModel, register_visual_type
 
@@ -59,6 +60,69 @@ slides:
     assert rendered_filters["lender"] == "dim_lender/LenderId eq 201"
     assert rendered_filters["dates"] == "dim_calendar/month ge 2025-08-01 and dim_calendar/month le 2025-10-01"
     assert rendered_define == "DEFINE VAR Lender = 201"
+
+
+def test_pack_base_context_renders_registry_defines_against_pack_context(tmp_path: Path) -> None:
+    (tmp_path / "registry" / "metrics").mkdir(parents=True)
+
+    context_root = tmp_path / "registry" / "context"
+    context_root.mkdir(parents=True)
+    (context_root / "business_time.yaml").write_text(
+        "\n".join(
+            [
+                "context:",
+                "  business_time:",
+                "    work_start: \"09:00\"",
+                "    work_end: \"17:00\"",
+                "define:",
+                "  get_business_hours: |",
+                "    FUNCTION GetCustomerBusinessHours =",
+                "      (start_datetime : DateTime, end_datetime : DateTime) =>",
+                "      RETURN",
+                "        GetBusinessHours(",
+                "          start_datetime,",
+                "          end_datetime,",
+                "          \"{{ business_time.work_start }}\",",
+                "          \"{{ business_time.work_end }}\"",
+                "        )",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    pack_path = tmp_path / "registry" / "customers" / "foo" / "pack.yaml"
+    pack_path.parent.mkdir(parents=True, exist_ok=True)
+    pack_path.write_text(
+        "\n".join(
+            [
+                "schema: test-pack",
+                "context:",
+                "  business_time:",
+                "    work_start: \"08:00\"",
+                "    work_end: \"18:00\"",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    pack = load_pack_config(pack_path)
+    env = create_pack_jinja_env()
+
+    from praeparo.pack.runner import _resolve_pack_base_context_payload
+
+    payload = _resolve_pack_base_context_payload(
+        pack_path=pack_path,
+        metadata=None,
+        pack_context_layer=dump_context_payload(pack.context),
+        env=env,
+    )
+
+    _, define_blocks = resolve_dax_context(base=payload, calculate=None, define=None)
+    assert any("\"08:00\"" in block for block in define_blocks)
+    assert any("\"18:00\"" in block for block in define_blocks)
+    assert all("\"09:00\"" not in block for block in define_blocks)
 
 
 def test_merge_odata_filters_supports_dict_list_and_string() -> None:

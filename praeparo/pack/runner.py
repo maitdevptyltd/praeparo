@@ -152,6 +152,7 @@ def _resolve_pack_base_context_payload(
     *,
     pack_path: Path,
     metadata: Mapping[str, object] | None,
+    pack_context_layer: Mapping[str, object] | None = None,
     env: Environment,
 ) -> dict[str, object]:
     """Resolve registry context layers, then merge any caller-supplied metadata context.
@@ -172,13 +173,16 @@ def _resolve_pack_base_context_payload(
 
     # Start with registry-owned layers so downstream repos can ship default
     # helper definitions without repeating them in every pack.
-    registry_payload = resolve_layered_context_payload(metrics_root=metrics_root, env=env)
+    context_layers: list[Mapping[str, object]] = []
 
-    # With registry defaults loaded, merge any explicit context payload supplied
-    # via PipelineOptions metadata (for example, CLI or programmatic overrides).
     raw_context = metadata.get("context") if metadata else None
     if isinstance(raw_context, Mapping):
-        return merge_context_layer_payload(base=registry_payload, incoming=dict(raw_context))
+        context_layers.append(dict(raw_context))
+
+    if pack_context_layer:
+        context_layers.append(dict(pack_context_layer))
+
+    registry_payload = resolve_layered_context_payload(metrics_root=metrics_root, context_layers=context_layers, env=env)
 
     return registry_payload
 
@@ -487,6 +491,7 @@ def run_pack(
     base_context_payload = _resolve_pack_base_context_payload(
         pack_path=pack_path,
         metadata=base_metadata,
+        pack_context_layer=dump_context_payload(pack.context),
         env=jinja_env,
     )
 
@@ -1160,6 +1165,7 @@ def restitch_pack_pptx(
     base_context_payload = _resolve_pack_base_context_payload(
         pack_path=pack_path,
         metadata=base_metadata,
+        pack_context_layer=dump_context_payload(pack.context),
         env=jinja_env,
     )
     pack_payload = merge_context_layer_payload(base=base_context_payload, incoming=dump_context_payload(pack.context))
