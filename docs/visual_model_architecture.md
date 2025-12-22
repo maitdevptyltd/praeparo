@@ -79,6 +79,10 @@ while `calculate:` lets authors declare slicer-style predicates that Praeparo
 injects into the generated `CALCULATETABLE`. Both blocks support template
 placeholders powered by the merged parameter context.
 
+Downstream visuals can reuse the same split by typing their `calculate` payloads
+as `ScopedCalculateFilters`, which accepts shorthand strings/lists as DEFINE
+predicates and `{define, evaluate}` mappings for fine-grained scoping.
+
 Use parameters for contextual values (e.g. labels, filter expressions) and
 overrides for structural tweaks (e.g. swapping the child title or adding an extra
 filter block).

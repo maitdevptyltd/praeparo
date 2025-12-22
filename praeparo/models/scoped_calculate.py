@@ -21,7 +21,8 @@ from __future__ import annotations
 
 from typing import Any, Mapping, Sequence
 
-from pydantic import BaseModel, ConfigDict, Field, RootModel
+from pydantic import BaseModel, ConfigDict, Field, RootModel, model_validator
+from pydantic.json_schema import JsonSchemaValue
 
 
 _UNLABELLED_PREFIX = "__unlabelled_"
@@ -77,6 +78,57 @@ def _allocate_merge_key(existing: Mapping[str, object], base: str) -> str:
         counter += 1
         candidate = f"{base}_{counter}"
     return candidate
+
+
+def _parse_scoped_filters(value: object) -> tuple[list[str], list[str]]:
+    """Parse calculate payloads into DEFINE/EVALUATE predicate lists."""
+
+    if isinstance(value, ScopedCalculateFilters):
+        return list(value.define), list(value.evaluate)
+
+    define_filters: list[str] = []
+    evaluate_filters: list[str] = []
+
+    if value is None:
+        return define_filters, evaluate_filters
+
+    if isinstance(value, str):
+        define_filters.extend(_coerce_filters(value))
+        return define_filters, evaluate_filters
+
+    if isinstance(value, Mapping):
+        entries = [value]
+    elif isinstance(value, Sequence):
+        entries = list(value)
+    else:
+        raise TypeError("calculate must be a string, list, or mapping")
+
+    for entry in entries:
+        if entry is None:
+            continue
+        if isinstance(entry, str):
+            define_filters.extend(_coerce_filters(entry))
+            continue
+        if not isinstance(entry, Mapping):
+            raise TypeError("calculate list entries must be strings or mappings")
+
+        for _, raw in entry.items():
+            if raw is None:
+                continue
+            if isinstance(raw, Mapping):
+                allowed = {"define", "evaluate"}
+                unknown = set(raw.keys()) - allowed
+                if unknown:
+                    raise ValueError(
+                        f"calculate entries only support keys {sorted(allowed)}; found {sorted(unknown)}"
+                    )
+                define_filters.extend(_coerce_filters(raw.get("define")))
+                evaluate_filters.extend(_coerce_filters(raw.get("evaluate")))
+            else:
+                # Shorthand defaults to DEFINE scope.
+                define_filters.extend(_coerce_filters(raw))
+
+    return define_filters, evaluate_filters
 
 
 class ScopedCalculateEntry(BaseModel):
@@ -253,6 +305,12 @@ class ScopedCalculateFilters(BaseModel):
     define: list[str] = Field(default_factory=list, description="Predicates applied inside adhoc MEASURE definitions.")
     evaluate: list[str] = Field(default_factory=list, description="Predicates applied around measures in SUMMARIZECOLUMNS.")
 
+    @model_validator(mode="before")
+    @classmethod
+    def _coerce_scoped_filters(cls, value: object) -> dict[str, list[str]]:
+        define_filters, evaluate_filters = _parse_scoped_filters(value)
+        return {"define": define_filters, "evaluate": evaluate_filters}
+
     @classmethod
     def from_raw(cls, value: object) -> "ScopedCalculateFilters":
         """Normalise raw YAML calculate payload into scoped lists.
@@ -264,49 +322,47 @@ class ScopedCalculateFilters(BaseModel):
         - list containing strings and/or mappings → merged as above.
         """
 
-        define_filters: list[str] = []
-        evaluate_filters: list[str] = []
-
-        if value is None:
-            return cls()
-
-        if isinstance(value, str):
-            define_filters.extend(_coerce_filters(value))
-            return cls(define=define_filters, evaluate=evaluate_filters)
-
-        if isinstance(value, Mapping):
-            entries = [value]
-        elif isinstance(value, Sequence):
-            entries = list(value)
-        else:
-            raise TypeError("calculate must be a string, list, or mapping")
-
-        for entry in entries:
-            if entry is None:
-                continue
-            if isinstance(entry, str):
-                define_filters.extend(_coerce_filters(entry))
-                continue
-            if not isinstance(entry, Mapping):
-                raise TypeError("calculate list entries must be strings or mappings")
-
-            for _, raw in entry.items():
-                if raw is None:
-                    continue
-                if isinstance(raw, Mapping):
-                    allowed = {"define", "evaluate"}
-                    unknown = set(raw.keys()) - allowed
-                    if unknown:
-                        raise ValueError(
-                            f"calculate entries only support keys {sorted(allowed)}; found {sorted(unknown)}"
-                        )
-                    define_filters.extend(_coerce_filters(raw.get("define")))
-                    evaluate_filters.extend(_coerce_filters(raw.get("evaluate")))
-                else:
-                    # Shorthand defaults to DEFINE scope.
-                    define_filters.extend(_coerce_filters(raw))
-
+        define_filters, evaluate_filters = _parse_scoped_filters(value)
         return cls(define=define_filters, evaluate=evaluate_filters)
+
+    @classmethod
+    def __get_pydantic_json_schema__(cls, core_schema: Any, handler: Any) -> JsonSchemaValue:
+        define_schema: JsonSchemaValue = {"type": "array", "items": {"type": "string"}}
+        evaluate_schema: JsonSchemaValue = {"type": "array", "items": {"type": "string"}}
+        scoped_object: JsonSchemaValue = {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "define": define_schema,
+                "evaluate": evaluate_schema,
+            },
+        }
+        named_entry: JsonSchemaValue = {
+            "anyOf": [
+                {"type": "string"},
+                {"type": "array", "items": {"type": "string"}},
+                scoped_object,
+            ]
+        }
+        named_mapping: JsonSchemaValue = {
+            "type": "object",
+            "additionalProperties": named_entry,
+        }
+        list_mixed: JsonSchemaValue = {
+            "type": "array",
+            "items": {"anyOf": [{"type": "string"}, named_mapping]},
+        }
+        return {
+            "title": "ScopedCalculateFilters",
+            "description": cls.__doc__,
+            "anyOf": [
+                {"type": "string"},
+                {"type": "array", "items": {"type": "string"}},
+                scoped_object,
+                named_mapping,
+                list_mixed,
+            ],
+        }
 
     def combined_signature(self) -> tuple[str, ...]:
         """Return a stable signature over both scopes."""
