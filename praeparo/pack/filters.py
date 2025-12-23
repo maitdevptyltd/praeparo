@@ -78,14 +78,16 @@ def normalise_calculate_filters(value: FiltersType) -> list[str]:
     return [*named.values(), *unlabelled]
 
 
-def merge_calculate_filters(global_filters: FiltersType, local_filters: FiltersType) -> list[str]:
-    """Combine pack-level and slide-level calculate filters with named overrides."""
+def merge_calculate_filters(*filters: FiltersType) -> list[str]:
+    """Combine calculate filters with named overrides (later inputs win)."""
 
-    global_named, global_unlabelled = _split_calculate_filters(global_filters)
-    local_named, local_unlabelled = _split_calculate_filters(local_filters)
+    merged_named: dict[str, str] = {}
+    merged_unlabelled: list[str] = []
 
-    merged_named = {**global_named, **local_named}
-    merged_unlabelled = [*global_unlabelled, *local_unlabelled]
+    for value in filters:
+        named, unlabelled = _split_calculate_filters(value)
+        merged_named.update(named)
+        merged_unlabelled.extend(unlabelled)
 
     return [*merged_named.values(), *merged_unlabelled]
 

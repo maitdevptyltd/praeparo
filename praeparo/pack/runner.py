@@ -690,6 +690,8 @@ def run_pack(
         def _render_filters(value: object | None) -> FiltersType:
             return render_value(value, env=jinja_env, context=slide_payload)
 
+        rendered_slide_calculate = _render_filters(slide.calculate)
+
         if slide_filter and not _should_run_slide(slide, only=slide_filter):
             _reuse_existing_assets(
                 slide=slide,
@@ -708,6 +710,7 @@ def run_pack(
             slide_label: str,
             filters: FiltersType,
             calculate: FiltersType,
+            slide_calculate: FiltersType,
             placeholder_id: str | None = None,
             target_map: dict[str, Path],
         ) -> None:
@@ -796,7 +799,11 @@ def run_pack(
                 ) from exc
 
             merged_filters = merge_odata_filters(rendered_global_filters, _render_filters(filters))
-            calculate_filters = merge_calculate_filters(rendered_global_calculate, _render_filters(calculate))
+            calculate_filters = merge_calculate_filters(
+                rendered_global_calculate,
+                slide_calculate,
+                _render_filters(calculate),
+            )
 
             artifact_label = f"[{ordinal}]_{slide_label}"
             logger.info(
@@ -997,6 +1004,7 @@ def run_pack(
                 slide_label=slide_slug,
                 filters=slide.visual.filters,
                 calculate=slide.visual.calculate,
+                slide_calculate=rendered_slide_calculate,
                 target_map=slide_png_map,
             )
 
@@ -1024,6 +1032,7 @@ def run_pack(
                     slide_label=placeholder_slug,
                     filters=placeholder.visual.filters,
                     calculate=placeholder.visual.calculate,
+                    slide_calculate=rendered_slide_calculate,
                     placeholder_id=placeholder_id,
                     target_map=placeholder_map,
                 )

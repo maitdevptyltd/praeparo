@@ -935,6 +935,7 @@ def test_run_pack_routes_visuals_and_emits_pngs(tmp_path: Path) -> None:
             ),
             PackSlide(
                 title="Matrix Visual",
+                calculate=["'dim_channel'[Name] = \"Slide\""],
                 visual=PackVisualRef(ref="matrix.yaml", calculate=["'dim_channel'[Name] = \"Direct\""]),
             ),
             PackSlide(
@@ -983,8 +984,9 @@ def test_run_pack_routes_visuals_and_emits_pngs(tmp_path: Path) -> None:
     calculate_payload = context_meta.get("calculate")
     assert isinstance(calculate_payload, list)
     assert calculate_payload[0].startswith("'dim_lender'[LenderId] = 7")
-    assert calculate_payload[1] == "'dim_channel'[Name] = \"Direct\""
-    assert len(calculate_payload) == 2
+    assert calculate_payload[1] == "'dim_channel'[Name] = \"Slide\""
+    assert calculate_payload[2] == "'dim_channel'[Name] = \"Direct\""
+    assert len(calculate_payload) == 3
     define_payload = context_meta.get("define")
     assert isinstance(define_payload, list)
     assert define_payload == ["DEFINE VAR Lender = 7"]
@@ -1008,6 +1010,7 @@ def test_run_pack_populates_typed_dax_context(tmp_path: Path) -> None:
         slides=[
             PackSlide(
                 title="Context Slide",
+                calculate=["'dim_channel'[Name] = \"Slide\""],
                 visual=PackVisualRef(ref="contextual.yaml", calculate=["'dim_channel'[Name] = \"Direct\""]),
             ),
         ],
@@ -1036,6 +1039,7 @@ def test_run_pack_populates_typed_dax_context(tmp_path: Path) -> None:
     assert visual_ctx is not None
     assert visual_ctx.dax.calculate == (
         "'dim_channel'[Name] = \"Base\"",
+        "'dim_channel'[Name] = \"Slide\"",
         "'dim_channel'[Name] = \"Direct\"",
     )
     assert visual_ctx.dax.define == ("DEFINE MEASURE Test[Value] = 1",)

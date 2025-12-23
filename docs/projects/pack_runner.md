@@ -80,11 +80,11 @@ slides:
   - a single string,
   - a list of strings, or
   - a dict of named filters (`{name: expression}`).
-  These are merged using pack semantics: when both pack-level and slide-level
-  `calculate` supply a mapping, slide-level keys override pack-level keys (last
-  writer wins). Unlabelled filters (string/list entries) are appended in order.
-  The resulting list is forwarded to DAX-backed pipelines through the metadata
-  context.
+  These are the pack-level defaults and are merged with slide-level `calculate`
+  and per-visual `visual.calculate` values. When multiple layers supply named
+  filters, later layers override earlier ones (last writer wins). Unlabelled
+  filters (string/list entries) are appended in order. The resulting list is
+  forwarded to DAX-backed pipelines through the metadata context.
 - `filters` – OData filters for Power BI, expressed as:
   - a single string,
   - a list of strings, or
@@ -100,6 +100,8 @@ slides:
   - `notes` – free-form author notes.
   - `context` – optional per-slide context merged over the pack context,
     including optional `context.metrics` bindings.
+  - `calculate` – optional DAX filters applied to every visual on the slide
+    (merged after pack-level `calculate` and before `visual.calculate`).
   - `template` – optional PPTX template identifier (`TEMPLATE_TAG`) used during
     deck assembly.
   - `visual.ref` – path to a visual YAML (matrix, frame, Power BI, etc.).
@@ -112,8 +114,8 @@ slides:
     rejected.
   - `visual.filters` – slide-level OData filters (merged with pack-level
     `filters`).
-  - `visual.calculate` – slide-level DAX filters (merged with pack-level
-    `calculate`).
+  - `visual.calculate` – per-visual DAX filters (merged after pack-level and
+    slide-level `calculate`).
   - `image` – optional static image path (relative to the pack file) used for
     PPTX slides that do not declare a visual. Requires `template`.
   - `placeholders` – optional map of placeholder ids to bindings for multi-slot
@@ -430,15 +432,16 @@ At a high level, `praeparo pack run` does the following:
      when compatible) and merged into the slide context.
    - Pack-level `filters`, `calculate`, and `define` are rendered using the pack
      context.
-   - Slide-level `visual.filters` and `visual.calculate` are rendered using the
-     full slide context.
+   - Slide-level `calculate` and per-visual `visual.filters` / `visual.calculate`
+     are rendered using the full slide context.
 5. **Merge filters**:
    - For Power BI visuals:
      - Pack-level and slide-level filters are merged (dict + dict, list + list,
        string coerced to list) and passed via `metadata["powerbi_filters"]`.
    - For DAX-backed visuals:
-     - Pack-level and slide-level `calculate` filters are normalised and
-       combined in order (pack first, then slide overrides).
+     - Pack-level, slide-level, and visual-level `calculate` filters are
+       normalised and combined in order (pack first, then slide overrides,
+       then per-visual overrides).
      - Pack-level `define` (once rendered) is included alongside the merged
        `calculate` list in `metadata["context"]` so DAX planning has a single
        source of truth.

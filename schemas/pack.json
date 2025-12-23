@@ -266,6 +266,31 @@
           "default": null,
           "description": "Optional template context merged with the pack-level context."
         },
+        "calculate": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional DAX filters applied to all visuals on the slide, merged after pack-level calculate filters and before visual-level overrides.",
+          "title": "Calculate"
+        },
         "notes": {
           "anyOf": [
             {
@@ -494,28 +519,115 @@
       "type": "object"
     },
     "ScopedCalculateFilters": {
-      "additionalProperties": false,
-      "description": "Split calculate predicates between DEFINE and EVALUATE scopes.",
-      "properties": {
-        "define": {
-          "description": "Predicates applied inside adhoc MEASURE definitions.",
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
           "items": {
             "type": "string"
           },
-          "title": "Define",
           "type": "array"
         },
-        "evaluate": {
-          "description": "Predicates applied around measures in SUMMARIZECOLUMNS.",
-          "items": {
-            "type": "string"
+        {
+          "additionalProperties": false,
+          "properties": {
+            "define": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "evaluate": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
           },
-          "title": "Evaluate",
+          "type": "object"
+        },
+        {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "define": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "evaluate": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "type": "object"
+              }
+            ]
+          },
+          "type": "object"
+        },
+        {
+          "items": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "define": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "evaluate": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  ]
+                },
+                "type": "object"
+              }
+            ]
+          },
           "type": "array"
         }
-      },
-      "title": "ScopedCalculateFilters",
-      "type": "object"
+      ],
+      "description": "Split calculate predicates between DEFINE and EVALUATE scopes.",
+      "title": "ScopedCalculateFilters"
     },
     "ScopedCalculateMap": {
       "additionalProperties": {

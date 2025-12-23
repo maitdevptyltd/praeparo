@@ -486,6 +486,13 @@ class PackSlide(BaseModel):
         default=None,
         description="Optional template context merged with the pack-level context.",
     )
+    calculate: FiltersType = Field(
+        default=None,
+        description=(
+            "Optional DAX filters applied to all visuals on the slide, merged after pack-level "
+            "calculate filters and before visual-level overrides."
+        ),
+    )
     notes: str | None = Field(default=None, description="Free-form notes for authors/reviewers.")
     visual: PackVisualRef | None = Field(
         default=None,
