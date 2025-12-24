@@ -670,6 +670,7 @@ def test_pack_cli_run_invokes_runner(monkeypatch, tmp_path, capsys) -> None:
     assert exc.value.code == 0
     out = capsys.readouterr().out
     assert "[ok] Wrote 1 PNG" in out
+    assert "[ok] Pack run completed in" in out
     assert artefacts_dir.as_posix() in out
     assert captured["path"] == pack_path
     assert captured["output_root"] == artefacts_dir
@@ -704,6 +705,16 @@ def test_pack_cli_dest_directory_sets_defaults(monkeypatch, tmp_path, capsys) ->
     ):
         captured["output_root"] = output_root
         captured["base_options"] = base_options
+
+        result_file = None
+        if base_options and isinstance(base_options.metadata, Mapping):
+            raw = base_options.metadata.get("result_file")
+            if isinstance(raw, Path):
+                result_file = raw
+        if result_file is not None:
+            result_file.parent.mkdir(parents=True, exist_ok=True)
+            result_file.write_text("pptx", encoding="utf-8")
+
         slide = pack.slides[0]
         png_path = output_root / "slide-id-1.png"
         png_path.parent.mkdir(parents=True, exist_ok=True)
@@ -745,6 +756,8 @@ def test_pack_cli_dest_directory_sets_defaults(monkeypatch, tmp_path, capsys) ->
     expected_result = dest / f"{slugify(pack_path.stem)}_r1.pptx"
     assert base_options.metadata.get("result_file") == expected_result
     out = capsys.readouterr().out
+    assert f"[ok] Wrote PPTX to {expected_result}" in out
+    assert "[ok] Pack run completed in" in out
     assert artefact_dir.as_posix() in out
 
 
@@ -776,6 +789,16 @@ def test_pack_cli_dest_pptx_sets_result_and_artifacts(monkeypatch, tmp_path, cap
     ):
         captured["output_root"] = output_root
         captured["base_options"] = base_options
+
+        result_file = None
+        if base_options and isinstance(base_options.metadata, Mapping):
+            raw = base_options.metadata.get("result_file")
+            if isinstance(raw, Path):
+                result_file = raw
+        if result_file is not None:
+            result_file.parent.mkdir(parents=True, exist_ok=True)
+            result_file.write_text("pptx", encoding="utf-8")
+
         slide = pack.slides[0]
         png_path = output_root / "slide-id-1.png"
         png_path.parent.mkdir(parents=True, exist_ok=True)
@@ -817,6 +840,8 @@ def test_pack_cli_dest_pptx_sets_result_and_artifacts(monkeypatch, tmp_path, cap
     expected_result = dest.parent / f"{slugify(pack_path.stem)}_r1.pptx"
     assert base_options.metadata.get("result_file") == expected_result
     out = capsys.readouterr().out
+    assert f"[ok] Wrote PPTX to {expected_result}" in out
+    assert "[ok] Pack run completed in" in out
     assert artefact_dir.as_posix() in out
 
 
@@ -850,6 +875,16 @@ def test_pack_cli_dest_allows_flag_overrides(monkeypatch, tmp_path, capsys) -> N
     ):
         captured["output_root"] = output_root
         captured["base_options"] = base_options
+
+        result_file = None
+        if base_options and isinstance(base_options.metadata, Mapping):
+            raw = base_options.metadata.get("result_file")
+            if isinstance(raw, Path):
+                result_file = raw
+        if result_file is not None:
+            result_file.parent.mkdir(parents=True, exist_ok=True)
+            result_file.write_text("pptx", encoding="utf-8")
+
         slide = pack.slides[0]
         png_path = output_root / "slide-id-1.png"
         png_path.parent.mkdir(parents=True, exist_ok=True)
@@ -893,6 +928,8 @@ def test_pack_cli_dest_allows_flag_overrides(monkeypatch, tmp_path, capsys) -> N
     assert base_options.artefact_dir == explicit_artefact_dir
     assert base_options.metadata.get("result_file") == explicit_result
     out = capsys.readouterr().out
+    assert f"[ok] Wrote PPTX to {explicit_result}" in out
+    assert "[ok] Pack run completed in" in out
     assert explicit_artefact_dir.as_posix() in out
 
 
@@ -925,6 +962,16 @@ def test_pack_cli_revision_updates_default_result(monkeypatch, tmp_path, capsys)
     ):
         captured["output_root"] = output_root
         captured["base_options"] = base_options
+
+        result_file = None
+        if base_options and isinstance(base_options.metadata, Mapping):
+            raw = base_options.metadata.get("result_file")
+            if isinstance(raw, Path):
+                result_file = raw
+        if result_file is not None:
+            result_file.parent.mkdir(parents=True, exist_ok=True)
+            result_file.write_text("pptx", encoding="utf-8")
+
         slide = pack.slides[0]
         png_path = output_root / "slide-id-1.png"
         png_path.parent.mkdir(parents=True, exist_ok=True)
@@ -968,6 +1015,9 @@ def test_pack_cli_revision_updates_default_result(monkeypatch, tmp_path, capsys)
     assert base_options.metadata.get("result_file") == expected_result
     assert base_options.metadata.get("revision") == "2025-12"
     assert base_options.metadata.get("revision_minor") == 1
+    out = capsys.readouterr().out
+    assert f"[ok] Wrote PPTX to {expected_result}" in out
+    assert "[ok] Pack run completed in" in out
 
 
 def test_pack_cli_result_file_infers_artefact_dir(monkeypatch, tmp_path, capsys) -> None:
@@ -998,6 +1048,16 @@ def test_pack_cli_result_file_infers_artefact_dir(monkeypatch, tmp_path, capsys)
     ):
         captured["output_root"] = output_root
         captured["base_options"] = base_options
+
+        result_file = None
+        if base_options and isinstance(base_options.metadata, Mapping):
+            raw = base_options.metadata.get("result_file")
+            if isinstance(raw, Path):
+                result_file = raw
+        if result_file is not None:
+            result_file.parent.mkdir(parents=True, exist_ok=True)
+            result_file.write_text("pptx", encoding="utf-8")
+
         slide = pack.slides[0]
         png_path = output_root / "slide-id-1.png"
         png_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1038,6 +1098,9 @@ def test_pack_cli_result_file_infers_artefact_dir(monkeypatch, tmp_path, capsys)
     assert base_options is not None
     assert base_options.artefact_dir == inferred_artefact
     assert base_options.metadata.get("result_file") == result_path
+    out = capsys.readouterr().out
+    assert f"[ok] Wrote PPTX to {result_path}" in out
+    assert "[ok] Pack run completed in" in out
 
 
 def test_pack_run_defaults_to_live_data_mode(monkeypatch, tmp_path, capsys) -> None:

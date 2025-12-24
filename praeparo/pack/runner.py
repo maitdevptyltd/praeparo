@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import logging
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Iterable, Mapping, Sequence, cast
@@ -477,6 +478,8 @@ def run_pack(
     only_slides: Iterable[str] | None = None,
 ) -> list[PackSlideResult]:
     """Execute a pack and export PNGs for each visual slide."""
+
+    started = time.perf_counter()
 
     output_root.mkdir(parents=True, exist_ok=True)
     resolved_project_root = project_root.expanduser().resolve(strict=False)
@@ -1150,6 +1153,18 @@ def run_pack(
             except Exception:
                 logger.exception("PPTX assembly failed", extra={"result_file": str(result_file)})
                 raise
+
+    elapsed = time.perf_counter() - started
+    logger.info(
+        "Pack run completed in %.3fs",
+        elapsed,
+        extra={
+            "pack": str(pack_path),
+            "slide_count": len(pack.slides),
+            "slide_results": len(sorted_results),
+            "result_file": str(result_file) if result_file else None,
+        },
+    )
 
     return sorted_results
 

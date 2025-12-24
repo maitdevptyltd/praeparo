@@ -415,6 +415,9 @@ Log records include the pack path, slide slug/title, resolved visual type,
 filter key counts, and PNG/artefact destinations to help pinpoint long-running
 slides and timeouts.
 
+On successful completion, the CLI also prints a short summary including the PPTX
+path (when configured) and the total elapsed duration for the pack run.
+
 ## Execution model
 
 At a high level, `praeparo pack run` does the following:
@@ -456,7 +459,10 @@ At a high level, `praeparo pack run` does the following:
      - PNG outputs are targeted at `<artefact-dir>/[NN]_<slide-slug>.png`.
      - `options.artefact_dir` is set to `<artefact-dir>/[NN]_<slide-slug>/` so
        visual-specific artefacts (Power BI exports, datasets) remain grouped.
-   - The pack run prints a summary of how many PNGs were written.
+   - The pack run prints a summary of:
+     - The PPTX output path (when `result_file` is configured).
+     - How many PNGs were written.
+     - Total elapsed duration.
 
 Slides whose visuals do not emit PNGs are skipped with a warning; the pack run
 never fails solely because a visual lacks a PNG renderer.

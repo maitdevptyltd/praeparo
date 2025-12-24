@@ -6,6 +6,7 @@ import argparse
 import logging
 import os
 import sys
+import time
 from pathlib import Path
 from typing import Any, Dict, Iterable, Mapping, MutableMapping, Sequence
 
@@ -1174,6 +1175,24 @@ def _handle_python_visual_run(args: argparse.Namespace) -> int:
 
 
 def _handle_pack_run(args: argparse.Namespace) -> int:
+    """Run a pack end-to-end and summarise outputs for CLI users."""
+
+    def format_duration(seconds: float) -> str:
+        if seconds < 1:
+            return f"{seconds * 1000:.0f}ms"
+
+        if seconds < 60:
+            return f"{seconds:.2f}s"
+
+        minutes, remainder = divmod(seconds, 60.0)
+        if minutes < 60:
+            return f"{int(minutes)}m{remainder:05.2f}s"
+
+        hours, minutes_remainder = divmod(minutes, 60.0)
+        return f"{int(hours)}h{int(minutes_remainder):02d}m{remainder:05.2f}s"
+
+    started = time.perf_counter()
+
     pack_path: Path = args.pack
     dest: Path | None = getattr(args, "dest", None)
     default_artefact_dir, default_result_file = _derive_pack_dest_defaults(pack_path, dest)
@@ -1268,6 +1287,8 @@ def _handle_pack_run(args: argparse.Namespace) -> int:
             base_options=options,
         )
         print(f"[ok] Restitched PPTX to {args.result_file}")
+        elapsed = time.perf_counter() - started
+        print(f"[ok] Pack run completed in {format_duration(elapsed)}")
         return 0
 
     metadata = _prepare_pack_metadata(args, pack_path=pack_path)
@@ -1309,11 +1330,24 @@ def _handle_pack_run(args: argparse.Namespace) -> int:
         else:
             raise
 
+    pptx_target: Path | None = args.result_file
+    if pptx_target is not None:
+        try:
+            if pptx_target.exists():
+                print(f"[ok] Wrote PPTX to {pptx_target}")
+            else:
+                print(f"[ok] PPTX target: {pptx_target}")
+        except OSError:
+            print(f"[ok] PPTX target: {pptx_target}")
+
     png_count = sum(1 for item in results if item.png_path)
     if png_count:
         print(f"[ok] Wrote {png_count} PNG(s) to {args.artefact_dir}")
     else:
         print("[warn] No PNG outputs were produced.")
+
+    elapsed = time.perf_counter() - started
+    print(f"[ok] Pack run completed in {format_duration(elapsed)}")
 
     # Even in partial mode, propagate a non-zero exit so automation can detect failures.
     if partial_failure:

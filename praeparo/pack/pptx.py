@@ -449,7 +449,8 @@ def assemble_pack_pptx(
         _delete_template_slides(presentation)
     presentation.save(result_path)
     logger.info(
-        "Wrote PPTX",
+        "Wrote PPTX to %s",
+        str(result_path),
         extra={"result_file": str(result_path), "slide_count": len(presentation.slides)},
     )
 
