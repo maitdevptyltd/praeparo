@@ -97,6 +97,19 @@ def _parse_scoped_filters(value: object) -> tuple[list[str], list[str]]:
         return define_filters, evaluate_filters
 
     if isinstance(value, Mapping):
+        allowed = {"define", "evaluate"}
+        # Support the "scoped object" shape directly:
+        #   calculate: {define: [...], evaluate: [...]}
+        #
+        # This form is produced when configs are round-tripped through Pydantic
+        # (model_dump -> model_validate), so we must keep it stable even when a
+        # pack slide applies inline visual overrides that trigger re-validation.
+        if set(value.keys()).issubset(allowed):
+            define_filters.extend(_coerce_filters(value.get("define")))
+            evaluate_filters.extend(_coerce_filters(value.get("evaluate")))
+            return define_filters, evaluate_filters
+
+    if isinstance(value, Mapping):
         entries = [value]
     elif isinstance(value, Sequence):
         entries = list(value)

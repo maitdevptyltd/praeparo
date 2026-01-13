@@ -22,6 +22,30 @@ def test_scoped_calculate_filters_parses_named_entries() -> None:
     assert scoped.evaluate == ["'Time Intelligence'[Period] = \"Current Month\""]
 
 
+def test_scoped_calculate_filters_parses_scoped_object() -> None:
+    scoped = ScopedCalculateFilters.model_validate(
+        {
+            "define": ["'dim_calendar'[IsCurrent] = TRUE()"],
+            "evaluate": ["'Time Intelligence'[Period] = \"Current Month\""],
+        }
+    )
+
+    assert scoped.define == ["'dim_calendar'[IsCurrent] = TRUE()"]
+    assert scoped.evaluate == ["'Time Intelligence'[Period] = \"Current Month\""]
+
+
+def test_scoped_calculate_filters_round_trips_scoped_object() -> None:
+    original = ScopedCalculateFilters.model_validate(
+        {"evaluate": ["'Time Intelligence'[Period] = \"Current Month\""]}
+    )
+
+    payload = original.model_dump(mode="python")
+    revalidated = ScopedCalculateFilters.model_validate(payload)
+
+    assert revalidated.define == []
+    assert revalidated.evaluate == ["'Time Intelligence'[Period] = \"Current Month\""]
+
+
 def test_scoped_calculate_filters_parses_mixed_list() -> None:
     scoped = ScopedCalculateFilters.model_validate(
         [

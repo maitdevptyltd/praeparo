@@ -264,6 +264,15 @@ Notes:
         period:
           evaluate: "'Time Intelligence'[Period] = \"Current Month\""
   ```
+- When you only need a simple DEFINE vs EVALUATE split (no named entries), you can
+  also supply `calculate` as a scoped object:
+  ```yaml
+  calculate:
+    define:
+      - "'dim_calendar'[IsCurrent] = TRUE()"
+    evaluate:
+      - "'Time Intelligence'[Period] = \"Current Month\""
+  ```
 - For `ratio_to` bindings, `calculate.*.evaluate` applies to both numerator and denominator,
   while `calculate.*.define` applies only to the numerator (the denominator does not inherit it).
 - `metrics.calculate` (pack root and/or slide context) adds DAX predicates to the
