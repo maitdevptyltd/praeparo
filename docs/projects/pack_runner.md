@@ -313,6 +313,18 @@ and a PPTX `--result-file`:
 Explicit flags still win: if you pass `--artefact-dir` or `--result-file`, those
 values override anything derived from the positional `dest`.
 
+Pack output paths (`dest`, `--artefact-dir`, `--result-file`, `--build-artifacts-dir`)
+also support Jinja templates resolved from the same context payload used by pack
+execution (registry context layers plus the pack’s own `context` block). For
+example, if `registry/context/month.yaml` sets `month`, you can target a
+month-scoped output folder:
+
+```bash
+poetry run praeparo pack run \
+  projects/example/pack.yaml \
+  "out/month={{ month }}/ing"
+```
+
 Key flags:
 
 - `pack run <path>` – path to the pack YAML. Can be absolute or relative to the

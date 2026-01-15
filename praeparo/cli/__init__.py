@@ -10,12 +10,14 @@ import time
 from pathlib import Path
 from typing import Any, Dict, Iterable, Mapping, MutableMapping, Sequence
 
+from jinja2 import Environment
 from pydantic import ValidationError
 
+from praeparo.datasets.context import resolve_default_metrics_root_for_pack
 from praeparo.datasources import DataSourceConfigError
 from praeparo.env import ensure_env_loaded
 from praeparo.io.yaml_loader import ConfigLoadError, load_visual_config
-from praeparo.models import BaseVisualConfig, FrameConfig, MatrixConfig
+from praeparo.models import BaseVisualConfig, FrameConfig, MatrixConfig, PackConfig
 from praeparo.pipeline import (
     ExecutionContext,
     OutputTarget,
@@ -41,6 +43,7 @@ from praeparo.pack import (
     restitch_pack_pptx,
     run_pack,
 )
+from praeparo.pack.metric_context import dump_context_payload
 from praeparo.visuals.dax_compilers import (
     DaxCompilerRegistration,
     get_dax_compiler_registration,
@@ -54,6 +57,7 @@ from praeparo.powerbi import (
     PowerBIQueryError,
 )
 from praeparo.visuals.context import ContextLoadError, load_context_file, merge_context_payload, resolve_dax_context
+from praeparo.visuals.context_layers import merge_context_layer_payload, resolve_layered_context_payload
 from praeparo.visuals.registry import (
     VisualCLIArgument,
     VisualCLIOptions,
@@ -365,6 +369,56 @@ def _derive_pack_dest_defaults(pack_path: Path, dest: Path | None) -> tuple[Path
     artefact_dir = destination / "_artifacts"
     result_file = destination / f"{pack_slug}.pptx"
     return artefact_dir, result_file
+
+
+def _render_pack_path_template(
+    value: Path | None,
+    *,
+    env: Environment,
+    context: Mapping[str, object],
+) -> Path | None:
+    if value is None:
+        return None
+
+    rendered = render_value(str(value), env=env, context=context)
+    if not isinstance(rendered, str):
+        raise ValueError("Path template must render to a string value.")
+    return Path(rendered).expanduser()
+
+
+def _resolve_pack_path_templates(
+    *,
+    pack_path: Path,
+    pack: PackConfig,
+    args: argparse.Namespace,
+) -> None:
+    """Render output-path templates using the same context payload as pack execution."""
+
+    # Start by resolving registry + pack context so output paths can reuse shared helpers.
+    raw_metrics_root = getattr(args, "metrics_root", None)
+    if raw_metrics_root is not None:
+        metrics_root = Path(raw_metrics_root).expanduser().resolve(strict=False)
+    else:
+        metrics_root = resolve_default_metrics_root_for_pack(pack_path)
+
+    jinja_env = create_pack_jinja_env()
+    pack_context_layer = dump_context_payload(pack.context)
+    base_payload = resolve_layered_context_payload(
+        metrics_root=metrics_root,
+        context_layers=[pack_context_layer],
+        env=jinja_env,
+    )
+    pack_payload = merge_context_layer_payload(base=base_payload, incoming=pack_context_layer)
+
+    # With context ready, render any CLI-supplied output paths in-place before defaults are derived.
+    args.dest = _render_pack_path_template(getattr(args, "dest", None), env=jinja_env, context=pack_payload)
+    args.artefact_dir = _render_pack_path_template(args.artefact_dir, env=jinja_env, context=pack_payload)
+    args.result_file = _render_pack_path_template(args.result_file, env=jinja_env, context=pack_payload)
+    args.build_artifacts_dir = _render_pack_path_template(
+        getattr(args, "build_artifacts_dir", None),
+        env=jinja_env,
+        context=pack_payload,
+    )
 
 
 def _derive_visual_dest_defaults(
@@ -1194,10 +1248,22 @@ def _handle_pack_run(args: argparse.Namespace) -> int:
     started = time.perf_counter()
 
     pack_path: Path = args.pack
+
+    explicit_result_file: Path | None = getattr(args, "result_file", None)
+
+    if getattr(args, "data_mode", None) is None:
+        args.data_mode = "live"
+
+    try:
+        pack = load_pack_config(pack_path)
+    except PackConfigError as exc:
+        raise ValueError(str(exc)) from exc
+
+    _resolve_pack_path_templates(pack_path=pack_path, pack=pack, args=args)
+
     dest: Path | None = getattr(args, "dest", None)
     default_artefact_dir, default_result_file = _derive_pack_dest_defaults(pack_path, dest)
 
-    explicit_result_file: Path | None = getattr(args, "result_file", None)
     if dest is not None and (args.artefact_dir or explicit_result_file):
         logger.info(
             "Positional dest supplied; explicit flags override derived defaults.",
@@ -1218,14 +1284,6 @@ def _handle_pack_run(args: argparse.Namespace) -> int:
     if artefact_dir is None:
         raise ValueError("Provide --artefact-dir or a positional dest to choose output locations.")
 
-    if getattr(args, "data_mode", None) is None:
-        args.data_mode = "live"
-
-    try:
-        pack = load_pack_config(pack_path)
-    except PackConfigError as exc:
-        raise ValueError(str(exc)) from exc
-
     strategy_arg = getattr(args, "revision_strategy", None)
     override_revision = getattr(args, "revision", None)
     pptx_only = getattr(args, "pptx_only", False)
@@ -1240,8 +1298,6 @@ def _handle_pack_run(args: argparse.Namespace) -> int:
             effective_strategy = "minor"
         else:
             effective_strategy = "full"
-
-    from praeparo.pack.metric_context import dump_context_payload
 
     revision_info = allocate_revision(
         pack_path,
