@@ -210,3 +210,46 @@ def test_yaml_python_visual_cli_applies_context_calculate_filters(tmp_path, caps
     assert exc.value.code == 0
     captured = capsys.readouterr().out
     assert "'dim_lender'[LenderId] = 199" in captured
+
+
+def test_yaml_python_visual_renders_parameters_in_mapping_calculate_filters(tmp_path: Path) -> None:
+    module_path = (FIXTURES / "cartesian_python_visual.py").resolve()
+
+    visual_yaml_path = tmp_path / "visual.yaml"
+    visual_yaml_path.write_text(
+        dedent(
+            f"""
+            schema: draft-1
+            type: "{module_path.as_posix()}"
+
+            parameters:
+              lender_id: 201
+
+            title: Test mapping calculate templating
+            calculate:
+              lender: "'dim_lender'[LenderId] = {{{{ lender_id }}}}"
+              period: "'Time Intelligence'[Period] = \\"Current Month\\""
+
+            category:
+              field: "'dim_calendar'[month]"
+              label: Month
+              data_type: date
+            value_axes:
+              primary:
+                label: Volume
+                format: number:0
+            series:
+              - id: s1
+                label: S1
+                type: column
+                metric:
+                  key: some_metric
+            """
+        ).lstrip(),
+        encoding="utf-8",
+    )
+
+    visual_config = load_visual_config(visual_yaml_path)
+    assert isinstance(visual_config, PythonCartesianChartConfig)
+    assert "'dim_lender'[LenderId] = 201" in visual_config.calculate
+    assert "'Time Intelligence'[Period] = \"Current Month\"" in visual_config.calculate

@@ -2,30 +2,64 @@
 
 from __future__ import annotations
 
-from typing import Iterable, List, Optional
+from collections.abc import Iterable, Mapping, Sequence
+from typing import List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
-CalculateInput = str | List[str]
+CalculateInput = str | Sequence[str] | Mapping[str, str] | Sequence[str | Mapping[str, str]]
 
 
 def normalise_str_sequence(value: CalculateInput | Iterable[str] | None) -> List[str]:
-    """Coerce a string or iterable of strings into a clean list."""
+    """Coerce calculate-style inputs into a clean list of strings.
+
+    Visuals frequently use the same shorthands as packs and context layers:
+
+    - String: single predicate.
+    - Sequence of strings: ordered predicates.
+    - Mapping: named predicates (values are used; keys are labels).
+    - Mixed sequences containing one-item mappings.
+    """
 
     if value is None:
         return []
+
+    def _coerce_item(item: object) -> list[str]:
+        if item is None:
+            return []
+        if isinstance(item, str):
+            trimmed = item.strip()
+            return [trimmed] if trimmed else []
+        if isinstance(item, Mapping):
+            flattened: list[str] = []
+            for candidate in item.values():
+                if candidate is None:
+                    continue
+                if not isinstance(candidate, str):
+                    raise TypeError("entries must be strings")
+                trimmed = candidate.strip()
+                if trimmed:
+                    flattened.append(trimmed)
+            return flattened
+        raise TypeError("entries must be strings")
+
+    raw_items: list[object]
     if isinstance(value, str):
-        items = [value]
+        raw_items = [value]
+    elif isinstance(value, Mapping):
+        raw_items = list(value.values())
     else:
-        items = list(value)
-    normalised: List[str] = []
-    for item in items:
-        if not isinstance(item, str):
+        if not isinstance(value, Iterable):
             raise TypeError("entries must be strings")
-        trimmed = item.strip()
-        if trimmed:
-            normalised.append(trimmed)
+        raw_items = list(value)
+
+    normalised: List[str] = []
+    for item in raw_items:
+        if isinstance(item, Mapping):
+            normalised.extend(_coerce_item(item))
+        else:
+            normalised.extend(_coerce_item(item))
     return normalised
 
 

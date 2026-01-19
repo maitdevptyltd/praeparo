@@ -131,10 +131,21 @@ def _build_context(data: Mapping[str, Any], parameters: Mapping[str, Any]) -> di
 def _apply_parameter_templates(data: dict[str, Any], *, context: Mapping[str, str]) -> None:
     """Inject parameter defaults into templated labels and filters."""
 
+    def _render_payload(value: Any, *, location: str) -> Any:
+        """Render templated strings found anywhere within *value*."""
+
+        if isinstance(value, str):
+            return _render_with_context(value, context, location=location) if "{{" in value else value
+        if isinstance(value, list):
+            return [_render_payload(item, location=location) for item in value]
+        if isinstance(value, dict):
+            return {key: _render_payload(item, location=f"{location}.{key}") for key, item in value.items()}
+        return value
+
     def _render_field(key: str, *, location: str) -> None:
         value = data.get(key)
-        if isinstance(value, str) and "{{" in value:
-            data[key] = _render_with_context(value, context, location=location)
+        if value is not None:
+            data[key] = _render_payload(value, location=location)
 
     rows = data.get("rows")
     if isinstance(rows, list):

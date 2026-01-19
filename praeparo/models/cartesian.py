@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from enum import Enum
-from typing import Literal, Optional, Sequence
+from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from praeparo.visuals.metrics import VisualMetricConfig, VisualMockConfig, normalise_str_sequence
 
 from .visual_base import BaseVisualConfig
+
+CalculateFiltersType = str | Sequence[str | Mapping[str, str]] | Mapping[str, str] | None
 
 
 class CategoryDataType(str, Enum):
@@ -354,9 +357,12 @@ class CartesianChartConfigBase(BaseVisualConfig):
         default=None,
         description="DEFINE blocks prepended to generated DAX statements.",
     )
-    calculate: Sequence[str] | None = Field(
+    calculate: CalculateFiltersType = Field(
         default=None,
-        description="CALCULATE filters applied globally to every measure in the visual.",
+        description=(
+            "CALCULATE filters applied globally to every measure in the visual. "
+            "Accepts strings, sequences, or named mappings (mapping keys are labels)."
+        ),
     )
     category: CategoryConfig = Field(
         ...,
@@ -420,6 +426,7 @@ class CartesianChartConfig(CartesianChartConfigBase):
     """Top-level configuration for registered column/bar visuals."""
 
     type: Literal["column", "bar"] = Field(
+        default="column",
         description="Visual type discriminator.",
     )
     schema_version: str | None = Field(

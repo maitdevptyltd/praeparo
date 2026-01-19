@@ -112,3 +112,37 @@ def test_calculate_filters_coerced_to_tuple() -> None:
         "'dim_matter'[LoanTypeLegacy] = \"New Loan\"",
         "'dim_calendar'[Year] = 2024",
     )
+
+
+def test_calculate_filters_accept_named_mapping() -> None:
+    config = CartesianChartConfig.model_validate(
+        _base_config(
+            calculate={
+                "period": "'Time Intelligence'[Period] = \"Current Month\"",
+                "lender": "'dim_lender'[LenderId] = 201",
+            }
+        )
+    )
+    assert config.calculate == (
+        "'Time Intelligence'[Period] = \"Current Month\"",
+        "'dim_lender'[LenderId] = 201",
+    )
+
+
+def test_series_metric_calculate_accepts_named_mapping() -> None:
+    config = CartesianChartConfig.model_validate(
+        _base_config(
+            series=[
+                {
+                    "id": "primary",
+                    "label": "Primary",
+                    "type": "column",
+                    "metric": {
+                        "key": "metric.primary",
+                        "calculate": {"lender": "'dim_lender'[LenderId] = 201"},
+                    },
+                }
+            ],
+        )
+    )
+    assert config.series[0].metric.calculate == ["'dim_lender'[LenderId] = 201"]
