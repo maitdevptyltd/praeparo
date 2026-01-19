@@ -112,12 +112,8 @@
           "title": "Description"
         },
         "calculate": {
-          "description": "Additional DAX-style predicates applied on top of the base metric",
-          "items": {
-            "type": "string"
-          },
-          "title": "Calculate",
-          "type": "array"
+          "$ref": "#/$defs/ScopedCalculateFilters",
+          "description": "Scoped DAX-style predicates applied on top of the base metric. DEFINE filters are baked into the compiled measure expression, while EVALUATE filters are applied when binding the measure in queries."
         },
         "notes": {
           "anyOf": [
@@ -172,6 +168,117 @@
       ],
       "title": "MetricVariant",
       "type": "object"
+    },
+    "ScopedCalculateFilters": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "define": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "evaluate": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "type": "object"
+        },
+        {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "define": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "evaluate": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "type": "object"
+              }
+            ]
+          },
+          "type": "object"
+        },
+        {
+          "items": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "define": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "evaluate": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  ]
+                },
+                "type": "object"
+              }
+            ]
+          },
+          "type": "array"
+        }
+      ],
+      "description": "Split calculate predicates between DEFINE and EVALUATE scopes.",
+      "title": "ScopedCalculateFilters"
     }
   },
   "additionalProperties": false,
@@ -282,12 +389,8 @@
       "type": "array"
     },
     "calculate": {
-      "description": "Base DAX-style predicates describing the metric scope",
-      "items": {
-        "type": "string"
-      },
-      "title": "Calculate",
-      "type": "array"
+      "$ref": "#/$defs/ScopedCalculateFilters",
+      "description": "Scoped DAX-style predicates describing the metric scope. DEFINE filters are baked into the compiled measure expression, while EVALUATE filters are applied when binding the measure in queries."
     },
     "variants": {
       "additionalProperties": {

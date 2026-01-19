@@ -62,6 +62,38 @@ def test_compile_metric_with_base_filters_and_variants() -> None:
     assert automated.key == "documents_sent.automated"
 
 
+def test_compile_metric_tracks_evaluate_filters_separately() -> None:
+    metric = MetricDefinition.model_validate(
+        {
+            "key": "documents_sent",
+            "display_name": "Documents sent",
+            "section": "Document Preparation",
+            "define": normalize_dax_expression("SUM('fact_events'[DocumentsSent])"),
+            "calculate": {
+                "define": ["dim_status.IsComplete = TRUE()"],
+                "evaluate": ["dim_lender.LenderId = 201"],
+            },
+            "variants": {
+                "automated": {
+                    "display_name": "Documents sent (automatic)",
+                    "calculate": {"evaluate": ["fact_events.IsAutomated = TRUE()"]},
+                }
+            },
+        }
+    )
+
+    plan = MetricDaxBuilder(_metric_catalog(metric)).compile_metric("documents_sent")
+
+    assert plan.base.evaluate_filters == ("dim_lender.LenderId = 201",)
+    assert "dim_lender" not in plan.base.expression
+    assert "'dim_lender'[LenderId] = 201" in plan.base.expression_with_evaluate_filters()
+
+    automated = plan.variants["automated"]
+    assert automated.evaluate_filters == (
+        "dim_lender.LenderId = 201",
+        "fact_events.IsAutomated = TRUE()",
+    )
+
 def test_compile_metric_inherits_define_and_filters_from_parent() -> None:
     parent = MetricDefinition.model_validate(
             {

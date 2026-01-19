@@ -7,6 +7,8 @@ from typing import Dict, List
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from praeparo.models.scoped_calculate import ScopedCalculateFilters
+
 
 _SLUG_PATTERN = re.compile(r"^[a-z0-9_]+$")
 _VALUE_TYPES = {"number", "percent", "currency"}
@@ -72,9 +74,13 @@ class MetricVariant(BaseModel):
     description: str | None = Field(
         default=None, description="Optional explanation for stakeholders"
     )
-    calculate: List[str] = Field(
-        default_factory=list,
-        description="Additional DAX-style predicates applied on top of the base metric",
+    calculate: ScopedCalculateFilters = Field(
+        default_factory=ScopedCalculateFilters,
+        description=(
+            "Scoped DAX-style predicates applied on top of the base metric. "
+            "DEFINE filters are baked into the compiled measure expression, while "
+            "EVALUATE filters are applied when binding the measure in queries."
+        ),
     )
     notes: str | None = Field(
         default=None, description="Optional implementation or sourcing notes for the variant"
@@ -92,7 +98,6 @@ class MetricVariant(BaseModel):
         description="Override the display value type for this variant (number, percent, currency).",
     )
 
-    _coerce_calculate = field_validator("calculate", mode="before")(_ensure_string_list)
     _validate_nested_keys = field_validator("variants", mode="after")(_ensure_variant_keys)
     _validate_format = field_validator("format", mode="before")(_normalise_optional_format)
 
@@ -191,9 +196,13 @@ class MetricDefinition(BaseModel):
         default_factory=list,
         description="Optional free-form taxonomy tags (e.g. timeliness, automation)",
     )
-    calculate: List[str] = Field(
-        default_factory=list,
-        description="Base DAX-style predicates describing the metric scope",
+    calculate: ScopedCalculateFilters = Field(
+        default_factory=ScopedCalculateFilters,
+        description=(
+            "Scoped DAX-style predicates describing the metric scope. "
+            "DEFINE filters are baked into the compiled measure expression, while "
+            "EVALUATE filters are applied when binding the measure in queries."
+        ),
     )
     variants: Dict[str, MetricVariant] = Field(
         default_factory=dict,
@@ -211,7 +220,6 @@ class MetricDefinition(BaseModel):
         description="Display value type for the metric (number, percent, currency).",
     )
 
-    _coerce_calculate = field_validator("calculate", mode="before")(_ensure_string_list)
     _validate_format = field_validator("format", mode="before")(_normalise_optional_format)
     _normalise_expression = field_validator("expression", mode="before")(
         _normalise_optional_expression

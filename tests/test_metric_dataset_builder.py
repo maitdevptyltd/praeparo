@@ -115,6 +115,34 @@ def test_plan_supports_expressions_and_global_filters(tmp_path: Path) -> None:
     assert any("CALCULATE" in measure.expression for measure in plan.measures)
 
 
+def test_plan_applies_metric_evaluate_filters_as_group_filters(tmp_path: Path) -> None:
+    metrics_root = tmp_path / "metrics"
+    metrics_root.mkdir()
+    (metrics_root / "documents_sent.yaml").write_text(
+        "\n".join(
+            [
+                "schema: draft-1",
+                "key: documents_sent",
+                "display_name: Documents sent",
+                "section: Document Preparation",
+                'define: "COUNTROWS ( \'fact_documents\' )"',
+                "calculate:",
+                "  evaluate:",
+                "    - fact_documents.IsLatest = TRUE()",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    context = MetricDatasetBuilderContext.discover(project_root=tmp_path, metrics_root=metrics_root)
+    builder = MetricDatasetBuilder(context)
+    builder.metric("documents_sent", alias="total")
+
+    plan = builder.plan()
+
+    # EVALUATE-scoped filters should appear only once, applied around the measure binding.
+    assert plan.statement.count("'fact_documents'[IsLatest] = TRUE()") == 1
+
+
 def test_placeholder_series_when_allowed(tmp_path: Path) -> None:
     builder = _builder(tmp_path)
     builder.metric("documents_sent", alias="total")

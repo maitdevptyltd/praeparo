@@ -45,10 +45,34 @@ def test_metric_definition_validates_expected_payload() -> None:
 
     assert metric.schema_version == "draft-1"
     assert metric.key == "documents_sent"
-    assert metric.variants["automated"].calculate == ["fact_events.IsAutomated = TRUE()"]
+    assert metric.calculate.define == [
+        'dim_wf_component.WFComponentName = "Send Processed Documents"',
+        'dim_event_type.MatterEventTypeName = "Milestone Complete"',
+    ]
+    assert metric.calculate.evaluate == []
+    assert metric.variants["automated"].calculate.define == ["fact_events.IsAutomated = TRUE()"]
+    assert metric.variants["automated"].calculate.evaluate == []
     assert metric.ratios is not None
     assert metric.ratios.auto_percent_of_base is True
     assert metric.ratios.auto_percent_format == "percent"
+
+
+def test_metric_definition_supports_scoped_calculate_filters() -> None:
+    payload = _sample_metric_payload()
+    payload["calculate"] = {
+        "define": ["dim_status.IsComplete = TRUE()"],
+        "evaluate": ["'dim_calendar'[Month] = DATE(2025, 11, 1)"],
+    }
+    payload["variants"]["automated"]["calculate"] = {
+        "evaluate": ["fact_events.IsAutomated = TRUE()"],
+    }
+
+    metric = MetricDefinition.model_validate(payload)
+
+    assert metric.calculate.define == ["dim_status.IsComplete = TRUE()"]
+    assert metric.calculate.evaluate == ["'dim_calendar'[Month] = DATE(2025, 11, 1)"]
+    assert metric.variants["automated"].calculate.define == []
+    assert metric.variants["automated"].calculate.evaluate == ["fact_events.IsAutomated = TRUE()"]
 
 
 def test_metric_definition_enforces_slug_variant_keys() -> None:

@@ -27,7 +27,10 @@ class MetricMeasureDefinition:
     """DAX expression representing the measure."""
 
     filters: tuple[str, ...]
-    """Ordered list of filters applied while composing the expression."""
+    """Ordered list of DEFINE-scoped filters baked into the expression."""
+
+    evaluate_filters: tuple[str, ...] = ()
+    """Ordered list of EVALUATE-scoped filters applied when binding the measure in queries."""
 
     description: str | None = None
     """Optional narrative or notes for the measure."""
@@ -40,6 +43,20 @@ class MetricMeasureDefinition:
 
     format: str | None = None
     """Optional display format token carried from the metric/variant definition."""
+
+    def expression_with_evaluate_filters(self) -> str:
+        """Return an inline-safe expression that includes any EVALUATE-scoped filters.
+
+        EVALUATE-scoped filters are normally applied at query binding time (e.g. wrapping
+        the measure reference inside `SUMMARIZECOLUMNS`). Expression metrics, however,
+        inline referenced metric expressions, so we need a representation that carries
+        both scopes to preserve semantics.
+        """
+
+        if not self.evaluate_filters:
+            return self.expression
+
+        return normalize_dax_expression(_compose_calculate(self.expression, self.evaluate_filters))
 
 
 @dataclass(frozen=True)
@@ -68,7 +85,7 @@ class MetricDaxBuilder:
 
         chain = _resolve_metric_chain(self._catalog, metric)
         base_kind, base_text = _resolve_base_formula(chain)
-        base_filters = _collect_metric_filters(chain)
+        base_define_filters, base_evaluate_filters = _collect_metric_filters(chain)
         effective_metric_format = _resolve_format(chain)
 
         if base_kind == "expression":
@@ -90,12 +107,15 @@ class MetricDaxBuilder:
         else:
             base_formula = base_text
 
-        base_expression = normalize_dax_expression(_compose_calculate(base_formula, base_filters))
+        base_expression = normalize_dax_expression(
+            _compose_calculate(base_formula, base_define_filters)
+        )
         base_measure = MetricMeasureDefinition(
             key=metric_key,
             label=metric.display_name,
             expression=base_expression,
-            filters=tuple(base_filters),
+            filters=tuple(base_define_filters),
+            evaluate_filters=tuple(base_evaluate_filters),
             description=metric.description,
             variant_path=None,
             value_type=metric.value_type,
@@ -107,9 +127,10 @@ class MetricDaxBuilder:
         if flattened_variants:
             for path, variant in flattened_variants.items():
                 variant_filters = _collect_variant_filters(metric, path)
-                combined_filters = tuple(base_filters + variant_filters)
+                combined_define_filters = tuple(base_define_filters + variant_filters[0])
+                combined_evaluate_filters = tuple(base_evaluate_filters + variant_filters[1])
                 variant_expression = normalize_dax_expression(
-                    _compose_calculate(base_formula, combined_filters)
+                    _compose_calculate(base_formula, combined_define_filters)
                 )
                 variant_key = f"{metric_key}.{path}"
                 variant_value_type = variant.value_type or metric.value_type
@@ -118,7 +139,8 @@ class MetricDaxBuilder:
                     key=variant_key,
                     label=variant.display_name,
                     expression=variant_expression,
-                    filters=combined_filters,
+                    filters=combined_define_filters,
+                    evaluate_filters=combined_evaluate_filters,
                     description=variant.description,
                     variant_path=path,
                     value_type=variant_value_type,
@@ -192,33 +214,37 @@ def _resolve_format(chain: Iterable[MetricDefinition]) -> str | None:
     return resolved
 
 
-def _collect_metric_filters(chain: Iterable[MetricDefinition]) -> list[str]:
-    """Collect filters from the inheritance chain in declaration order."""
+def _collect_metric_filters(chain: Iterable[MetricDefinition]) -> tuple[list[str], list[str]]:
+    """Collect scoped filters from the inheritance chain in declaration order."""
 
-    filters: list[str] = []
+    define_filters: list[str] = []
+    evaluate_filters: list[str] = []
     for metric in chain:
-        filters.extend(_normalise_filters(metric.calculate))
-    return filters
+        define_filters.extend(_normalise_filters(metric.calculate.define))
+        evaluate_filters.extend(_normalise_filters(metric.calculate.evaluate))
+    return define_filters, evaluate_filters
 
 
-def _collect_variant_filters(metric: MetricDefinition, path: str) -> list[str]:
-    """Collect filters for the variant path (including ancestor variants)."""
+def _collect_variant_filters(metric: MetricDefinition, path: str) -> tuple[list[str], list[str]]:
+    """Collect scoped filters for the variant path (including ancestor variants)."""
 
     if not path:
-        return []
+        return [], []
 
     segments = path.split(".")
-    filters: list[str] = []
+    define_filters: list[str] = []
+    evaluate_filters: list[str] = []
     node: dict[str, MetricVariant] = dict(metric.variants)
 
     for segment in segments:
         if segment not in node:
             raise KeyError(f"Variant path '{path}' not found for metric '{metric.key}'.")
         variant = node[segment]
-        filters.extend(_normalise_filters(variant.calculate))
+        define_filters.extend(_normalise_filters(variant.calculate.define))
+        evaluate_filters.extend(_normalise_filters(variant.calculate.evaluate))
         node = dict(variant.variants)
 
-    return filters
+    return define_filters, evaluate_filters
 
 
 def _normalise_filters(filters: Iterable[str]) -> list[str]:

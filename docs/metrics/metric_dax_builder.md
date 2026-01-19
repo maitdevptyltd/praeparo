@@ -45,6 +45,22 @@ Variants and inherited filters are still applied on top of either base formula.
   - a child `expression:` overrides a parent `define:`, and vice versa.
 - Every `calculate:` predicate across the chain is accumulated parent → child.
 
+### Scoped `calculate:`
+
+Registry metrics support scoped calculate filters, mirroring the visual `ScopedCalculateFilters` model:
+
+```yaml
+calculate:
+  define:
+    - dim_status.IsComplete = TRUE()
+  evaluate:
+    - dim_lender.LenderId = 201
+```
+
+- `calculate` provided as a string or list of strings is treated as **DEFINE-scoped** filters (backwards compatible).
+- **DEFINE** filters are baked into the compiled measure expression by wrapping the base formula in `CALCULATE(...)`.
+- **EVALUATE** filters are attached to the compiled plan and applied when binding measures in queries (for example: wrapping the measure reference inside `SUMMARIZECOLUMNS`).
+
 If a circular `extends` chain is detected, compilation fails with a friendly error.
 
 ### Variants

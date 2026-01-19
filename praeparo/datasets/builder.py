@@ -488,7 +488,9 @@ class MetricDatasetBuilder:
         measure_map: dict[str, str] = {}
 
         for series in self._series:
-            resolved_reference, expression = self._resolve_expression(series, builder, cache, placeholders)
+            resolved_reference, expression, metric_evaluate_filters = self._resolve_expression(
+                series, builder, cache, placeholders
+            )
             if series.source == "expression" and series.expression:
                 # Cache the parsed AST so the mock evaluator can reuse it without reparsing.
                 try:
@@ -497,6 +499,7 @@ class MetricDatasetBuilder:
                     # Drop any stale entry so failed parses don't linger between plan rebuilds.
                     self._expression_cache.pop(series.series_id, None)
             measure_references.append(resolved_reference)
+            group_filters = combine_filter_groups(metric_evaluate_filters, series.group_filters)
             measure_plans.append(
                 MeasurePlan(
                     reference=resolved_reference,
@@ -504,7 +507,7 @@ class MetricDatasetBuilder:
                     expression=expression,
                     display_name=series.label,
                     metric_filters=series.filters,
-                    group_filters=series.group_filters,
+                    group_filters=group_filters,
                 )
             )
 
@@ -568,7 +571,7 @@ class MetricDatasetBuilder:
         builder: MetricDaxBuilder,
         cache: MetricCompilationCache,
         placeholders: list[str],
-    ) -> tuple[str, str]:
+    ) -> tuple[str, str, tuple[str, ...]]:
         try:
             if series.source == "expression":
                 assert series.expression is not None
@@ -581,6 +584,7 @@ class MetricDatasetBuilder:
                     value_type=series.value_type or "number",
                 )
                 base_expression = definition.expression
+                evaluate_filters = definition.evaluate_filters
                 resolved_reference = series.reference
             else:
                 base_key, variant_path = split_metric_identifier(series.reference)
@@ -591,15 +595,17 @@ class MetricDatasetBuilder:
                     variant_path=variant_path,
                 )
                 base_expression = definition.expression
+                evaluate_filters = definition.evaluate_filters
         except (KeyError, ValueError):
             if not (series.allow_placeholder or self._ignore_placeholders):
                 raise
             placeholders.append(series.series_id)
             base_expression = "0"
             resolved_reference = series.reference
+            evaluate_filters = ()
 
         wrapped = wrap_expression_with_filters(base_expression, series.filters) if series.filters else base_expression
-        return resolved_reference, wrapped
+        return resolved_reference, wrapped, evaluate_filters
 
     def _resolve_datasource(self) -> ResolvedDataSource:
         if self._resolved_datasource is not None:

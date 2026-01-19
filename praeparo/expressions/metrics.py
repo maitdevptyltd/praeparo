@@ -173,7 +173,7 @@ def resolve_expression_metric(
             metric_key=base_key,
             variant_path=variant_path,
         )
-        substitutions[reference.identifier] = definition.expression
+        substitutions[reference.identifier] = definition.expression_with_evaluate_filters()
 
     dax_expression = parsed.to_dax(substitutions)
     expression_text = normalize_dax_expression(dax_expression)
