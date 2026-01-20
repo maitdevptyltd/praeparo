@@ -65,6 +65,127 @@ def _normalise_optional_expression(value: object) -> str | None:
     return candidate
 
 
+def _normalise_optional_string(value: object, *, label: str) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise TypeError(f"{label} must be a string.")
+    candidate = value.strip()
+    return candidate or None
+
+
+def _ensure_optional_string_list(value: object, *, label: str) -> list[str] | None:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        candidate = value.strip()
+        return [candidate] if candidate else None
+    if isinstance(value, list):
+        cleaned: list[str] = []
+        for item in value:
+            if item is None:
+                continue
+            if not isinstance(item, str):
+                raise TypeError(f"{label} entries must be strings")
+            candidate = item.strip()
+            if candidate:
+                cleaned.append(candidate)
+        return cleaned or None
+    raise TypeError(f"{label} must be a string or list of strings")
+
+
+def _ensure_snake_case_mapping_keys(
+    value: Dict[str, str],
+    *,
+    label: str,
+    forbid_prefix: str = "__",
+) -> Dict[str, str]:
+    for key in value:
+        if not _SLUG_PATTERN.match(key):
+            raise ValueError(f"{label} keys must be snake_case (lowercase letters, digits, underscore)")
+        if forbid_prefix and key.startswith(forbid_prefix):
+            raise ValueError(f"{label} keys may not start with '{forbid_prefix}' (reserved for framework fields).")
+    return value
+
+
+class MetricExplainSpec(BaseModel):
+    """Optional configuration for exporting row-level metric evidence."""
+
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    from_: str | None = Field(
+        default=None,
+        alias="from",
+        description="Optional driving table expression used to build the evidence rowset.",
+    )
+    where: list[str] | None = Field(
+        default=None,
+        description="Optional extra rowset predicates appended after compiled calculate filters.",
+    )
+    grain: str | Dict[str, str] | None = Field(
+        default=None,
+        description="Evidence grain column reference (string) or a mapping of labels to column references.",
+    )
+    select: Dict[str, str] | None = Field(
+        default=None,
+        description="Mapping of evidence column labels to DAX expressions evaluated per row.",
+    )
+
+    _normalise_from = field_validator("from_", mode="before")(
+        lambda value: _normalise_optional_string(value, label="from")
+    )
+    _coerce_where = field_validator("where", mode="before")(
+        lambda value: _ensure_optional_string_list(value, label="where")
+    )
+
+    @field_validator("grain", mode="before")
+    @classmethod
+    def _validate_grain(cls, value: object) -> str | Dict[str, str] | None:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            candidate = value.strip()
+            return candidate or None
+        if isinstance(value, dict):
+            cleaned: Dict[str, str] = {}
+            for key, raw in value.items():
+                if raw is None:
+                    continue
+                if not isinstance(raw, str):
+                    raise TypeError("grain mapping values must be strings.")
+                candidate = raw.strip()
+                if candidate:
+                    cleaned[str(key)] = candidate
+            return cleaned or None
+        raise TypeError("grain must be a string or mapping of strings.")
+
+    @field_validator("select", mode="before")
+    @classmethod
+    def _validate_select(cls, value: object) -> Dict[str, str] | None:
+        if value is None:
+            return None
+        if not isinstance(value, dict):
+            raise TypeError("select must be a mapping of label to DAX expression.")
+        cleaned: Dict[str, str] = {}
+        for key, raw in value.items():
+            if raw is None:
+                continue
+            if not isinstance(raw, str):
+                raise TypeError("select mapping values must be strings.")
+            candidate = raw.strip()
+            if candidate:
+                cleaned[str(key)] = candidate
+        return cleaned or None
+
+    @model_validator(mode="after")
+    def _validate_keys(self) -> "MetricExplainSpec":
+        if isinstance(self.grain, dict):
+            _ensure_snake_case_mapping_keys(self.grain, label="grain")
+        if isinstance(self.select, dict):
+            _ensure_snake_case_mapping_keys(self.select, label="select")
+        return self
+
+
 class MetricVariant(BaseModel):
     """Variant of a base metric (e.g. automated, manual)."""
 
@@ -84,6 +205,10 @@ class MetricVariant(BaseModel):
     )
     notes: str | None = Field(
         default=None, description="Optional implementation or sourcing notes for the variant"
+    )
+    explain: MetricExplainSpec | None = Field(
+        default=None,
+        description="Optional explain configuration used by `praeparo-metrics explain` to export row-level evidence.",
     )
     variants: Dict[str, "MetricVariant"] = Field(
         default_factory=dict,
@@ -207,6 +332,10 @@ class MetricDefinition(BaseModel):
     variants: Dict[str, MetricVariant] = Field(
         default_factory=dict,
         description="Named variants that apply additional predicates or business logic",
+    )
+    explain: MetricExplainSpec | None = Field(
+        default=None,
+        description="Optional explain configuration used by `praeparo-metrics explain` to export row-level evidence.",
     )
     ratios: MetricRatiosConfig | None = Field(
         default=None, description="Automatic or explicit ratios derived from this metric"

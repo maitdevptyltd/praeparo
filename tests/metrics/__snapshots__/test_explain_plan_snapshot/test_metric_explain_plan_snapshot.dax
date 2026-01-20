@@ -1,0 +1,54 @@
+DEFINE
+  TABLE 'adhoc' = { { BLANK() } }
+  FUNCTION GetCustomerBusinessDays = () => 1
+
+EVALUATE
+VAR __metric_value = CALCULATE(
+    CALCULATE(
+    CALCULATE (
+        DISTINCTCOUNT ( 'fact_events'[MatterId] ),
+        // WFComponentId = 78
+        'dim_wf_component'[WFComponentName] = "Check Returned Documents",
+        'dim_event_type'[MatterEventTypeName] = "Milestone Complete"
+    ),
+    FILTER(fact_events, GetCustomerBusinessDays('fact_events'[LastRelatedMilestoneStartedTimestampUTC], 'fact_events'[EventTimestampUTC]) <= 1)
+),
+    'dim_calendar'[Month] = DATE(2025, 12, 1)
+)
+VAR __base_metric_value = CALCULATE(
+    CALCULATE (
+    DISTINCTCOUNT ( 'fact_events'[MatterId] ),
+    // WFComponentId = 78
+    'dim_wf_component'[WFComponentName] = "Check Returned Documents",
+    'dim_event_type'[MatterEventTypeName] = "Milestone Complete"
+),
+    'dim_calendar'[Month] = DATE(2025, 12, 1)
+)
+VAR __rows_raw = CALCULATETABLE(
+    fact_events,
+    'dim_calendar'[Month] = DATE(2025, 12, 1),
+    'dim_wf_component'[WFComponentName] = "Check Returned Documents",
+    'dim_event_type'[MatterEventTypeName] = "Milestone Complete"
+)
+VAR __rows = TOPN(
+    1000,
+    __rows_raw,
+    fact_events[EventKey],
+    ASC
+)
+RETURN
+SELECTCOLUMNS(
+    __rows,
+    "__metric_key", "documents_verified.within_1_day",
+    "__metric_value", __metric_value,
+    "__base_metric_key", "documents_verified",
+    "__base_metric_value", __base_metric_value,
+    "__grain", fact_events[EventKey],
+    "event_timestamp_utc", fact_events[EventTimestampUTC],
+    "milestone_started_timestamp_utc", fact_events[LastRelatedMilestoneStartedTimestampUTC],
+    "business_days_to_verify", GetCustomerBusinessDays(
+  fact_events[LastRelatedMilestoneStartedTimestampUTC],
+  fact_events[EventTimestampUTC]
+),
+    "__passes_variant", (GetCustomerBusinessDays('fact_events'[LastRelatedMilestoneStartedTimestampUTC], 'fact_events'[EventTimestampUTC]) <= 1)
+)

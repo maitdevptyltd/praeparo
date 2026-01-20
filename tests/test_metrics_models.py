@@ -106,3 +106,35 @@ def test_metric_definition_supports_nested_variants() -> None:
     flat = metric.flattened_variants()
     assert "full" in flat
     assert "full.refinance" in flat
+
+
+def test_metric_definition_accepts_explain_spec() -> None:
+    payload = _sample_metric_payload()
+    payload["explain"] = {
+        "grain": {"event_key": "fact_events[EventKey]"},
+        "select": {
+            "event_timestamp_utc": "fact_events[EventTimestampUTC]",
+            "within_sla": "fact_events[DeltaDays] <= 1",
+        },
+    }
+    payload["variants"]["automated"]["explain"] = {
+        "select": {"is_automated": "fact_events[IsAutomated] = TRUE()"},
+        "where": ["fact_events[IsTest] = FALSE()"],
+    }
+
+    metric = MetricDefinition.model_validate(payload)
+
+    assert metric.explain is not None
+    assert metric.explain.grain == {"event_key": "fact_events[EventKey]"}
+    assert metric.explain.select is not None
+    assert "within_sla" in metric.explain.select
+    assert metric.variants["automated"].explain is not None
+    assert metric.variants["automated"].explain.where == ["fact_events[IsTest] = FALSE()"]
+
+
+def test_metric_explain_spec_rejects_reserved_labels() -> None:
+    payload = _sample_metric_payload()
+    payload["explain"] = {"select": {"__bad": "1"}}
+
+    with pytest.raises(ValueError):
+        MetricDefinition.model_validate(payload)

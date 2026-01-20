@@ -1,5 +1,77 @@
 {
   "$defs": {
+    "MetricExplainSpec": {
+      "additionalProperties": false,
+      "description": "Optional configuration for exporting row-level metric evidence.",
+      "properties": {
+        "from": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional driving table expression used to build the evidence rowset.",
+          "title": "From"
+        },
+        "where": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional extra rowset predicates appended after compiled calculate filters.",
+          "title": "Where"
+        },
+        "grain": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Evidence grain column reference (string) or a mapping of labels to column references.",
+          "title": "Grain"
+        },
+        "select": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Mapping of evidence column labels to DAX expressions evaluated per row.",
+          "title": "Select"
+        }
+      },
+      "title": "MetricExplainSpec",
+      "type": "object"
+    },
     "MetricRatioDefinition": {
       "additionalProperties": false,
       "description": "Explicit ratio derived from variants or other metrics.",
@@ -127,6 +199,18 @@
           "default": null,
           "description": "Optional implementation or sourcing notes for the variant",
           "title": "Notes"
+        },
+        "explain": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MetricExplainSpec"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional explain configuration used by `praeparo-metrics explain` to export row-level evidence."
         },
         "variants": {
           "additionalProperties": {
@@ -399,6 +483,18 @@
       "description": "Named variants that apply additional predicates or business logic",
       "title": "Variants",
       "type": "object"
+    },
+    "explain": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/MetricExplainSpec"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Optional explain configuration used by `praeparo-metrics explain` to export row-level evidence."
     },
     "ratios": {
       "anyOf": [

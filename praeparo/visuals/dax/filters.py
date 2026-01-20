@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping, Sequence
 
-from praeparo import normalize_dax_expression
+from praeparo.utils import normalize_dax_expression
 
 
 def normalise_filter_group(values: object | None) -> tuple[str, ...]:
