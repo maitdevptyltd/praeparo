@@ -112,6 +112,9 @@ def test_metric_definition_accepts_explain_spec() -> None:
     payload = _sample_metric_payload()
     payload["explain"] = {
         "grain": {"event_key": "fact_events[EventKey]"},
+        "define": {
+            "__latest_event_key": "MEASURE 'adhoc'[__latest_event_key] = MAX(fact_events[EventKey])",
+        },
         "select": {
             "event_timestamp_utc": "fact_events[EventTimestampUTC]",
             "within_sla": "fact_events[DeltaDays] <= 1",
@@ -126,6 +129,9 @@ def test_metric_definition_accepts_explain_spec() -> None:
 
     assert metric.explain is not None
     assert metric.explain.grain == {"event_key": "fact_events[EventKey]"}
+    assert metric.explain.define == [
+        {"__latest_event_key": "MEASURE 'adhoc'[__latest_event_key] = MAX(fact_events[EventKey])"}
+    ]
     assert metric.explain.select is not None
     assert "within_sla" in metric.explain.select
     assert metric.variants["automated"].explain is not None
@@ -137,4 +143,32 @@ def test_metric_explain_spec_rejects_reserved_labels() -> None:
     payload["explain"] = {"select": {"__bad": "1"}}
 
     with pytest.raises(ValueError):
+        MetricDefinition.model_validate(payload)
+
+
+def test_metric_definition_accepts_compose_list() -> None:
+    payload = _sample_metric_payload()
+    payload["compose"] = [
+        "  @/registry/components/explain/default_event_metric.yaml  ",
+        "",
+    ]
+
+    metric = MetricDefinition.model_validate(payload)
+
+    assert metric.compose == ["@/registry/components/explain/default_event_metric.yaml"]
+
+
+def test_metric_definition_rejects_compose_string() -> None:
+    payload = _sample_metric_payload()
+    payload["compose"] = "@/registry/components/explain/default_event_metric.yaml"
+
+    with pytest.raises(TypeError):
+        MetricDefinition.model_validate(payload)
+
+
+def test_metric_explain_spec_rejects_non_string_define_values() -> None:
+    payload = _sample_metric_payload()
+    payload["explain"] = {"define": {"__latest_event_key": 123}}
+
+    with pytest.raises(TypeError):
         MetricDefinition.model_validate(payload)

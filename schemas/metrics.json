@@ -52,6 +52,41 @@
           "description": "Evidence grain column reference (string) or a mapping of labels to column references.",
           "title": "Grain"
         },
+        "define": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            {
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "additionalProperties": {
+                      "type": "string"
+                    },
+                    "type": "object"
+                  }
+                ]
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional DEFINE blocks scoped to explain queries only. Accepts the same shapes as visual context `define` (string, mapping, or mixed sequences).",
+          "title": "Define"
+        },
         "select": {
           "anyOf": [
             {
@@ -393,6 +428,14 @@
       "default": null,
       "description": "Optional parent metric key to inherit base definitions from",
       "title": "Extends"
+    },
+    "compose": {
+      "description": "Optional list of component file references to merge into this metric before applying the metric's own fields.",
+      "items": {
+        "type": "string"
+      },
+      "title": "Compose",
+      "type": "array"
     },
     "key": {
       "description": "Stable identifier for referencing the metric",

@@ -14,6 +14,9 @@ _SLUG_PATTERN = re.compile(r"^[a-z0-9_]+$")
 _VALUE_TYPES = {"number", "percent", "currency"}
 _FORMAT_PATTERN = re.compile(r"^(number|percent|currency)(:\d+)?$")
 
+MetricDefineEntry = str | Dict[str, str]
+MetricDefinePayload = str | Dict[str, str] | List[MetricDefineEntry]
+
 
 def _normalise_optional_format(value: object) -> str | None:
     if value is None:
@@ -108,6 +111,83 @@ def _ensure_snake_case_mapping_keys(
     return value
 
 
+def _normalise_define_payload(value: object) -> List[MetricDefineEntry] | None:
+    """Normalise a context-style `define` payload into a deterministic sequence.
+
+    Define payloads accept the same shapes as visual context layers:
+
+    - string define fragments
+    - mapping of name -> fragment (named blocks)
+    - sequences containing strings and/or mappings (mixed named + unlabelled)
+
+    The returned representation mirrors the internal context merge shape: a list
+    of one-item mappings (named blocks) plus plain strings (unlabelled blocks).
+    """
+
+    if value is None:
+        return None
+
+    cleaned: List[MetricDefineEntry] = []
+
+    def _append_named(key: object, raw: object) -> None:
+        if raw is None:
+            return
+        if not isinstance(raw, str):
+            raise TypeError("define mapping values must be strings.")
+        candidate = raw.strip()
+        if not candidate:
+            return
+
+        name = str(key)
+        if not _SLUG_PATTERN.match(name):
+            raise ValueError("define keys must be snake_case (lowercase letters, digits, underscore)")
+        cleaned.append({name: candidate})
+
+    if isinstance(value, str):
+        candidate = value.strip()
+        return [candidate] if candidate else None
+
+    if isinstance(value, dict):
+        for key, raw in value.items():
+            _append_named(key, raw)
+        return cleaned or None
+
+    if isinstance(value, list):
+        for entry in value:
+            if entry is None:
+                continue
+            if isinstance(entry, str):
+                candidate = entry.strip()
+                if candidate:
+                    cleaned.append(candidate)
+                continue
+            if isinstance(entry, dict):
+                for key, raw in entry.items():
+                    _append_named(key, raw)
+                continue
+            raise TypeError("define entries must be strings or mappings of strings.")
+        return cleaned or None
+
+    raise TypeError("define must be supplied as a string, mapping, or sequence of strings/mappings.")
+
+
+def _ensure_compose_list(value: object) -> List[str]:
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise TypeError("compose must be a YAML list of strings.")
+    cleaned: List[str] = []
+    for entry in value:
+        if entry is None:
+            continue
+        if not isinstance(entry, str):
+            raise TypeError("compose entries must be strings.")
+        candidate = entry.strip()
+        if candidate:
+            cleaned.append(candidate)
+    return cleaned
+
+
 class MetricExplainSpec(BaseModel):
     """Optional configuration for exporting row-level metric evidence."""
 
@@ -125,6 +205,13 @@ class MetricExplainSpec(BaseModel):
     grain: str | Dict[str, str] | None = Field(
         default=None,
         description="Evidence grain column reference (string) or a mapping of labels to column references.",
+    )
+    define: MetricDefinePayload | None = Field(
+        default=None,
+        description=(
+            "Optional DEFINE blocks scoped to explain queries only. "
+            "Accepts the same shapes as visual context `define` (string, mapping, or mixed sequences)."
+        ),
     )
     select: Dict[str, str] | None = Field(
         default=None,
@@ -176,6 +263,8 @@ class MetricExplainSpec(BaseModel):
             if candidate:
                 cleaned[str(key)] = candidate
         return cleaned or None
+
+    _validate_define = field_validator("define", mode="before")(_normalise_define_payload)
 
     @model_validator(mode="after")
     def _validate_keys(self) -> "MetricExplainSpec":
@@ -297,6 +386,13 @@ class MetricDefinition(BaseModel):
         default=None,
         description="Optional parent metric key to inherit base definitions from",
     )
+    compose: List[str] = Field(
+        default_factory=list,
+        description=(
+            "Optional list of component file references to merge into this metric "
+            "before applying the metric's own fields."
+        ),
+    )
     key: str = Field(
         ..., description="Stable identifier for referencing the metric", examples=["documents_sent"]
     )
@@ -353,6 +449,7 @@ class MetricDefinition(BaseModel):
     _normalise_expression = field_validator("expression", mode="before")(
         _normalise_optional_expression
     )
+    _validate_compose = field_validator("compose", mode="before")(_ensure_compose_list)
 
     @field_validator("value_type", mode="before")
     @classmethod

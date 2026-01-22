@@ -12,10 +12,12 @@ import re
 from typing import Iterable, Mapping, Sequence
 
 from praeparo.metrics.catalog import MetricCatalog
+from praeparo.metrics.components import MetricComponentLoader
 from praeparo.metrics.dax import MetricDaxBuilder
 from praeparo.metrics.models import MetricDefinition, MetricExplainSpec, MetricVariant
 from praeparo.utils import normalize_dax_expression
 from praeparo.visuals.dax.cache import MetricCompilationCache, resolve_metric_reference
+from praeparo.visuals.dax.utils import normalise_define_blocks
 from praeparo.visuals.dax.utils import split_metric_identifier
 
 
@@ -59,8 +61,16 @@ def resolve_metric_explain_spec(
         raise KeyError(f"Metric '{metric_key}' not found in catalog.")
 
     effective: MetricExplainSpec | None = None
+    component_loader = MetricComponentLoader()
 
     for ancestor in _resolve_metric_chain(catalog, metric):
+        declaring_file = catalog.sources.get(ancestor.key)
+        if declaring_file is None:
+            raise KeyError(f"Metric '{ancestor.key}' is missing a source path; cannot resolve compose entries.")
+
+        for ref in ancestor.compose or []:
+            component = component_loader.load(ref, declaring_file=declaring_file)
+            effective = merge_explain_specs(effective, component.explain)
         effective = merge_explain_specs(effective, ancestor.explain)
 
     if variant_path:
@@ -77,6 +87,7 @@ def merge_explain_specs(base: MetricExplainSpec | None, patch: MetricExplainSpec
     - `grain` (mapping form): merge by key, last-writer-wins
     - `select`: merge by key, last-writer-wins
     - `where`: append-only
+    - `define`: context-like merge (named last-writer-wins, unlabelled de-duped)
     """
 
     if patch is None:
@@ -86,6 +97,7 @@ def merge_explain_specs(base: MetricExplainSpec | None, patch: MetricExplainSpec
 
     resolved_from = patch.from_ if patch.from_ is not None else base.from_
     resolved_where = _append_lists(base.where, patch.where)
+    resolved_define = _merge_define(base.define, patch.define)
     resolved_select = _merge_dicts(base.select, patch.select)
     resolved_grain = _merge_grain(base.grain, patch.grain)
 
@@ -96,6 +108,8 @@ def merge_explain_specs(base: MetricExplainSpec | None, patch: MetricExplainSpec
         payload["where"] = resolved_where
     if resolved_grain is not None:
         payload["grain"] = resolved_grain
+    if resolved_define is not None:
+        payload["define"] = resolved_define
     if resolved_select is not None:
         payload["select"] = resolved_select
 
@@ -207,6 +221,7 @@ def build_metric_explain_plan(
 
     define_body: list[str] = [f"  TABLE {DEFAULT_MEASURE_TABLE} = {{ {{ BLANK() }} }}"]
     define_body.extend(_format_define_blocks(context_define_blocks))
+    define_body.extend(_format_define_blocks(_resolve_explain_define_blocks(explain_spec)))
 
     safe_identifier = _escape_dax_string(metric_identifier)
     safe_base_identifier = _escape_dax_string(metric_key)
@@ -336,6 +351,93 @@ def _merge_grain(
     merged: dict[str, str] = dict(base)
     merged.update(patch)
     return merged
+
+
+def _split_named_and_unlabelled_fragments(
+    value: object | None,
+    *,
+    label: str,
+) -> tuple[dict[str, str], list[str]]:
+    """Split a context-style payload into named and unlabelled fragments."""
+
+    named: dict[str, str] = {}
+    unlabelled: list[str] = []
+
+    if value is None:
+        return named, unlabelled
+
+    if isinstance(value, str):
+        candidate = value.strip()
+        if candidate:
+            unlabelled.append(candidate)
+        return named, unlabelled
+
+    if isinstance(value, Mapping):
+        for key, raw in value.items():
+            if raw is None:
+                continue
+            if not isinstance(raw, str):
+                raise TypeError(f"{label} mapping values must be strings.")
+            candidate = raw.strip()
+            if candidate:
+                named[str(key)] = candidate
+        return named, unlabelled
+
+    if isinstance(value, Sequence):
+        for entry in value:
+            if entry is None:
+                continue
+            if isinstance(entry, Mapping):
+                entry_named, entry_unlabelled = _split_named_and_unlabelled_fragments(entry, label=label)
+                named.update(entry_named)
+                unlabelled.extend(entry_unlabelled)
+                continue
+            if not isinstance(entry, str):
+                raise TypeError(f"{label} entries must be strings or mappings when supplied as a list.")
+            candidate = entry.strip()
+            if candidate:
+                unlabelled.append(candidate)
+        return named, unlabelled
+
+    raise TypeError(f"{label} must be supplied as a string, mapping, or sequence thereof.")
+
+
+def _merge_define(base: object | None, patch: object | None) -> list[object] | None:
+    if base is None and patch is None:
+        return None
+    if patch is None:
+        existing_named, existing_unlabelled = _split_named_and_unlabelled_fragments(base, label="define")
+        merged: list[object] = [{key: value} for key, value in existing_named.items()]
+        merged.extend(existing_unlabelled)
+        return merged or None
+
+    existing_named, existing_unlabelled = _split_named_and_unlabelled_fragments(base, label="define")
+    incoming_named, incoming_unlabelled = _split_named_and_unlabelled_fragments(patch, label="define")
+
+    merged_named = dict(existing_named)
+    merged_named.update(incoming_named)
+
+    merged_unlabelled = list(existing_unlabelled)
+    for item in incoming_unlabelled:
+        if item not in merged_unlabelled:
+            merged_unlabelled.append(item)
+
+    merged: list[object] = [{key: value} for key, value in merged_named.items()]
+    merged.extend(merged_unlabelled)
+    return merged or None
+
+
+def _flatten_define_fragments(value: object | None) -> list[str]:
+    """Flatten merged define payload into a list of strings in stable order."""
+
+    named, unlabelled = _split_named_and_unlabelled_fragments(value, label="define")
+    return [*named.values(), *unlabelled]
+
+
+def _resolve_explain_define_blocks(explain: MetricExplainSpec | None) -> tuple[str, ...]:
+    if explain is None or not explain.define:
+        return ()
+    return normalise_define_blocks(_flatten_define_fragments(explain.define))
 
 
 def _resolve_driving_table(explain: MetricExplainSpec | None) -> str:

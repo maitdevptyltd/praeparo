@@ -14,6 +14,9 @@ explain:
   where:                                # optional; appended after compiled calculate filters
     - dim_customer[CustomerId] = 201
   grain: fact_events[EventKey]          # optional; defaults to fact_events[EventKey]
+  define:                               # optional; explain-only DEFINE helpers (context-style shapes)
+    __latest_event_key: |
+      MEASURE 'adhoc'[__latest_event_key] = MAX(fact_events[EventKey])
   select:                               # optional; label -> DAX expression
     event_timestamp_utc: fact_events[EventTimestampUTC]
     business_days_to_send: GetCustomerBusinessDays(
@@ -26,6 +29,7 @@ Notes:
 
 - `select` and mapping-form `grain` keys must be `snake_case`.
 - Labels starting with `__` are reserved for framework fields (`__metric_key`, `__metric_value`, …).
+- `explain.define` supports `__`-prefixed helper names and is scoped to explain queries only (it does not affect compiled metric measures).
 
 ### Inheritance and merging
 
@@ -40,6 +44,7 @@ Merge rules:
 - `grain` (mapping form): merge by key, last-writer-wins
 - `select`: merge by key, last-writer-wins
 - `where`: append-only
+- `define`: context-like merge (named entries last-writer-wins, unlabelled entries de-duped)
 
 ## CLI: `praeparo-metrics explain`
 
