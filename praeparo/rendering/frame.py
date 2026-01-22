@@ -129,8 +129,9 @@ def frame_png(
 
     figure = frame_figure(frame, children)
     write_kwargs: dict[str, object] = {"format": "png", "scale": scale}
-    if figure.layout.height:
-        write_kwargs["height"] = figure.layout.height
+    height = getattr(figure.layout, "height", None)
+    if isinstance(height, (int, float)) and height:
+        write_kwargs["height"] = height
     figure.write_image(output_path, **write_kwargs)
 
 

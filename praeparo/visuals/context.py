@@ -8,6 +8,8 @@ from pathlib import Path
 
 import yaml
 
+from praeparo.visuals.metrics import CalculateInput
+
 
 class ContextLoadError(ValueError):
     """Raised when a provided context file cannot be parsed."""
@@ -92,8 +94,8 @@ def load_context_file(path: Path) -> Mapping[str, object]:
 def merge_context_payload(
     *,
     base: Mapping[str, object] | None = None,
-    calculate: object | None = None,
-    define: object | None = None,
+    calculate: CalculateInput | None = None,
+    define: CalculateInput | None = None,
 ) -> dict[str, object]:
     """Return a merged context dictionary containing calculate/define lists."""
 
@@ -143,8 +145,8 @@ def merge_context_payload(
 def resolve_dax_context(
     *,
     base: Mapping[str, object] | None = None,
-    calculate: Sequence[str] | str | None = None,
-    define: Sequence[str] | str | None = None,
+    calculate: CalculateInput | None = None,
+    define: CalculateInput | None = None,
 ) -> tuple[tuple[str, ...], tuple[str, ...]]:
     """Merge and normalise global DAX fragments from CLI flags and context payload."""
 

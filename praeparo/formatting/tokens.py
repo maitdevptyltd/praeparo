@@ -8,7 +8,7 @@ and conversion so token behaviour stays consistent everywhere.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
+from typing import Literal, cast
 
 
 FormatKind = Literal["number", "percent", "currency"]
@@ -42,14 +42,14 @@ def parse_format_token(token: str) -> FormatSpec:
 
     if not raw_precision.strip():
         default_precision = 2 if kind == "currency" else 0
-        return FormatSpec(kind=kind, precision=default_precision)
+        return FormatSpec(kind=cast(FormatKind, kind), precision=default_precision)
 
     try:
         precision_float = float(raw_precision.strip())
     except ValueError as exc:
         raise ValueError(f"format precision must be numeric (got '{raw_precision.strip()}')") from exc
 
-    return FormatSpec(kind=kind, precision=max(0, int(precision_float)))
+    return FormatSpec(kind=cast(FormatKind, kind), precision=max(0, int(precision_float)))
 
 
 def format_value(value: float | int | None, token: str | None) -> str:

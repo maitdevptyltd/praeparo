@@ -286,6 +286,247 @@ def build_metric_explain_plan(
     )
 
 
+def build_metric_binding_explain_plan(
+    catalog: MetricCatalog,
+    *,
+    metric_reference: str,
+    metric_identifier: str,
+    context_calculate_filters: Sequence[str] = (),
+    context_define_blocks: Sequence[str] = (),
+    limit: int = 50_000,
+    variant_mode: str = "flag",
+    numerator_define_filters: Sequence[str] = (),
+    ratio_to: str | bool | None = None,
+    visual_path: str | None = None,
+    binding_id: str | None = None,
+    binding_label: str | None = None,
+) -> MetricExplainPlan:
+    """Compile an explain plan for a metric binding inside a visual or pack.
+
+    The binding workflow is similar to the core metric explain plan, but:
+
+    - `metric_identifier` can be a binding-qualified label (for example, a full selector token)
+      so output artefacts remain unique per binding instance.
+    - `metric_reference` is the catalogue metric key used to resolve the underlying measure
+      definition (including dotted variants).
+    - `numerator_define_filters` are applied to the numerator only (mirroring metric dataset
+      builder semantics for ratio_to).
+    - When `ratio_to` is set, the plan emits numerator/denominator metadata columns and
+      a computed `__ratio_value` column.
+    """
+
+    if limit <= 0:
+        raise ValueError("limit must be a positive integer.")
+
+    metric_key, variant_path = split_metric_identifier(metric_reference)
+
+    metric = catalog.get_metric(metric_key)
+    if metric is None:
+        raise KeyError(f"Metric '{metric_key}' not found in catalog.")
+
+    if variant_mode not in {"flag", "filter"}:
+        raise ValueError("variant_mode must be one of {'flag', 'filter'}.")
+
+    builder = MetricDaxBuilder(catalog)
+    cache = MetricCompilationCache()
+
+    _, base_definition = resolve_metric_reference(
+        builder=builder,
+        cache=cache,
+        metric_key=metric_key,
+        variant_path=None,
+    )
+    if variant_path:
+        _, metric_definition = resolve_metric_reference(
+            builder=builder,
+            cache=cache,
+            metric_key=metric_key,
+            variant_path=variant_path,
+        )
+    else:
+        metric_definition = base_definition
+
+    # Start by resolving the merged explain spec (extends + variants), then apply defaults.
+    explain_spec = resolve_metric_explain_spec(
+        catalog,
+        metric_key=metric_key,
+        variant_path=variant_path,
+    )
+    driving_table = _resolve_driving_table(explain_spec)
+    grain_columns = _resolve_grain_columns(explain_spec)
+    select_columns = _resolve_select_columns(explain_spec)
+
+    _raise_on_colliding_column_names(grain_columns, select_columns)
+
+    # When defining population filters inside `define: CALCULATE(...)`, extraction is best-effort.
+    extracted_define_filters = _extract_define_calculate_filters(metric.define)
+
+    # Build the rowset filters (metric + optional variant + context + binding + explain.where).
+    rowset_filters: list[str] = []
+    rowset_filters.extend(_normalise_fragments(context_calculate_filters))
+    rowset_filters.extend(_normalise_fragments(base_definition.filters))
+    rowset_filters.extend(_normalise_fragments(base_definition.evaluate_filters))
+    rowset_filters.extend(_normalise_fragments(extracted_define_filters))
+    rowset_filters.extend(_normalise_fragments(numerator_define_filters))
+
+    warnings: list[str] = []
+    if variant_path and variant_mode == "filter":
+        rowset_filters.extend(_normalise_fragments(_collect_variant_calculate_filters(metric, variant_path)))
+    elif variant_path and not base_definition.filters and not extracted_define_filters:
+        warnings.append(
+            "Base metric does not declare any calculate filters; evidence export may be broad. "
+            "Prefer moving population filters into metric.calculate or provide explain.where/from overrides."
+        )
+
+    if explain_spec and explain_spec.where:
+        rowset_filters.extend(_normalise_fragments(explain_spec.where))
+
+    rowset_filters = _dedupe_preserve_order(rowset_filters)
+
+    passes_variant_expr: str | None = None
+    if variant_path and variant_mode == "flag":
+        variant_filters = _collect_variant_calculate_filters(metric, variant_path)
+        passes_variant_expr = _try_build_passes_variant(
+            variant_filters,
+            driving_table=driving_table,
+        )
+        if passes_variant_expr is None and variant_filters:
+            warnings.append(
+                "Could not emit __passes_variant because one or more variant filters could not be converted "
+                "into a per-row boolean expression. Add an explicit boolean in explain.select if required."
+            )
+
+    # Compile constant headline values once per query.
+    context_filters = _format_filter_block(_dedupe_preserve_order(_normalise_fragments(context_calculate_filters)))
+
+    metric_value_expr = normalize_dax_expression(metric_definition.expression_with_evaluate_filters())
+    binding_define = _format_filter_block(_dedupe_preserve_order(_normalise_fragments(numerator_define_filters)))
+    if binding_define:
+        metric_value_expr = normalize_dax_expression(_compose_calculate(metric_value_expr, binding_define))
+    metric_value_var = _compose_calculate(metric_value_expr, context_filters)
+
+    base_value_expr = normalize_dax_expression(base_definition.expression_with_evaluate_filters())
+    base_value_var = _compose_calculate(base_value_expr, context_filters)
+
+    ratio_to_token: str | None = None
+    denominator_reference: str | None = None
+    denominator_value_var: str | None = None
+    if ratio_to is not None:
+        if ratio_to is True:
+            ratio_to_token = "true"
+            if "." not in metric_reference:
+                raise ValueError("ratio_to=true requires a dotted metric reference to infer the base denominator.")
+            denominator_reference = metric_key
+        elif isinstance(ratio_to, str):
+            ratio_to_token = ratio_to
+            denominator_reference = ratio_to
+        else:
+            raise TypeError("ratio_to must be bool, str, or None.")
+
+        denom_key, denom_variant = split_metric_identifier(denominator_reference)
+        _, denom_definition = resolve_metric_reference(
+            builder=builder,
+            cache=cache,
+            metric_key=denom_key,
+            variant_path=denom_variant,
+        )
+        denom_expr = normalize_dax_expression(denom_definition.expression_with_evaluate_filters())
+        denominator_value_var = _compose_calculate(denom_expr, context_filters)
+
+    define_body: list[str] = [f"  TABLE {DEFAULT_MEASURE_TABLE} = {{ {{ BLANK() }} }}"]
+    define_body.extend(_format_define_blocks(context_define_blocks))
+    define_body.extend(_format_define_blocks(_resolve_explain_define_blocks(explain_spec)))
+
+    safe_identifier = _escape_dax_string(metric_identifier)
+    safe_reference = _escape_dax_string(metric_reference)
+    safe_base_identifier = _escape_dax_string(metric_key)
+
+    order_expr = normalize_dax_expression(_order_expression(grain_columns))
+
+    rows_expr = _compose_calculatetable(
+        driving_table,
+        rowset_filters,
+    )
+    limited_rows_expr = (
+        "TOPN(\n"
+        f"    {limit},\n"
+        "    __rows_raw,\n"
+        f"    {order_expr},\n"
+        "    ASC\n"
+        ")"
+    )
+
+    column_pairs: list[tuple[str, str]] = [
+        ("__metric_key", f'"{safe_identifier}"'),
+        ("__metric_value", "__metric_value"),
+    ]
+
+    if visual_path:
+        column_pairs.append(("__visual_path", f'"{_escape_dax_string(visual_path)}"'))
+    if binding_id:
+        column_pairs.append(("__binding_id", f'"{_escape_dax_string(binding_id)}"'))
+
+    column_pairs.append(("__binding_metric_key", f'"{safe_reference}"'))
+    if binding_label:
+        column_pairs.append(("__binding_label", f'"{_escape_dax_string(binding_label)}"'))
+    if ratio_to_token:
+        column_pairs.append(("__ratio_to", f'"{_escape_dax_string(ratio_to_token)}"'))
+
+    if denominator_reference and denominator_value_var is not None:
+        column_pairs.extend(
+            [
+                ("__numerator_key", f'"{safe_reference}"'),
+                ("__numerator_value", "__metric_value"),
+                ("__denominator_key", f'"{_escape_dax_string(denominator_reference)}"'),
+                ("__denominator_value", "__denominator_value"),
+                ("__ratio_value", "__ratio_value"),
+            ]
+        )
+
+    if variant_path:
+        column_pairs.append(("__base_metric_key", f'"{safe_base_identifier}"'))
+        column_pairs.append(("__base_metric_value", "__base_metric_value"))
+
+    for label, expr in grain_columns.items():
+        column_pairs.append((label, normalize_dax_expression(expr)))
+    for label, expr in select_columns.items():
+        column_pairs.append((label, normalize_dax_expression(expr)))
+    if passes_variant_expr is not None:
+        column_pairs.append(("__passes_variant", passes_variant_expr))
+
+    column_order = tuple(label for label, _ in column_pairs)
+    selectcolumns_args = _format_selectcolumns_args(column_pairs)
+
+    lines: list[str] = []
+    lines.append("DEFINE")
+    lines.extend(define_body)
+    lines.append("")
+    lines.append("EVALUATE")
+    lines.append(f"VAR __metric_value = {metric_value_var}")
+    if denominator_reference and denominator_value_var is not None:
+        lines.append(f"VAR __denominator_value = {denominator_value_var}")
+        lines.append("VAR __ratio_value = DIVIDE(__metric_value, __denominator_value)")
+    if variant_path:
+        lines.append(f"VAR __base_metric_value = {base_value_var}")
+    lines.append(f"VAR __rows_raw = {rows_expr}")
+    lines.append(f"VAR __rows = {limited_rows_expr}")
+    lines.append("RETURN")
+    lines.append("SELECTCOLUMNS(")
+    lines.append("    __rows,")
+    lines.extend(selectcolumns_args)
+    lines.append(")")
+    lines.append("")
+
+    statement = "\n".join(lines)
+
+    return MetricExplainPlan(
+        metric_identifier=metric_identifier,
+        statement=statement,
+        column_order=column_order,
+        warnings=tuple(warnings),
+    )
+
+
 def _resolve_metric_chain(catalog: MetricCatalog, metric: MetricDefinition) -> list[MetricDefinition]:
     chain: list[MetricDefinition] = []
     current: MetricDefinition | None = metric
@@ -736,6 +977,7 @@ __all__ = [
     "DEFAULT_EXPLAIN_FROM",
     "DEFAULT_EXPLAIN_GRAIN",
     "MetricExplainPlan",
+    "build_metric_binding_explain_plan",
     "build_metric_explain_plan",
     "merge_explain_specs",
     "resolve_metric_explain_spec",

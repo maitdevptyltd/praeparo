@@ -10,12 +10,13 @@ from __future__ import annotations
 
 from collections.abc import Mapping, MutableMapping, Sequence
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from jinja2 import Environment
 
 from praeparo.pack.templating import create_pack_jinja_env, render_value
 from praeparo.visuals.context import load_context_file, merge_context_payload
+from praeparo.visuals.metrics import CalculateInput
 
 _CONTEXT_SUFFIXES = {".yaml", ".yml", ".json"}
 
@@ -164,8 +165,8 @@ def merge_context_layer_payload(*, base: Mapping[str, object], incoming: Mapping
     # shared merge semantics from praeparo.visuals.context.
     return merge_context_payload(
         base=merged,
-        calculate=incoming.get("calculate"),
-        define=incoming.get("define"),
+        calculate=cast(CalculateInput | None, incoming.get("calculate")),
+        define=cast(CalculateInput | None, incoming.get("define")),
     )
 
 

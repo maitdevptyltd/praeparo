@@ -48,11 +48,44 @@ Merge rules:
 
 ## CLI: `praeparo-metrics explain`
 
-Basic usage:
+### Selector forms (metrics, visuals, packs)
+
+`praeparo-metrics explain` accepts a single positional `selector` that can target:
+
+- A catalogue metric key (including dotted variants)
+- A specific metric binding inside a visual YAML (`<visual_path>#...`)
+- A specific metric binding inside a pack slide (`<pack_path>#<slide>#...`)
+
+All numeric selectors are **0-based** (for example, `#0` selects the first slide).
+
+Basic metric usage:
 
 ```bash
 poetry run praeparo-metrics explain documents_verified
 poetry run praeparo-metrics explain documents_verified.within_1_day
+```
+
+Visual binding usage:
+
+```bash
+poetry run praeparo-metrics explain registry/visuals/example.yaml#series_id
+```
+
+Pack discovery + binding usage:
+
+```bash
+# List slides in YAML order (0-based index + optional id).
+poetry run praeparo-metrics explain registry/customers/<customer>/<pack>.yaml --list-slides
+
+# List metric bindings for a slide (slide selector: id or 0-based index).
+poetry run praeparo-metrics explain registry/customers/<customer>/<pack>.yaml#0 --list-bindings
+poetry run praeparo-metrics explain registry/customers/<customer>/<pack>.yaml#home --list-bindings
+
+# Explain a binding on a single-visual slide.
+poetry run praeparo-metrics explain registry/customers/<customer>/<pack>.yaml#0#series_id
+
+# Placeholder slides require an explicit placeholder id (or 0-based placeholder index).
+poetry run praeparo-metrics explain registry/customers/<customer>/<pack>.yaml#2#chart#series_id
 ```
 
 Generate the query without executing it:
@@ -60,6 +93,18 @@ Generate the query without executing it:
 ```bash
 poetry run praeparo-metrics explain documents_verified.within_1_day --plan-only
 ```
+
+### Plugins (`--plugin`)
+
+Some visual types and binding adapters are registered by downstream repos. Use `--plugin` to import them before loading visuals/packs:
+
+```bash
+poetry run praeparo-metrics explain \
+  --plugin msanational_metrics \
+  registry/customers/amp/visuals/performance_dashboard.yaml --list-bindings
+```
+
+`--plugin` is repeatable and may appear anywhere in the command line.
 
 ### Context (month/date windows come from context)
 

@@ -8,6 +8,7 @@ from typing import Mapping, Sequence, TYPE_CHECKING
 
 from praeparo.visuals.context_models import VisualContextModel
 from praeparo.visuals.dax import DEFAULT_MEASURE_TABLE, normalise_define_blocks, normalise_filter_group
+from praeparo.visuals.metrics import CalculateInput
 
 if TYPE_CHECKING:
     from praeparo.pipeline import ExecutionContext
@@ -74,7 +75,7 @@ def _select_datasource_file(datasources_root: Path | None) -> Path | None:
     return yaml_files[0] if len(yaml_files) == 1 else None
 
 
-def normalise_filters(filters: Sequence[str] | str | None) -> tuple[str, ...]:
+def normalise_filters(filters: CalculateInput | None) -> tuple[str, ...]:
     """Expose filter normalisation so builder code can reuse the same helper."""
 
     return normalise_filter_group(filters)

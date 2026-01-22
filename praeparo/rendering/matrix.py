@@ -69,8 +69,9 @@ def matrix_png(config: MatrixConfig, dataset: MatrixResultSet, output_path: str,
 
     figure = matrix_figure(config, dataset)
     write_kwargs: dict[str, object] = {"format": "png", "scale": scale}
-    if figure.layout.height:
-        write_kwargs["height"] = figure.layout.height
+    height = getattr(figure.layout, "height", None)
+    if isinstance(height, (int, float)) and height:
+        write_kwargs["height"] = height
     figure.write_image(output_path, **write_kwargs)
 
 

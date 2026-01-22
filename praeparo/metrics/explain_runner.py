@@ -20,6 +20,7 @@ from typing import Any, Mapping, Sequence
 
 from praeparo.datasources import DataSourceConfigError, ResolvedDataSource, resolve_datasource
 from praeparo.metrics import MetricCatalog, build_metric_explain_plan
+from praeparo.metrics.explain import MetricExplainPlan, build_metric_binding_explain_plan
 from praeparo.powerbi import PowerBIClient, PowerBIQueryError, PowerBISettings
 from praeparo.visuals.dax import slugify
 
@@ -188,12 +189,8 @@ def run_metric_explain(
     datasource: ResolvedDataSource | None,
     outputs: MetricExplainOutputs,
 ) -> tuple[Path, Path, Path, int, tuple[str, ...]]:
-    """Compile + execute an explain query and write all output artifacts.
+    """Compile + execute an explain query and write all output artifacts."""
 
-    Returns (dax_path, evidence_path, summary_path, row_count, warnings).
-    """
-
-    # Start by compiling the query plan and writing `explain.dax` so failures are still reproducible.
     plan = build_metric_explain_plan(
         catalog,
         metric_identifier=metric_identifier,
@@ -202,6 +199,70 @@ def run_metric_explain(
         limit=limit,
         variant_mode=variant_mode,
     )
+    return run_explain_plan(
+        plan=plan,
+        limit=limit,
+        data_mode=data_mode,
+        datasource=datasource,
+        outputs=outputs,
+    )
+
+
+def run_metric_binding_explain(
+    *,
+    catalog: MetricCatalog,
+    metric_reference: str,
+    selector_identifier: str,
+    context_calculate_filters: Sequence[str],
+    context_define_blocks: Sequence[str],
+    limit: int,
+    variant_mode: str,
+    numerator_define_filters: Sequence[str],
+    ratio_to: str | bool | None,
+    visual_path: str | None,
+    binding_id: str | None,
+    binding_label: str | None,
+    data_mode: str,
+    datasource: ResolvedDataSource | None,
+    outputs: MetricExplainOutputs,
+) -> tuple[Path, Path, Path, int, tuple[str, ...]]:
+    """Compile + execute an explain query for a visual binding."""
+
+    plan = build_metric_binding_explain_plan(
+        catalog,
+        metric_reference=metric_reference,
+        metric_identifier=selector_identifier,
+        context_calculate_filters=context_calculate_filters,
+        context_define_blocks=context_define_blocks,
+        limit=limit,
+        variant_mode=variant_mode,
+        numerator_define_filters=numerator_define_filters,
+        ratio_to=ratio_to,
+        visual_path=visual_path,
+        binding_id=binding_id,
+        binding_label=binding_label,
+    )
+    return run_explain_plan(
+        plan=plan,
+        limit=limit,
+        data_mode=data_mode,
+        datasource=datasource,
+        outputs=outputs,
+    )
+
+
+def run_explain_plan(
+    *,
+    plan: MetricExplainPlan,
+    limit: int,
+    data_mode: str,
+    datasource: ResolvedDataSource | None,
+    outputs: MetricExplainOutputs,
+) -> tuple[Path, Path, Path, int, tuple[str, ...]]:
+    """Execute a pre-built explain plan and write evidence + summary artefacts.
+
+    Returns (dax_path, evidence_path, summary_path, row_count, warnings).
+    """
 
     write_explain_dax(outputs.dax_path, plan.statement)
 
@@ -225,8 +286,16 @@ def run_metric_explain(
             mock_rows: list[dict[str, object]] = []
             for index in range(min(10, limit)):
                 record: dict[str, object] = {col: None for col in plan.column_order}
-                record["__metric_key"] = metric_identifier
-                record["__metric_value"] = 0
+                if "__metric_key" in record:
+                    record["__metric_key"] = plan.metric_identifier
+                if "__metric_value" in record:
+                    record["__metric_value"] = 0
+                if "__numerator_value" in record:
+                    record["__numerator_value"] = 0
+                if "__denominator_value" in record:
+                    record["__denominator_value"] = 0
+                if "__ratio_value" in record:
+                    record["__ratio_value"] = None
                 record["__grain"] = index + 1 if "__grain" in record else None
                 mock_rows.append(record)
             rows = mock_rows
@@ -257,7 +326,7 @@ def run_metric_explain(
         null_counts, distinct_counts = summarise_evidence(rows, columns=plan.column_order)
         write_summary_json(
             outputs.summary_path,
-            metric_identifier=metric_identifier,
+            metric_identifier=plan.metric_identifier,
             row_count=len(rows),
             null_counts=null_counts,
             distinct_counts=distinct_counts,
@@ -272,7 +341,7 @@ def run_metric_explain(
         # On failure we still emit a summary so callers can grab paths + error detail.
         write_summary_json(
             outputs.summary_path,
-            metric_identifier=metric_identifier,
+            metric_identifier=plan.metric_identifier,
             row_count=0,
             null_counts={},
             distinct_counts={},
@@ -297,6 +366,8 @@ __all__ = [
     "MetricExplainOutputs",
     "derive_explain_outputs",
     "resolve_explain_datasource",
+    "run_explain_plan",
+    "run_metric_binding_explain",
     "run_metric_explain",
     "write_explain_dax",
     "write_summary_json",

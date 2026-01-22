@@ -32,6 +32,7 @@ from praeparo.visuals.dax import (
 )
 from praeparo.visuals.dax.planner_core import MeasurePlan, NameStrategy, VisualPlan, default_name_strategy
 from praeparo.visuals.dax.expressions import ParsedExpression, parse_metric_expression
+from praeparo.visuals.metrics import CalculateInput
 
 from .context import MetricDatasetBuilderContext, normalise_filters
 from .expression_eval import evaluate_expression
@@ -235,7 +236,7 @@ class MetricDatasetBuilder:
         self._invalidate_plan()
         return self
 
-    def calculate(self, filters: Sequence[str] | str | None) -> "MetricDatasetBuilder":
+    def calculate(self, filters: CalculateInput | None) -> "MetricDatasetBuilder":
         self._global_filters.extend(normalise_filters(filters))
         self._invalidate_plan()
         return self
