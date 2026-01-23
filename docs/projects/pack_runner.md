@@ -700,7 +700,7 @@ slides:
 
 When a revision is present and no explicit `--result-file` is supplied, the
 default PPTX name becomes `<pack-slug>_<revision>.pptx` (minor revisions append
-`_rN`). If neither revision flag is set, the runner still attempts to use the
+`_rNN`). If neither revision flag is set, the runner still attempts to use the
 pack `context.month` as the revision token; otherwise it falls back to the
 legacy `<pack-slug>.pptx`.
 

@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 
 
 RevisionStrategy = str | None
+_REVISION_SERIAL_RE = re.compile(r"^r(?P<number>\d+)$", re.IGNORECASE)
 
 
 @dataclass
@@ -71,7 +72,15 @@ def _normalise_revision_token(raw: str) -> str:
             cleaned.append("_")
             previous_sep = True
     token = "".join(cleaned).strip("-_")
-    return token or "rev"
+    token = token or "rev"
+
+    match = _REVISION_SERIAL_RE.match(token)
+    if not match:
+        return token
+
+    number = match.group("number")
+    width = max(2, len(number))
+    return f"r{int(number):0{width}d}"
 
 
 def _derive_context_revision(context: Mapping[str, Any]) -> str | None:
@@ -89,7 +98,14 @@ def _derive_context_revision(context: Mapping[str, Any]) -> str | None:
 
 def _increment_token(token: str | None) -> str:
     if not token:
-        return "r1"
+        return "r01"
+
+    match_serial = _REVISION_SERIAL_RE.match(token)
+    if match_serial:
+        number = match_serial.group("number")
+        width = max(2, len(number))
+        return f"r{int(number) + 1:0{width}d}"
+
     match = re.search(r"(.*?)(\d+)$", token)
     if match:
         prefix, number = match.groups()
@@ -100,7 +116,7 @@ def _increment_token(token: str | None) -> str:
 def _build_pptx_name(pack_path: Path, revision: str, minor: int) -> str:
     pack_slug = slugify(pack_path.stem)
     revision_token = _normalise_revision_token(revision)
-    suffix = revision_token if minor <= 1 else f"{revision_token}_r{minor}"
+    suffix = revision_token if minor <= 1 else f"{revision_token}_r{minor:02d}"
     return f"{pack_slug}_{suffix}.pptx"
 
 
@@ -136,7 +152,7 @@ def allocate_revision(
             revision = context_revision or _increment_token(previous_revision)
             minor = 1
         elif strategy == "minor":
-            revision = previous_revision or context_revision or "r1"
+            revision = previous_revision or context_revision or "r01"
             minor = previous_minor + 1 if previous_revision == revision else 1
         else:
             raise ValueError(f"Unknown revision strategy '{strategy}'")

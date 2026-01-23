@@ -753,7 +753,7 @@ def test_pack_cli_dest_directory_sets_defaults(monkeypatch, tmp_path, capsys) ->
     base_options = cast(PipelineOptions, captured["base_options"])
     assert base_options is not None
     assert base_options.artefact_dir == artefact_dir
-    expected_result = dest / f"{slugify(pack_path.stem)}_r1.pptx"
+    expected_result = dest / f"{slugify(pack_path.stem)}_r01.pptx"
     assert base_options.metadata.get("result_file") == expected_result
     out = capsys.readouterr().out
     assert f"[ok] Wrote PPTX to {expected_result}" in out
@@ -837,7 +837,7 @@ def test_pack_cli_dest_pptx_sets_result_and_artifacts(monkeypatch, tmp_path, cap
     base_options = cast(PipelineOptions, captured["base_options"])
     assert base_options is not None
     assert base_options.artefact_dir == artefact_dir
-    expected_result = dest.parent / f"{slugify(pack_path.stem)}_r1.pptx"
+    expected_result = dest.parent / f"{slugify(pack_path.stem)}_r01.pptx"
     assert base_options.metadata.get("result_file") == expected_result
     out = capsys.readouterr().out
     assert f"[ok] Wrote PPTX to {expected_result}" in out
@@ -1020,7 +1020,7 @@ def test_pack_cli_dest_templates_render_with_registry_context(monkeypatch, tmp_p
     base_options = cast(PipelineOptions, captured["base_options"])
     assert base_options is not None
     assert base_options.artefact_dir == artefact_dir
-    expected_result = rendered_dest / f"{slugify(pack_path.stem)}_r1.pptx"
+    expected_result = rendered_dest / f"{slugify(pack_path.stem)}_r01.pptx"
     assert base_options.metadata.get("result_file") == expected_result
     out = capsys.readouterr().out
     assert f"[ok] Wrote PPTX to {expected_result}" in out
