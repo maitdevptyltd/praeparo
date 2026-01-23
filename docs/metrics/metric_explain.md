@@ -29,6 +29,7 @@ Notes:
 
 - `select` and mapping-form `grain` keys must be `snake_case`.
 - Labels starting with `__` are reserved for framework fields (`__metric_key`, `__metric_value`, …).
+- The explain CLI exports `__grain_table` and `__grain_key` (constant strings) and grain columns (for example `__grain`) so evidence consumers can see which table/column/expression the row identity is derived from.
 - `explain.define` supports `__`-prefixed helper names and is scoped to explain queries only (it does not affect compiled metric measures).
 
 ### Inheritance and merging

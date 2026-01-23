@@ -174,6 +174,9 @@ def build_metric_explain_plan(
 
     _raise_on_colliding_column_names(grain_columns, select_columns)
 
+    primary_grain_expr = str(grain_columns.get("__grain") or _order_expression(grain_columns)).strip()
+    primary_grain_table = _infer_table_from_column(primary_grain_expr) or driving_table or DEFAULT_EXPLAIN_FROM
+
     # When defining population filters inside `define: CALCULATE(...)`, extraction is best-effort.
     extracted_define_filters = _extract_define_calculate_filters(metric.define)
 
@@ -225,6 +228,8 @@ def build_metric_explain_plan(
 
     safe_identifier = _escape_dax_string(metric_identifier)
     safe_base_identifier = _escape_dax_string(metric_key)
+    safe_grain_key = _escape_dax_string(primary_grain_expr or DEFAULT_EXPLAIN_GRAIN)
+    safe_grain_table = _escape_dax_string(primary_grain_table)
 
     order_expr = normalize_dax_expression(_order_expression(grain_columns))
 
@@ -248,6 +253,8 @@ def build_metric_explain_plan(
     if variant_path:
         column_pairs.append(("__base_metric_key", f'"{safe_base_identifier}"'))
         column_pairs.append(("__base_metric_value", "__base_metric_value"))
+    column_pairs.append(("__grain_table", f'"{safe_grain_table}"'))
+    column_pairs.append(("__grain_key", f'"{safe_grain_key}"'))
     for label, expr in grain_columns.items():
         column_pairs.append((label, normalize_dax_expression(expr)))
     for label, expr in select_columns.items():
@@ -358,6 +365,9 @@ def build_metric_binding_explain_plan(
 
     _raise_on_colliding_column_names(grain_columns, select_columns)
 
+    primary_grain_expr = str(grain_columns.get("__grain") or _order_expression(grain_columns)).strip()
+    primary_grain_table = _infer_table_from_column(primary_grain_expr) or driving_table or DEFAULT_EXPLAIN_FROM
+
     # When defining population filters inside `define: CALCULATE(...)`, extraction is best-effort.
     extracted_define_filters = _extract_define_calculate_filters(metric.define)
 
@@ -440,6 +450,8 @@ def build_metric_binding_explain_plan(
     safe_identifier = _escape_dax_string(metric_identifier)
     safe_reference = _escape_dax_string(metric_reference)
     safe_base_identifier = _escape_dax_string(metric_key)
+    safe_grain_key = _escape_dax_string(primary_grain_expr or DEFAULT_EXPLAIN_GRAIN)
+    safe_grain_table = _escape_dax_string(primary_grain_table)
 
     order_expr = normalize_dax_expression(_order_expression(grain_columns))
 
@@ -487,6 +499,8 @@ def build_metric_binding_explain_plan(
         column_pairs.append(("__base_metric_key", f'"{safe_base_identifier}"'))
         column_pairs.append(("__base_metric_value", "__base_metric_value"))
 
+    column_pairs.append(("__grain_table", f'"{safe_grain_table}"'))
+    column_pairs.append(("__grain_key", f'"{safe_grain_key}"'))
     for label, expr in grain_columns.items():
         column_pairs.append((label, normalize_dax_expression(expr)))
     for label, expr in select_columns.items():

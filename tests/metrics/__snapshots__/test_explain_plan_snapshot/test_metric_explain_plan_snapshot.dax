@@ -43,6 +43,8 @@ SELECTCOLUMNS(
     "__metric_value", __metric_value,
     "__base_metric_key", "documents_verified",
     "__base_metric_value", __base_metric_value,
+    "__grain_table", "fact_events",
+    "__grain_key", "fact_events[EventKey]",
     "__grain", fact_events[EventKey],
     "event_timestamp_utc", fact_events[EventTimestampUTC],
     "milestone_started_timestamp_utc", fact_events[LastRelatedMilestoneStartedTimestampUTC],
