@@ -14,7 +14,15 @@ from pydantic import ValidationError
 
 from praeparo.models import BaseVisualConfig, FiltersType, PackConfig, PackPlaceholder, PackSlide, PackVisualRef
 from praeparo.pack.filters import merge_calculate_filters, merge_odata_filters
-from praeparo.pack.errors import PackExecutionError
+from praeparo.pack.errors import PackEvidenceFailure, PackExecutionError
+from praeparo.pack.evidence import (
+    PackEvidenceTarget,
+    build_pack_evidence_target,
+    flatten_context_fragments,
+    resolve_evidence_datasource,
+    run_pack_evidence_exports,
+    select_evidence_bindings,
+)
 from praeparo.pack.metric_context import (
     ResolvedMetricContext,
     discover_builder_context_for_pack,
@@ -46,7 +54,8 @@ from praeparo.visuals.context import merge_context_payload, resolve_dax_context
 from praeparo.visuals.context_layers import merge_context_layer_payload, resolve_layered_context_payload
 from praeparo.visuals.registry import VisualTypeRegistration, get_visual_registration, _is_python_visual_type
 from praeparo.visuals.context_models import VisualContextModel
-from praeparo.models.scoped_calculate import ScopedCalculateMap
+from praeparo.models.scoped_calculate import ScopedCalculateFilters, ScopedCalculateMap
+from praeparo.visuals.bindings import get_visual_bindings_adapter
 
 
 VisualLoader = Callable[[Path], BaseVisualConfig]
@@ -278,6 +287,73 @@ def _discover_dax_artifacts(directory: Path | None) -> tuple[Path, ...]:
         return ()
     return tuple(sorted(directory.glob("*.dax")))
 
+def _format_selector_path(path: Path) -> str:
+    try:
+        return path.relative_to(Path.cwd()).as_posix()
+    except ValueError:
+        return path.as_posix()
+
+
+def _pack_inline_visual_token(
+    base_token: str,
+    *,
+    slide_index: int,
+    slide: PackSlide,
+    placeholder_id: str | None,
+) -> str:
+    slide_token = slide.id or str(slide_index)
+    if placeholder_id:
+        return f"{base_token}#{slide_token}#{placeholder_id}"
+    return f"{base_token}#{slide_token}"
+
+
+def _render_visual_calculate_fragments(
+    visual: BaseVisualConfig,
+    *,
+    env: Environment,
+    context: Mapping[str, object],
+) -> tuple[FiltersType, ...]:
+    calculate = getattr(visual, "calculate", None)
+    if calculate is None:
+        return ()
+
+    # Some visuals use a scoped calculate model (DEFINE/EVALUATE). For pack evidence we
+    # treat both scopes as context filters so the explain plan matches runtime semantics.
+    if isinstance(calculate, ScopedCalculateFilters):
+        rendered_define = render_value(calculate.define or None, env=env, context=context)
+        rendered_evaluate = render_value(calculate.evaluate or None, env=env, context=context)
+        return cast(tuple[FiltersType, ...], (rendered_define, rendered_evaluate))
+
+    if hasattr(calculate, "define") and hasattr(calculate, "evaluate"):
+        raw_define = getattr(calculate, "define")
+        raw_evaluate = getattr(calculate, "evaluate")
+        rendered_define = render_value(raw_define or None, env=env, context=context)
+        rendered_evaluate = render_value(raw_evaluate or None, env=env, context=context)
+        return cast(tuple[FiltersType, ...], (rendered_define, rendered_evaluate))
+
+    rendered = render_value(calculate, env=env, context=context)
+    return (cast(FiltersType, rendered),)
+
+
+def _render_metrics_calculate_filters_for_evidence(
+    *,
+    metrics_calculate: ScopedCalculateMap,
+    env: Environment,
+    context: Mapping[str, object],
+) -> tuple[str, ...]:
+    """Render context.metrics.calculate templates and flatten them into DAX predicates.
+
+    Packs commonly define month scoping under `context.metrics.calculate` (for
+    example in `registry/context/metrics.yaml`). Visual binding explain plans
+    should reuse those same defaults so evidence exports match rendered numbers.
+    """
+
+    raw_payload = metrics_calculate.model_dump(mode="python")
+    rendered = render_value(raw_payload, env=env, context=context)
+    rendered_map = ScopedCalculateMap.from_raw(rendered)
+    flattened = [*rendered_map.flatten_define(), *rendered_map.flatten_evaluate()]
+    return tuple(item.strip() for item in flattened if item and item.strip())
+
 
 def _prepare_slide_options(
     base_options: PipelineOptions,
@@ -476,6 +552,7 @@ def run_pack(
     pipeline: VisualPipeline | None = None,
     env: Environment | None = None,
     only_slides: Iterable[str] | None = None,
+    evidence_only: bool = False,
 ) -> list[PackSlideResult]:
     """Execute a pack and export PNGs for each visual slide."""
 
@@ -518,10 +595,14 @@ def run_pack(
         for slide in pack.slides
     )
     has_metric_bindings = bool(root_bindings) or slide_bindings_present
+    evidence_config = pack.evidence
+    evidence_enabled = bool(evidence_config and evidence_config.enabled)
+    if evidence_only and not evidence_enabled:
+        raise ValueError("Evidence-only pack runs require pack.evidence.enabled=true.")
 
     builder_context = None
     catalog = None
-    if has_metric_bindings:
+    if has_metric_bindings or evidence_enabled:
         metrics_calculate, metrics_define = resolve_dax_context(
             base=pack_payload,
             calculate=rendered_global_calculate,
@@ -536,6 +617,9 @@ def run_pack(
         )
         catalog = load_catalog_for_context(builder_context)
 
+    if has_metric_bindings:
+        assert builder_context is not None
+        assert catalog is not None
         # Resolve root-level metric bindings once and expose them as pack-wide Jinja variables.
         global_metrics_context = resolve_metric_context(
             bindings=root_bindings or None,
@@ -562,17 +646,20 @@ def run_pack(
         formats_by_alias=global_metrics_context.formats_by_alias,
     )
 
-    resolved_pipeline = pipeline or VisualPipeline(
-        planner_provider=build_default_query_planner_provider(),
-    )
     effective_concurrency = max_powerbi_concurrency or DEFAULT_POWERBI_CONCURRENCY
-    # VisualPipeline is currently stateless per execute() call and relies on per-call
-    # ExecutionContext plus per-visual planners/clients. If future changes add shared
-    # mutable state, re-evaluate thread safety for PowerBIExportQueue.
-    powerbi_queue = PowerBIExportQueue(
-        resolved_pipeline,
-        max_concurrent_exports=effective_concurrency,
-    )
+    resolved_pipeline: VisualPipeline | None = None
+    powerbi_queue: PowerBIExportQueue | None = None
+    if not evidence_only:
+        resolved_pipeline = pipeline or VisualPipeline(
+            planner_provider=build_default_query_planner_provider(),
+        )
+        # VisualPipeline is currently stateless per execute() call and relies on per-call
+        # ExecutionContext plus per-visual planners/clients. If future changes add shared
+        # mutable state, re-evaluate thread safety for PowerBIExportQueue.
+        powerbi_queue = PowerBIExportQueue(
+            resolved_pipeline,
+            max_concurrent_exports=effective_concurrency,
+        )
 
     slide_filter = {slugify(item) for item in only_slides} if only_slides else None
     logger.info(
@@ -612,6 +699,8 @@ def run_pack(
     placeholder_png_map: dict[str, dict[str, Path]] = {}
     slide_contexts_by_slug: dict[str, dict[str, object]] = {}
     pack_root = pack_path.parent
+    pack_token = _format_selector_path(pack_path)
+    evidence_targets: list[PackEvidenceTarget] = []
 
     # Resolve PPTX template geometry once per pack so visuals can size their canvases.
     template_geometry_by_template: dict[str, PlaceholderSize] = {}
@@ -808,6 +897,79 @@ def run_pack(
                 _render_filters(calculate),
             )
 
+            if evidence_enabled and evidence_config is not None:
+                adapter = get_visual_bindings_adapter(visual.type)
+                if adapter is not None:
+                    source_path = visual_path if visual_ref.ref else None
+                    bindings = adapter.list_bindings(visual, source_path=source_path)
+                    selected = select_evidence_bindings(bindings, selector=evidence_config)
+
+                    if selected:
+                        visual_token = (
+                            _format_selector_path(visual_path)
+                            if visual_ref.ref
+                            else _pack_inline_visual_token(
+                                pack_token,
+                                slide_index=index,
+                                slide=slide,
+                                placeholder_id=placeholder_id,
+                            )
+                        )
+                        slide_metrics_config = slide.context.metrics if slide.context else None
+                        scoped_metrics_calculate = ScopedCalculateMap.merge(
+                            root_metrics_calculate,
+                            slide_metrics_config.calculate if slide_metrics_config else None,
+                        )
+                        metrics_scoped_filters = _render_metrics_calculate_filters_for_evidence(
+                            metrics_calculate=scoped_metrics_calculate,
+                            env=jinja_env,
+                            context=slide_payload,
+                        )
+                        base_calculate = merge_calculate_filters(
+                            list(metrics_scoped_filters),
+                            calculate_filters,
+                            *_render_visual_calculate_fragments(visual, env=jinja_env, context=slide_payload),
+                        )
+
+                        raw_visual_define = getattr(visual, "define", None)
+                        rendered_visual_define = (
+                            render_value(raw_visual_define, env=jinja_env, context=slide_payload)
+                            if raw_visual_define is not None
+                            else None
+                        )
+                        define_fragments = [
+                            *flatten_context_fragments(rendered_define, label="define"),
+                            *flatten_context_fragments(rendered_visual_define, label="define"),
+                        ]
+                        context_define = define_fragments or None
+
+                        for binding in selected:
+                            rendered_binding_evaluate = render_value(
+                                binding.calculate.evaluate or None,
+                                env=jinja_env,
+                                context=slide_payload,
+                            )
+                            binding_calculate = merge_calculate_filters(base_calculate, rendered_binding_evaluate)
+
+                            evidence_targets.append(
+                                build_pack_evidence_target(
+                                    pack_token=pack_token,
+                                    visual_token=visual_token,
+                                    slide_slug=slide_slug,
+                                    slide_id=slide.id,
+                                    slide_index=index,
+                                    placeholder_id=placeholder_id,
+                                    binding=binding,
+                                    env=jinja_env,
+                                    context_payload=slide_payload,
+                                    context_calculate=binding_calculate or None,
+                                    context_define=context_define,
+                                )
+                            )
+
+            if evidence_only:
+                return
+
             artifact_label = f"[{ordinal}]_{slide_label}"
             logger.info(
                 "Processing slide",
@@ -926,6 +1088,7 @@ def run_pack(
             )
 
             if visual.type == "powerbi":
+                assert powerbi_queue is not None
                 powerbi_queue.enqueue(
                     PowerBIExportJob(
                         slide_index=index,
@@ -940,6 +1103,7 @@ def run_pack(
                 return
 
             try:
+                assert resolved_pipeline is not None
                 logger.debug(
                     "Executing pipeline",
                     extra={
@@ -1040,6 +1204,74 @@ def run_pack(
                     target_map=placeholder_map,
                 )
 
+    if evidence_only:
+        logger.info(
+            "Evidence-only pack run: skipping slide execution and PPTX assembly",
+            extra={"pack_path": str(pack_path), "slide_count": len(pack.slides), "target_count": len(evidence_targets)},
+        )
+
+        evidence_failure: tuple[Path, int] | None = None
+        if evidence_enabled and evidence_config is not None:
+            if catalog is None:
+                raise ValueError("Pack evidence exports require a metric catalog; metrics_root could not be resolved.")
+
+            data_mode = base.data.provider_key if base.data and base.data.provider_key else "live"
+            if data_mode not in {"mock", "live"}:
+                raise ValueError("Pack evidence exports only support data_mode in {'mock', 'live'}.")
+
+            datasource = None
+            if data_mode == "live":
+                datasource = resolve_evidence_datasource(
+                    pack_path,
+                    dataset_id=base.data.dataset_id if base.data else None,
+                    workspace_id=base.data.workspace_id if base.data else None,
+                    datasource_name=base.data.datasource_override if base.data else None,
+                )
+
+            manifest_path, manifest_bindings, has_failures = run_pack_evidence_exports(
+                config=evidence_config,
+                catalog=catalog,
+                pack_path=pack_path,
+                artefact_dir=output_root,
+                env=jinja_env,
+                output_dir_context=global_payload,
+                datasource=datasource,
+                data_mode=data_mode,
+                targets=evidence_targets,
+            )
+
+            failure_count = sum(1 for entry in manifest_bindings if entry.get("status") == "failed")
+            logger.info(
+                "Evidence-only pack run: evidence exports finished",
+                extra={
+                    "pack_path": str(pack_path),
+                    "manifest_path": str(manifest_path),
+                    "target_count": len(manifest_bindings),
+                    "failure_count": failure_count,
+                    "has_failures": has_failures,
+                },
+            )
+            if has_failures and evidence_config.on_error == "fail":
+                evidence_failure = (manifest_path, failure_count)
+
+        elapsed = time.perf_counter() - started
+        logger.info(
+            "Evidence-only pack run completed in %.3fs",
+            elapsed,
+            extra={"pack": str(pack_path), "slide_count": len(pack.slides)},
+        )
+
+        if evidence_failure is not None:
+            manifest_path, failure_count = evidence_failure
+            raise PackEvidenceFailure(
+                pack_path=pack_path,
+                manifest_path=manifest_path,
+                failure_count=failure_count,
+                successful_results=[],
+            )
+
+        return []
+
     for index, slide in enumerate(pack.slides, start=1):
         slide_slug = _slug_for_slide(slide, index)
         if slide_slug in slide_png_map:
@@ -1051,6 +1283,7 @@ def run_pack(
             raise ValueError(f"Static slide image not found for '{slide_slug}': {image_path}")
         slide_png_map[slide_slug] = image_path
 
+    assert powerbi_queue is not None
     powerbi_results = powerbi_queue.drain()
     for item in powerbi_results:
         if item.exception is None:
@@ -1096,6 +1329,82 @@ def run_pack(
 
     ordered_results.sort(key=lambda pair: pair[0])
     sorted_results = [item[1] for item in ordered_results]
+
+    pack_failed = bool(failed_powerbi)
+    evidence_failure: tuple[Path, int] | None = None
+    if evidence_enabled and evidence_config is not None:
+        should_run_evidence = evidence_config.when == "always" or not pack_failed
+        if should_run_evidence:
+            if catalog is None:
+                raise ValueError("Pack evidence exports require a metric catalog; metrics_root could not be resolved.")
+
+            data_mode = base.data.provider_key if base.data and base.data.provider_key else "live"
+            if data_mode not in {"mock", "live"}:
+                raise ValueError("Pack evidence exports only support data_mode in {'mock', 'live'}.")
+
+            datasource = None
+            if data_mode == "live":
+                datasource = resolve_evidence_datasource(
+                    pack_path,
+                    dataset_id=base.data.dataset_id if base.data else None,
+                    workspace_id=base.data.workspace_id if base.data else None,
+                    datasource_name=base.data.datasource_override if base.data else None,
+                )
+
+            logger.info(
+                "Running pack evidence exports",
+                extra={
+                    "pack_path": str(pack_path),
+                    "target_count": len(evidence_targets),
+                    "when": evidence_config.when,
+                    "on_error": evidence_config.on_error,
+                    "output_dir": evidence_config.output_dir,
+                },
+            )
+            manifest_path, manifest_bindings, has_failures = run_pack_evidence_exports(
+                config=evidence_config,
+                catalog=catalog,
+                pack_path=pack_path,
+                artefact_dir=output_root,
+                env=jinja_env,
+                output_dir_context=global_payload,
+                datasource=datasource,
+                data_mode=data_mode,
+                targets=evidence_targets,
+            )
+
+            failure_count = sum(1 for entry in manifest_bindings if entry.get("status") == "failed")
+            logger.info(
+                "Pack evidence exports finished",
+                extra={
+                    "pack_path": str(pack_path),
+                    "manifest_path": str(manifest_path),
+                    "target_count": len(manifest_bindings),
+                    "failure_count": failure_count,
+                    "has_failures": has_failures,
+                },
+            )
+            if has_failures:
+                logger.warning(
+                    "Pack evidence exports reported failures",
+                    extra={
+                        "pack": str(pack_path),
+                        "manifest_path": str(manifest_path),
+                        "failure_count": failure_count,
+                    },
+                )
+
+            if has_failures and evidence_config.on_error == "fail" and not pack_failed:
+                evidence_failure = (manifest_path, failure_count)
+        else:
+            logger.info(
+                "Skipping pack evidence exports (pack failures and when=pack_complete)",
+                extra={
+                    "pack_path": str(pack_path),
+                    "when": evidence_config.when,
+                    "failed_powerbi_count": len(failed_powerbi),
+                },
+            )
 
     if failed_powerbi:
         failed_slides = [item.job.slide_slug for item in failed_powerbi]
@@ -1165,6 +1474,15 @@ def run_pack(
             "result_file": str(result_file) if result_file else None,
         },
     )
+
+    if evidence_failure is not None:
+        manifest_path, failure_count = evidence_failure
+        raise PackEvidenceFailure(
+            pack_path=pack_path,
+            manifest_path=manifest_path,
+            failure_count=failure_count,
+            successful_results=sorted_results,
+        )
 
     return sorted_results
 

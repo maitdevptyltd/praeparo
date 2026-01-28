@@ -45,6 +45,133 @@
       "title": "PackContext",
       "type": "object"
     },
+    "PackEvidenceBindingsConfig": {
+      "additionalProperties": false,
+      "description": "Binding selection rules for evidence exports.",
+      "properties": {
+        "select": {
+          "description": "Attribute keys that must exist in binding.metadata for selection.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Select",
+          "type": "array"
+        },
+        "select_mode": {
+          "default": "all",
+          "description": "Whether all select keys must exist (all) or any one (any).",
+          "enum": [
+            "all",
+            "any"
+          ],
+          "title": "Select Mode",
+          "type": "string"
+        },
+        "include": {
+          "description": "Binding IDs to force-include (unioned after select filtering).",
+          "items": {
+            "type": "string"
+          },
+          "title": "Include",
+          "type": "array"
+        },
+        "exclude": {
+          "description": "Binding IDs to force-exclude (removed after include union).",
+          "items": {
+            "type": "string"
+          },
+          "title": "Exclude",
+          "type": "array"
+        }
+      },
+      "title": "PackEvidenceBindingsConfig",
+      "type": "object"
+    },
+    "PackEvidenceConfig": {
+      "additionalProperties": false,
+      "description": "Pack-level evidence export configuration.\n\nWhen enabled, the pack runner exports `praeparo-metrics explain` artefacts for\nselected visual bindings after slide execution completes.",
+      "properties": {
+        "enabled": {
+          "default": false,
+          "description": "Whether evidence exports run for this pack.",
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "output_dir": {
+          "default": "_evidence",
+          "description": "Directory under the pack artefact dir to store evidence exports (supports Jinja templates).",
+          "title": "Output Dir",
+          "type": "string"
+        },
+        "when": {
+          "default": "pack_complete",
+          "description": "When to execute evidence exports relative to the pack lifecycle.",
+          "enum": [
+            "pack_complete",
+            "always"
+          ],
+          "title": "When",
+          "type": "string"
+        },
+        "on_error": {
+          "default": "fail",
+          "description": "Whether evidence failures fail the pack run (fail) or are recorded as warnings (warn).",
+          "enum": [
+            "fail",
+            "warn"
+          ],
+          "title": "On Error",
+          "type": "string"
+        },
+        "explain": {
+          "$ref": "#/$defs/PackEvidenceExplainConfig",
+          "description": "Evidence execution options mirroring praeparo-metrics explain."
+        },
+        "bindings": {
+          "$ref": "#/$defs/PackEvidenceBindingsConfig"
+        }
+      },
+      "title": "PackEvidenceConfig",
+      "type": "object"
+    },
+    "PackEvidenceExplainConfig": {
+      "additionalProperties": false,
+      "description": "Controls how evidence queries are planned and executed.",
+      "properties": {
+        "limit": {
+          "default": 50000,
+          "description": "Maximum rows to export for each evidence query.",
+          "minimum": 1,
+          "title": "Limit",
+          "type": "integer"
+        },
+        "variant_mode": {
+          "default": "flag",
+          "description": "Variant handling mode (matches praeparo-metrics explain).",
+          "enum": [
+            "flag",
+            "filter"
+          ],
+          "title": "Variant Mode",
+          "type": "string"
+        },
+        "max_concurrency": {
+          "default": 1,
+          "description": "Maximum concurrent evidence exports (bounded to avoid overload).",
+          "minimum": 1,
+          "title": "Max Concurrency",
+          "type": "integer"
+        },
+        "skip_existing": {
+          "default": true,
+          "description": "Skip evidence exports when a prior matching fingerprint is present in manifest.json.",
+          "title": "Skip Existing",
+          "type": "boolean"
+        }
+      },
+      "title": "PackEvidenceExplainConfig",
+      "type": "object"
+    },
     "PackMetricBinding": {
       "additionalProperties": false,
       "description": "Binding describing how a metric value becomes a Jinja variable.\n\nBindings may reference a catalogue metric (`key` + optional `variant`) or declare an\narithmetic `expression` over other metrics/aliases. When `alias` is omitted it is\nderived from the full metric key by replacing dots with underscores.",
@@ -712,6 +839,18 @@
       "default": null,
       "description": "Pack-level OData filters applied to Power BI visuals.",
       "title": "Filters"
+    },
+    "evidence": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/PackEvidenceConfig"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Optional evidence export configuration executed after pack completion."
     },
     "slides": {
       "description": "Ordered slide definitions.",

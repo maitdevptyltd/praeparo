@@ -17,6 +17,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from praeparo.formatting import parse_format_token
 
 from .scoped_calculate import ScopedCalculateFilters, ScopedCalculateMap
+from .pack_evidence import PackEvidenceConfig
 
 
 FiltersType = str | Sequence[str] | Mapping[str, str] | None
@@ -625,6 +626,10 @@ class PackConfig(BaseModel):
     filters: FiltersType = Field(
         default=None,
         description="Pack-level OData filters applied to Power BI visuals.",
+    )
+    evidence: PackEvidenceConfig | None = Field(
+        default=None,
+        description="Optional evidence export configuration executed after pack completion.",
     )
     slides: list[PackSlide] = Field(default_factory=list, description="Ordered slide definitions.")
 

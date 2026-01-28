@@ -8,7 +8,7 @@ import os
 import sys
 import time
 from pathlib import Path
-from typing import Any, Dict, Iterable, Mapping, MutableMapping, Sequence
+from typing import Any, Dict, Iterable, Mapping, MutableMapping, Sequence, cast
 
 from jinja2 import Environment
 from pydantic import ValidationError
@@ -34,8 +34,10 @@ from praeparo.pipeline.python_visual_loader import load_python_visual
 from praeparo.pack import (
     DEFAULT_POWERBI_CONCURRENCY,
     PackConfigError,
+    PackEvidenceFailure,
     PackExecutionError,
     PackPowerBIFailure,
+    PackSlideResult,
     allocate_revision,
     create_pack_jinja_env,
     load_pack_config,
@@ -642,6 +644,12 @@ def _register_pack_parsers(parent: argparse._SubParsersAction[argparse.ArgumentP
         dest="pptx_only",
         action="store_true",
         help="Rebuild PPTX from existing artefacts without executing visuals.",
+    )
+    run_parser.add_argument(
+        "--evidence-only",
+        dest="evidence_only",
+        action="store_true",
+        help="Run post-pack evidence exports only (skips slide execution and PPTX assembly).",
     )
     run_parser.set_defaults(_handler=_handle_pack_run, print_dax=False, validate_define=False, sort_rows=False)
 
@@ -1328,6 +1336,12 @@ def _handle_pack_run(args: argparse.Namespace) -> int:
     args.artefact_dir = artefact_dir
     args.result_file = result_file
 
+    if getattr(args, "evidence_only", False):
+        if getattr(args, "pptx_only", False):
+            raise ValueError("--evidence-only cannot be combined with --pptx-only.")
+        if getattr(args, "revision_dry_run", False):
+            raise ValueError("--evidence-only cannot be combined with --revision-dry-run.")
+
     if getattr(args, "pptx_only", False):
         if args.result_file is None:
             raise ValueError("PPTX-only restitch requires a result file; provide dest or --result-file.")
@@ -1372,6 +1386,7 @@ def _handle_pack_run(args: argparse.Namespace) -> int:
             pipeline=pipeline,
             env=jinja_env,
             only_slides=slide_filter,
+            evidence_only=getattr(args, "evidence_only", False),
         )
     except ConfigLoadError as exc:
         raise ValueError(str(exc)) from exc
@@ -1385,22 +1400,30 @@ def _handle_pack_run(args: argparse.Namespace) -> int:
             partial_failure = True
         else:
             raise
+    except PackEvidenceFailure as exc:
+        print(str(exc))
+        results = cast(list[PackSlideResult], exc.successful_results)
+        partial_failure = True
 
-    pptx_target: Path | None = args.result_file
-    if pptx_target is not None:
-        try:
-            if pptx_target.exists():
-                print(f"[ok] Wrote PPTX to {pptx_target}")
-            else:
+    if not getattr(args, "evidence_only", False):
+        pptx_target: Path | None = args.result_file
+        if pptx_target is not None:
+            try:
+                if pptx_target.exists():
+                    print(f"[ok] Wrote PPTX to {pptx_target}")
+                else:
+                    print(f"[ok] PPTX target: {pptx_target}")
+            except OSError:
                 print(f"[ok] PPTX target: {pptx_target}")
-        except OSError:
-            print(f"[ok] PPTX target: {pptx_target}")
 
-    png_count = sum(1 for item in results if item.png_path)
-    if png_count:
-        print(f"[ok] Wrote {png_count} PNG(s) to {args.artefact_dir}")
+    if getattr(args, "evidence_only", False):
+        print(f"[ok] Evidence-only pack run completed; see manifest under {args.artefact_dir}")
     else:
-        print("[warn] No PNG outputs were produced.")
+        png_count = sum(1 for item in results if item.png_path)
+        if png_count:
+            print(f"[ok] Wrote {png_count} PNG(s) to {args.artefact_dir}")
+        else:
+            print("[warn] No PNG outputs were produced.")
 
     elapsed = time.perf_counter() - started
     print(f"[ok] Pack run completed in {format_duration(elapsed)}")

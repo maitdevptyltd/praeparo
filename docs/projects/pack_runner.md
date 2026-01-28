@@ -27,6 +27,7 @@ A pack configuration is a small YAML document with:
 - Optional pack-level `define` (DAX DEFINE block) rendered with the same context,
 - Optional pack-level `calculate` filters (for DAX-backed visuals),
 - Optional pack-level `filters` (for OData / Power BI),
+- Optional pack-level `evidence` exports (post-run metric explain),
 - An ordered list of `slides`, each optionally referencing a visual.
 
 Example:
@@ -51,6 +52,11 @@ calculate:
 filters:
   lender: "dim_lender/LenderId eq {{ lender_id }}"
   dates: "{{ odata_months_back_range('dim_calendar/month', month, 3) }}"
+
+evidence:
+  enabled: true
+  bindings:
+    select: [sla]
 
 slides:
   - id: overview
@@ -94,6 +100,24 @@ slides:
   mappings (slide-level keys override pack-level keys). If either side uses a
   sequence form, Praeparo falls back to concatenating the effective lists of
   filter expressions (dropping names).
+- `evidence` – optional post-run evidence exports for selected visual bindings.
+  Evidence exports reuse the same planner/executor surfaces as `praeparo-metrics explain`
+  and write artefacts under `<artefact_dir>/<output_dir>` alongside a `manifest.json`
+  for traceability.
+  - `enabled` – defaults to false when omitted.
+  - `output_dir` – directory under `--artefact-dir` used for evidence exports (supports Jinja templates).
+  - `when` – `pack_complete` (default) runs only after a fully successful pack; `always` runs even when
+    Power BI exports fail (useful with `--allow-partial` workflows).
+  - `on_error` – `fail` (default) raises a post-run pack failure when any evidence export fails; `warn`
+    records failures in the manifest while keeping the pack result unchanged.
+  - `explain` – controls `praeparo-metrics explain` execution (`limit`, `variant_mode`, `max_concurrency`,
+    `skip_existing`). When `skip_existing: true`, Praeparo skips only when a prior run's
+    inputs fingerprint matches the current run (recorded in `manifest.json`), so reruns
+    do not accidentally reuse stale evidence after context, filters, or datasource changes.
+  - `bindings` – selects bindings by metadata keys attached by the visual's bindings adapter:
+    - `select` – list of attribute keys (e.g. `sla`) matched against `VisualMetricBinding.metadata`.
+    - `select_mode` – `all` (default) requires every key, `any` requires at least one.
+    - `include` / `exclude` – force-include / force-exclude binding ids after selection.
 - `slides` – ordered slide definitions:
   - `id` – optional stable identifier (used for filtering and slug generation).
   - `title` – human-readable slide title.
@@ -124,6 +148,20 @@ slides:
     - `visual` (render a visual into the placeholder),
     - `image` (bind a static image path), or
     - `text` (bind text into a named text shape).
+
+### Evidence output layout (pack.evidence)
+
+When enabled, evidence exports are written under the pack artefact directory:
+
+- `<artefact_dir>/<output_dir>/manifest.json`
+- `<artefact_dir>/<output_dir>/<slide_slug>/<placeholder_id_or_visual>/<binding_slug>/evidence_<metric_slug>.csv`
+- `<artefact_dir>/<output_dir>/<slide_slug>/<placeholder_id_or_visual>/<binding_slug>/_artifacts/explain.dax`
+- `<artefact_dir>/<output_dir>/<slide_slug>/<placeholder_id_or_visual>/<binding_slug>/_artifacts/summary.json`
+
+Operational notes:
+
+- Evidence exports are row-level extracts and may contain sensitive identifiers; treat artefact directories accordingly.
+- Use `explain.max_concurrency` to bound cost (especially in live Power BI mode).
 
 ## Metric Context Bindings (`context.metrics`)
 
@@ -363,6 +401,8 @@ Key flags:
   existing PNGs for skipped slides are reused; otherwise Praeparo logs a warning
   and leaves the template placeholders unchanged/blank. Full runs and
   `--pptx-only` restitches remain strict about missing PNGs.
+- `--evidence-only` – run evidence exports only (skips visual execution, Power BI exports, and PPTX assembly).
+  Useful when you want to refresh `_evidence/` outputs without re-rendering slide PNGs.
 - `--max-pbi-concurrency` – maximum number of Power BI exports in flight at
   once. Defaults to `5` when not supplied; can also be set via
   `PRAEPARO_PBI_MAX_CONCURRENCY` (the CLI flag wins when both are provided).

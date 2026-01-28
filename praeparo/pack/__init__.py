@@ -1,6 +1,6 @@
 """Pack execution utilities."""
 
-from .errors import PackExecutionError
+from .errors import PackEvidenceFailure, PackExecutionError
 from .loader import PackConfigError, load_pack_config
 from .runner import DEFAULT_POWERBI_CONCURRENCY, PackPowerBIFailure, PackSlideResult, restitch_pack_pptx, run_pack
 from .templating import create_pack_jinja_env, render_value
@@ -15,6 +15,7 @@ from .revisions import RevisionInfo, allocate_revision
 
 __all__ = [
     "PackConfigError",
+    "PackEvidenceFailure",
     "PackExecutionError",
     "PackSlideResult",
     "PackPowerBIFailure",

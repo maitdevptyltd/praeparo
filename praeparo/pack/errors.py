@@ -89,5 +89,32 @@ class PackExecutionError(Exception):
             self.__cause__ = cause
 
 
-__all__ = ["PackExecutionError"]
+class PackEvidenceFailure(RuntimeError):
+    """Raised when post-run evidence exports fail under on_error=fail.
 
+    This mirrors the Power BI failure ergonomics by carrying successful results so
+    callers (CLI, automation) can keep any slide artefacts already produced while
+    still surfacing a non-zero exit.
+    """
+
+    def __init__(
+        self,
+        *,
+        pack_path: Path,
+        manifest_path: Path,
+        failure_count: int,
+        successful_results: Sequence[object] = (),
+    ) -> None:
+        self.pack_path = pack_path
+        self.manifest_path = manifest_path
+        self.failure_count = int(failure_count)
+        self.successful_results = list(successful_results)
+
+        plural = "s" if self.failure_count != 1 else ""
+        super().__init__(
+            f"Pack {pack_path} evidence export failure{plural}: {self.failure_count} binding{plural} failed; "
+            f"see manifest: {manifest_path}"
+        )
+
+
+__all__ = ["PackExecutionError", "PackEvidenceFailure"]

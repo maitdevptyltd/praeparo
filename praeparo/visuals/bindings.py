@@ -13,7 +13,7 @@ MSANational's governance_matrix visual).
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Dict, Protocol
 
@@ -42,6 +42,10 @@ class VisualMetricBinding(BaseModel):
         description="Scoped calculate predicates applied by the binding definition.",
     )
     ratio_to: str | bool | None = Field(default=None, description="Optional ratio semantics for this binding.")
+    metadata: Mapping[str, object] = Field(
+        default_factory=dict,
+        description="Adapter-defined JSON-serialisable metadata used for evidence selection.",
+    )
 
     group_id: str | None = Field(
         default=None,

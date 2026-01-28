@@ -36,6 +36,7 @@ from .powerbi import (
     PowerBIVisualMode,
     PowerBIPaginatedArtifact,
 )
+from .pack_evidence import PackEvidenceBindingsConfig, PackEvidenceConfig, PackEvidenceExplainConfig
 from .pack import (
     FiltersType,
     PackConfig,
@@ -88,6 +89,9 @@ __all__ = [
     "PowerBIPaginatedArtifact",
     "PackConfig",
     "PackContext",
+    "PackEvidenceConfig",
+    "PackEvidenceBindingsConfig",
+    "PackEvidenceExplainConfig",
     "PackMetricsContext",
     "PackMetricBinding",
     "PackPlaceholder",

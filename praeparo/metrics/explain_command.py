@@ -581,6 +581,11 @@ def _visual_global_calculate_fragments(visual: BaseVisualConfig) -> tuple[Calcul
     # binding evidence aligns with runtime query semantics.
     if isinstance(calculate, ScopedCalculateFilters):
         return (calculate.define, calculate.evaluate)
+    if hasattr(calculate, "define") and hasattr(calculate, "evaluate"):
+        raw_define = getattr(calculate, "define")
+        raw_evaluate = getattr(calculate, "evaluate")
+        if isinstance(raw_define, (str, Mapping, Sequence)) and isinstance(raw_evaluate, (str, Mapping, Sequence)):
+            return (cast(CalculateInput, raw_define), cast(CalculateInput, raw_evaluate))
     if isinstance(calculate, str):
         return (calculate,)
     if isinstance(calculate, Mapping):
