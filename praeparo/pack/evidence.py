@@ -367,6 +367,27 @@ def run_pack_evidence_exports(
             binding=binding,
         )
 
+        plan = None
+        plan_statement_fingerprint = None
+        if metric_key is not None:
+            # Build the explain plan up-front so fingerprinting reflects metric-definition
+            # changes (measure expression, metric.calculate predicates, explain.where tweaks, etc.).
+            plan = build_metric_binding_explain_plan(
+                catalog,
+                metric_reference=metric_key,
+                metric_identifier=target.selector_identifier,
+                context_calculate_filters=target.context_calculate_filters,
+                context_define_blocks=target.context_define_blocks,
+                limit=int(config.explain.limit),
+                variant_mode=config.explain.variant_mode,
+                numerator_define_filters=target.numerator_define_filters,
+                ratio_to=binding.ratio_to,
+                visual_path=target.visual_token,
+                binding_id=binding.binding_id,
+                binding_label=binding.label,
+            )
+            plan_statement_fingerprint = compute_inputs_fingerprint({"statement": plan.statement})
+
         fingerprint_payload: dict[str, object] = {
             "selector_identifier": target.selector_identifier,
             "visual_token": target.visual_token,
@@ -381,6 +402,7 @@ def run_pack_evidence_exports(
             "context_calculate_filters": list(target.context_calculate_filters),
             "context_define_blocks": list(target.context_define_blocks),
             "numerator_define_filters": list(target.numerator_define_filters),
+            "plan": {"statement_fingerprint": plan_statement_fingerprint} if plan_statement_fingerprint else None,
             "explain": {
                 "limit": config.explain.limit,
                 "variant_mode": config.explain.variant_mode,
@@ -415,6 +437,7 @@ def run_pack_evidence_exports(
                 "metric_slug": metric_slug,
                 "fingerprint": fingerprint,
                 "status": "skipped",
+                "plan_statement_fingerprint": plan_statement_fingerprint,
                 "paths": {
                     "evidence": str(outputs.evidence_path),
                     "dax": str(outputs.dax_path),
@@ -449,6 +472,7 @@ def run_pack_evidence_exports(
                 "metric_slug": metric_slug,
                 "fingerprint": fingerprint,
                 "status": "failed" if is_failure else "skipped_non_catalog",
+                "plan_statement_fingerprint": plan_statement_fingerprint,
                 "warning": "Binding does not reference a catalogue metric key.",
                 "explicitly_included": explicitly_included,
                 "paths": {
@@ -471,20 +495,7 @@ def run_pack_evidence_exports(
             )
             return summary
 
-        plan = build_metric_binding_explain_plan(
-            catalog,
-            metric_reference=metric_key,
-            metric_identifier=target.selector_identifier,
-            context_calculate_filters=target.context_calculate_filters,
-            context_define_blocks=target.context_define_blocks,
-            limit=int(config.explain.limit),
-            variant_mode=config.explain.variant_mode,
-            numerator_define_filters=target.numerator_define_filters,
-            ratio_to=binding.ratio_to,
-            visual_path=target.visual_token,
-            binding_id=binding.binding_id,
-            binding_label=binding.label,
-        )
+        assert plan is not None
 
         started = time.perf_counter()
         try:
@@ -517,6 +528,7 @@ def run_pack_evidence_exports(
                 "metric_slug": metric_slug,
                 "fingerprint": fingerprint,
                 "status": "success",
+                "plan_statement_fingerprint": plan_statement_fingerprint,
                 "row_count": row_count,
                 "warnings": list(warnings),
                 "duration_ms": elapsed_ms,
