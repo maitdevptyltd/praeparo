@@ -24,6 +24,9 @@ from praeparo.visuals.dax.utils import split_metric_identifier
 DEFAULT_EXPLAIN_FROM = "fact_events"
 DEFAULT_EXPLAIN_GRAIN = "fact_events[EventKey]"
 DEFAULT_MEASURE_TABLE = "'adhoc'"
+_EXPLAIN_METRIC_MEASURE = "__praeparo_explain_metric"
+_EXPLAIN_BASE_MEASURE = "__praeparo_explain_base_metric"
+_EXPLAIN_DENOMINATOR_MEASURE = "__praeparo_explain_denominator_metric"
 
 
 @dataclass(frozen=True)
@@ -215,16 +218,37 @@ def build_metric_explain_plan(
             )
 
     # Compile constant headline values once per query.
-    metric_value_expr = normalize_dax_expression(metric_definition.expression_with_evaluate_filters())
-    base_value_expr = normalize_dax_expression(base_definition.expression_with_evaluate_filters())
+    metric_value_expr = normalize_dax_expression(metric_definition.expression)
+    base_value_expr = normalize_dax_expression(base_definition.expression)
     context_filters = _format_filter_block(_dedupe_preserve_order(_normalise_fragments(context_calculate_filters)))
-
-    metric_value_var = _compose_calculate(metric_value_expr, context_filters)
-    base_value_var = _compose_calculate(base_value_expr, context_filters)
 
     define_body: list[str] = [f"  TABLE {DEFAULT_MEASURE_TABLE} = {{ {{ BLANK() }} }}"]
     define_body.extend(_format_define_blocks(context_define_blocks))
     define_body.extend(_format_define_blocks(_resolve_explain_define_blocks(explain_spec)))
+    define_body.extend(
+        _format_define_blocks(
+            [
+                f"MEASURE {DEFAULT_MEASURE_TABLE}[{_EXPLAIN_METRIC_MEASURE}] =\n{metric_value_expr}",
+                f"MEASURE {DEFAULT_MEASURE_TABLE}[{_EXPLAIN_BASE_MEASURE}] =\n{base_value_expr}",
+            ]
+        )
+    )
+
+    evaluate_filters = _format_filter_block(
+        _dedupe_preserve_order(_normalise_fragments(metric_definition.evaluate_filters))
+    )
+    base_evaluate_filters = _format_filter_block(
+        _dedupe_preserve_order(_normalise_fragments(base_definition.evaluate_filters))
+    )
+
+    metric_value_var = _compose_calculate(
+        f"{DEFAULT_MEASURE_TABLE}[{_EXPLAIN_METRIC_MEASURE}]",
+        [*context_filters, *evaluate_filters],
+    )
+    base_value_var = _compose_calculate(
+        f"{DEFAULT_MEASURE_TABLE}[{_EXPLAIN_BASE_MEASURE}]",
+        [*context_filters, *base_evaluate_filters],
+    )
 
     safe_identifier = _escape_dax_string(metric_identifier)
     safe_base_identifier = _escape_dax_string(metric_key)
@@ -409,18 +433,17 @@ def build_metric_binding_explain_plan(
     # Compile constant headline values once per query.
     context_filters = _format_filter_block(_dedupe_preserve_order(_normalise_fragments(context_calculate_filters)))
 
-    metric_value_expr = normalize_dax_expression(metric_definition.expression_with_evaluate_filters())
+    metric_value_expr = normalize_dax_expression(metric_definition.expression)
     binding_define = _format_filter_block(_dedupe_preserve_order(_normalise_fragments(numerator_define_filters)))
     if binding_define:
         metric_value_expr = normalize_dax_expression(_compose_calculate(metric_value_expr, binding_define))
-    metric_value_var = _compose_calculate(metric_value_expr, context_filters)
 
-    base_value_expr = normalize_dax_expression(base_definition.expression_with_evaluate_filters())
-    base_value_var = _compose_calculate(base_value_expr, context_filters)
+    base_value_expr = normalize_dax_expression(base_definition.expression)
 
     ratio_to_token: str | None = None
     denominator_reference: str | None = None
     denominator_value_var: str | None = None
+    denom_expr: str | None = None
     if ratio_to is not None:
         if ratio_to is True:
             ratio_to_token = "true"
@@ -440,12 +463,46 @@ def build_metric_binding_explain_plan(
             metric_key=denom_key,
             variant_path=denom_variant,
         )
-        denom_expr = normalize_dax_expression(denom_definition.expression_with_evaluate_filters())
-        denominator_value_var = _compose_calculate(denom_expr, context_filters)
+        denom_expr = normalize_dax_expression(denom_definition.expression)
 
     define_body: list[str] = [f"  TABLE {DEFAULT_MEASURE_TABLE} = {{ {{ BLANK() }} }}"]
     define_body.extend(_format_define_blocks(context_define_blocks))
     define_body.extend(_format_define_blocks(_resolve_explain_define_blocks(explain_spec)))
+    define_body.extend(
+        _format_define_blocks(
+            [
+                f"MEASURE {DEFAULT_MEASURE_TABLE}[{_EXPLAIN_METRIC_MEASURE}] =\n{metric_value_expr}",
+                f"MEASURE {DEFAULT_MEASURE_TABLE}[{_EXPLAIN_BASE_MEASURE}] =\n{base_value_expr}",
+                f"MEASURE {DEFAULT_MEASURE_TABLE}[{_EXPLAIN_DENOMINATOR_MEASURE}] =\n{denom_expr}"
+                if denom_expr is not None
+                else "",
+            ]
+        )
+    )
+
+    evaluate_filters = _format_filter_block(
+        _dedupe_preserve_order(_normalise_fragments(metric_definition.evaluate_filters))
+    )
+    base_evaluate_filters = _format_filter_block(
+        _dedupe_preserve_order(_normalise_fragments(base_definition.evaluate_filters))
+    )
+
+    metric_value_var = _compose_calculate(
+        f"{DEFAULT_MEASURE_TABLE}[{_EXPLAIN_METRIC_MEASURE}]",
+        [*context_filters, *evaluate_filters],
+    )
+    base_value_var = _compose_calculate(
+        f"{DEFAULT_MEASURE_TABLE}[{_EXPLAIN_BASE_MEASURE}]",
+        [*context_filters, *base_evaluate_filters],
+    )
+    if denominator_reference and denom_expr is not None:
+        denom_evaluate_filters = _format_filter_block(
+            _dedupe_preserve_order(_normalise_fragments(denom_definition.evaluate_filters))
+        )
+        denominator_value_var = _compose_calculate(
+            f"{DEFAULT_MEASURE_TABLE}[{_EXPLAIN_DENOMINATOR_MEASURE}]",
+            [*context_filters, *denom_evaluate_filters],
+        )
 
     safe_identifier = _escape_dax_string(metric_identifier)
     safe_reference = _escape_dax_string(metric_reference)

@@ -81,6 +81,10 @@ def _write_metric_registry(metrics_root: Path) -> None:
                 "display_name: Documents sent",
                 "section: Test",
                 "define: \"COUNTROWS ( 'fact_documents' )\"",
+                "calculate:",
+                "  event_intelligence:",
+                "    evaluate: |",
+                "      'Event Intelligence'[Instance] = \"Latest\"",
                 "variants:",
                 "  within_1d:",
                 "    display_name: Within 1d",
@@ -108,6 +112,26 @@ def _extract_var_block(statement: str, *, var_name: str) -> str:
         if idx != start and line.startswith("VAR "):
             break
         if idx != start and line.startswith("RETURN"):
+            break
+        block_lines.append(line)
+    return "\n".join(block_lines)
+
+
+def _extract_measure_block(statement: str, *, measure_name: str) -> str:
+    lines = statement.splitlines()
+    start = None
+    for idx, line in enumerate(lines):
+        if line.strip().startswith(f"MEASURE 'adhoc'[{measure_name}] ="):
+            start = idx
+            break
+    assert start is not None, f"Missing MEASURE 'adhoc'[{measure_name}] in statement"
+
+    block_lines: list[str] = []
+    for idx in range(start, len(lines)):
+        line = lines[idx]
+        if idx != start and line.strip().startswith("MEASURE "):
+            break
+        if idx != start and line.strip() == "EVALUATE":
             break
         block_lines.append(line)
     return "\n".join(block_lines)
@@ -166,6 +190,7 @@ def test_explain_binding_ratio_does_not_apply_define_filters_to_denominator(tmp_
 
     numerator_filter = "fact_documents[NumeratorOnly] = 1"
     group_filter = "'Time Intelligence'[Period] = \"Current Month\""
+    eval_filter = "'Event Intelligence'[Instance] = \"Latest\""
 
     plan = build_metric_binding_explain_plan(
         catalog,
@@ -179,11 +204,15 @@ def test_explain_binding_ratio_does_not_apply_define_filters_to_denominator(tmp_
 
     denom_block = _extract_var_block(plan.statement, var_name="__denominator_value")
     assert group_filter in denom_block
+    assert eval_filter in denom_block
     assert numerator_filter not in denom_block
 
     numer_block = _extract_var_block(plan.statement, var_name="__metric_value")
     assert group_filter in numer_block
-    assert numerator_filter in numer_block
+    assert eval_filter in numer_block
+    metric_measure_block = _extract_measure_block(plan.statement, measure_name="__praeparo_explain_metric")
+    assert numerator_filter in metric_measure_block
+    assert eval_filter not in metric_measure_block
 
 
 def test_metrics_cli_loads_plugins_before_listing_bindings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys) -> None:

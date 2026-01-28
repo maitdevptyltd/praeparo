@@ -1,27 +1,31 @@
 DEFINE
   TABLE 'adhoc' = { { BLANK() } }
   FUNCTION GetCustomerBusinessDays = () => 1
+  MEASURE 'adhoc'[__praeparo_explain_metric] =
+  CALCULATE(
+      CALCULATE (
+          DISTINCTCOUNT ( 'fact_events'[MatterId] ),
+          // WFComponentId = 78
+          'dim_wf_component'[WFComponentName] = "Check Returned Documents",
+          'dim_event_type'[MatterEventTypeName] = "Milestone Complete"
+      ),
+      FILTER(fact_events, GetCustomerBusinessDays('fact_events'[LastRelatedMilestoneStartedTimestampUTC], 'fact_events'[EventTimestampUTC]) <= 1)
+  )
+  MEASURE 'adhoc'[__praeparo_explain_base_metric] =
+  CALCULATE (
+      DISTINCTCOUNT ( 'fact_events'[MatterId] ),
+      // WFComponentId = 78
+      'dim_wf_component'[WFComponentName] = "Check Returned Documents",
+      'dim_event_type'[MatterEventTypeName] = "Milestone Complete"
+  )
 
 EVALUATE
 VAR __metric_value = CALCULATE(
-    CALCULATE(
-    CALCULATE (
-        DISTINCTCOUNT ( 'fact_events'[MatterId] ),
-        // WFComponentId = 78
-        'dim_wf_component'[WFComponentName] = "Check Returned Documents",
-        'dim_event_type'[MatterEventTypeName] = "Milestone Complete"
-    ),
-    FILTER(fact_events, GetCustomerBusinessDays('fact_events'[LastRelatedMilestoneStartedTimestampUTC], 'fact_events'[EventTimestampUTC]) <= 1)
-),
+    'adhoc'[__praeparo_explain_metric],
     'dim_calendar'[Month] = DATE(2025, 12, 1)
 )
 VAR __base_metric_value = CALCULATE(
-    CALCULATE (
-    DISTINCTCOUNT ( 'fact_events'[MatterId] ),
-    // WFComponentId = 78
-    'dim_wf_component'[WFComponentName] = "Check Returned Documents",
-    'dim_event_type'[MatterEventTypeName] = "Milestone Complete"
-),
+    'adhoc'[__praeparo_explain_base_metric],
     'dim_calendar'[Month] = DATE(2025, 12, 1)
 )
 VAR __rows_raw = CALCULATETABLE(
