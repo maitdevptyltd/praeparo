@@ -20,6 +20,8 @@ from jinja2 import Environment
 
 from pptx import Presentation
 from pptx.enum.shapes import MSO_SHAPE_TYPE, PP_PLACEHOLDER
+from pptx.oxml.ns import qn
+from pptx.opc.constants import RELATIONSHIP_TYPE as RT
 from pptx.shapes.group import GroupShape
 import pptx.shapes.picture as pptx_picture
 from pptx.text.text import _Run
@@ -71,6 +73,10 @@ def _clone_slide(presentation: Presentation, template_slide) -> object:
     for shape in list(new_slide.shapes):
         new_slide.shapes._spTree.remove(shape._element)  # type: ignore[attr-defined]
 
+    # Copy slide-level background settings first so template themes and image
+    # backgrounds survive the clone, then clone foreground shapes on top.
+    _copy_slide_background(template_slide, new_slide)
+
     for shape in template_slide.shapes:
         if isinstance(shape, pptx_picture.Picture):
             img = io.BytesIO(shape.image.blob)
@@ -88,6 +94,45 @@ def _clone_slide(presentation: Presentation, template_slide) -> object:
         new_slide.shapes._spTree.insert_element_before(newel, "p:extLst")  # type: ignore[attr-defined]
 
     return new_slide
+
+
+def _copy_slide_background(template_slide, new_slide) -> None:
+    """Copy template slide background, remapping image relationships as needed."""
+
+    template_common_slide = template_slide._element.cSld  # type: ignore[attr-defined]
+    new_common_slide = new_slide._element.cSld  # type: ignore[attr-defined]
+    template_background = template_common_slide.bg
+    if template_background is None:
+        return
+
+    background = copy.deepcopy(template_background)
+
+    # Background fills can point at image relationships from the template
+    # slide; remap each blip to a relationship owned by the cloned slide.
+    embed_attr = qn("r:embed")
+    for blip in background.iter(qn("a:blip")):
+        relationship_id = blip.get(embed_attr)
+        if not relationship_id:
+            continue
+
+        try:
+            related_part = template_slide.part.related_part(relationship_id)
+        except KeyError:
+            logger.warning(
+                "Template background image relationship missing; skipping background image",
+                extra={"relationship_id": relationship_id},
+            )
+            blip.attrib.pop(embed_attr, None)
+            continue
+
+        new_relationship_id = new_slide.part.relate_to(related_part, RT.IMAGE)
+        blip.set(embed_attr, new_relationship_id)
+
+    existing_background = new_common_slide.bg
+    if existing_background is not None:
+        new_common_slide.remove(existing_background)
+
+    new_common_slide.insert(0, background)
 
 
 def _picture_shapes(slide) -> list:
