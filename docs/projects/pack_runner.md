@@ -353,8 +353,8 @@ values override anything derived from the positional `dest`.
 
 Pack output paths (`dest`, `--artefact-dir`, `--result-file`, `--build-artifacts-dir`)
 also support Jinja templates resolved from the same context payload used by pack
-execution (registry context layers plus the pack’s own `context` block). For
-example, if `registry/context/month.yaml` sets `month`, you can target a
+execution (registry context layers, then the pack `context` block, then any
+CLI `--context` overrides). For example, if `registry/context/month.yaml` sets `month`, you can target a
 month-scoped output folder:
 
 ```bash
@@ -367,6 +367,18 @@ Key flags:
 
 - `pack run <path>` – path to the pack YAML. Can be absolute or relative to the
   current working directory.
+- `--context` – optional YAML/JSON context layer file (repeatable). These files
+  are merged after pack defaults so explicit run-time overrides win:
+
+  ```bash
+  poetry run praeparo pack run projects/example/pack.yaml \
+    --context registry/customers/orde/orde_governance_pack.yaml \
+    --artefact-dir .tmp/example/pack_png
+  ```
+
+  Context files may be plain context-layer payloads or full pack-shaped YAML
+  documents; pack-shaped files contribute their top-level `context`,
+  `calculate`, `define`, and `filters` fragments.
 - `--project-root` – override the project root used for metrics/datasources discovery
   and default build paths. Defaults to the current working directory. When a slide’s
   visual declares a typed context model, its `metrics_root` still takes precedence.

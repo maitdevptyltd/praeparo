@@ -51,7 +51,7 @@ from praeparo.paths.registry_root import is_registry_anchored_path, resolve_regi
 from praeparo.visuals.dax.planner_core import slugify
 from praeparo.io.yaml_loader import load_visual_config, load_visual_from_payload
 from praeparo.visuals.context import merge_context_payload, resolve_dax_context
-from praeparo.visuals.context_layers import merge_context_layer_payload, resolve_layered_context_payload
+from praeparo.visuals.context_layers import resolve_layered_context_payload
 from praeparo.visuals.registry import VisualTypeRegistration, get_visual_registration, _is_python_visual_type
 from praeparo.visuals.context_models import VisualContextModel
 from praeparo.models.scoped_calculate import ScopedCalculateFilters, ScopedCalculateMap
@@ -165,12 +165,13 @@ def _resolve_pack_base_context_payload(
     pack_context_layer: Mapping[str, object] | None = None,
     env: Environment,
 ) -> dict[str, object]:
-    """Resolve registry context layers, then merge any caller-supplied metadata context.
+    """Resolve registry context layers plus pack defaults and optional metadata overrides.
 
     Pack execution needs the same "global" DAX helpers as ad-hoc visual runs, so
     we start by loading `registry/context/**` (relative to the discovered
-    metrics_root). Any context supplied via PipelineOptions metadata is then
-    merged on top so explicit overrides win.
+    metrics_root). Pack context from YAML provides baseline defaults, and any
+    context supplied via PipelineOptions metadata is merged on top so explicit
+    overrides win.
     """
 
     from praeparo.datasets.context import resolve_default_metrics_root_for_pack
@@ -185,12 +186,12 @@ def _resolve_pack_base_context_payload(
     # helper definitions without repeating them in every pack.
     context_layers: list[Mapping[str, object]] = []
 
+    if pack_context_layer:
+        context_layers.append(dict(pack_context_layer))
+
     raw_context = metadata.get("context") if metadata else None
     if isinstance(raw_context, Mapping):
         context_layers.append(dict(raw_context))
-
-    if pack_context_layer:
-        context_layers.append(dict(pack_context_layer))
 
     registry_payload = resolve_layered_context_payload(metrics_root=metrics_root, context_layers=context_layers, env=env)
 
@@ -575,9 +576,9 @@ def run_pack(
         env=jinja_env,
     )
 
-    # With base layers resolved, inherit pack context values so packs and slides
-    # can override defaults while still benefiting from shared helpers.
-    pack_payload = merge_context_layer_payload(base=base_context_payload, incoming=dump_context_payload(pack.context))
+    # The base payload already includes registry defaults, pack context, and
+    # explicit metadata context (in that precedence order).
+    pack_payload = base_context_payload
     rendered_global_filters = render_value(pack.filters, env=jinja_env, context=pack_payload)
     rendered_global_calculate = render_value(pack.calculate, env=jinja_env, context=pack_payload)
     rendered_define = render_value(pack.define, env=jinja_env, context=pack_payload)
@@ -1510,7 +1511,7 @@ def restitch_pack_pptx(
         pack_context_layer=dump_context_payload(pack.context),
         env=jinja_env,
     )
-    pack_payload = merge_context_layer_payload(base=base_context_payload, incoming=dump_context_payload(pack.context))
+    pack_payload = base_context_payload
 
     rendered_global_calculate = render_value(pack.calculate, env=jinja_env, context=pack_payload)
     rendered_define = render_value(pack.define, env=jinja_env, context=pack_payload)

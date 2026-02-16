@@ -556,6 +556,7 @@ def test_pack_cli_loads_plugin_module(monkeypatch, tmp_path) -> None:
         pipeline=None,
         env=None,
         only_slides=(),
+        evidence_only=False,
     ):
         slide = pack.slides[0]
         png_path = output_root / "slide-id-1.png"
@@ -627,6 +628,7 @@ def test_pack_cli_run_invokes_runner(monkeypatch, tmp_path, capsys) -> None:
         pipeline=None,
         env=None,
         only_slides=(),
+        evidence_only=False,
     ):
         captured["output_root"] = output_root
         captured["only_slides"] = only_slides
@@ -677,6 +679,214 @@ def test_pack_cli_run_invokes_runner(monkeypatch, tmp_path, capsys) -> None:
     assert captured["only_slides"] == ("slide-id-1",)
 
 
+def test_pack_cli_run_accepts_context_file(monkeypatch, tmp_path, capsys) -> None:
+    metrics_root = tmp_path / "registry" / "metrics"
+    metrics_root.mkdir(parents=True)
+
+    pack_path = tmp_path / "registry" / "packs" / "pack.yaml"
+    pack_path.parent.mkdir(parents=True, exist_ok=True)
+    pack_path.write_text("contents", encoding="utf-8")
+
+    override_path = tmp_path / "overrides" / "orde.yaml"
+    override_path.parent.mkdir(parents=True, exist_ok=True)
+    override_path.write_text(
+        "\n".join(
+            [
+                "schema: orde-pack",
+                "context:",
+                "  lender_id: 178",
+                "  customer: ORDE",
+                "calculate:",
+                "  lender: \"'dim_lender'[LenderId] = {{ lender_id }}\"",
+                "slides: []",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    captured: Dict[str, object] = {}
+
+    def fake_load_pack_config(path: Path) -> PackConfig:
+        assert path == pack_path
+        return PackConfig(
+            schema="test-pack",
+            context={"lender_id": 166, "customer": "Standard Lender"},
+            slides=[PackSlide(title="Slide One", id="slide-id-1", visual=PackVisualRef(ref="one.yaml"))],
+        )
+
+    def fake_run_pack(
+        pack_path_arg,
+        pack,
+        *,
+        project_root=None,
+        output_root,
+        max_powerbi_concurrency=None,
+        base_options=None,
+        visual_loader=None,
+        pipeline=None,
+        env=None,
+        only_slides=(),
+        evidence_only=False,
+    ):
+        captured["output_root"] = output_root
+        captured["base_options"] = base_options
+        slide = pack.slides[0]
+        png_path = output_root / "slide-id-1.png"
+        png_path.parent.mkdir(parents=True, exist_ok=True)
+        png_path.write_text("png", encoding="utf-8")
+        return [
+            PackSlideResult(
+                slide=slide,
+                visual_path=pack_path_arg,
+                result=VisualExecutionResult(config=BaseVisualConfig(type="powerbi"), outputs=[]),
+                png_path=png_path,
+            )
+        ]
+
+    class FakePipeline:
+        def __init__(self, *_, **__):
+            pass
+
+    monkeypatch.setattr("praeparo.cli.load_pack_config", fake_load_pack_config)
+    monkeypatch.setattr("praeparo.cli.run_pack", fake_run_pack)
+    monkeypatch.setattr("praeparo.cli.VisualPipeline", FakePipeline)
+    monkeypatch.setattr("praeparo.cli.build_default_query_planner_provider", lambda: None)
+
+    artefacts_dir = tmp_path / "artefacts"
+    with pytest.raises(SystemExit) as exc:
+        cli_main(
+            [
+                "pack",
+                "run",
+                str(pack_path),
+                "--metrics-root",
+                str(metrics_root),
+                "--context",
+                str(override_path),
+                "--artefact-dir",
+                str(artefacts_dir),
+            ]
+        )
+
+    assert exc.value.code == 0
+    assert captured["output_root"] == artefacts_dir
+    base_options = cast(PipelineOptions, captured["base_options"])
+    metadata = cast(Mapping[str, object], base_options.metadata)
+    context_payload = cast(Mapping[str, Any], metadata["context"])
+    assert context_payload["customer"] == "ORDE"
+    assert context_payload["lender_id"] == 178
+    assert context_payload["calculate"] == [{"lender": "'dim_lender'[LenderId] = 178"}]
+    out = capsys.readouterr().out
+    assert "[ok] Wrote 1 PNG" in out
+
+
+def test_pack_cli_dest_templates_render_with_context_override(monkeypatch, tmp_path, capsys) -> None:
+    metrics_root = tmp_path / "registry" / "metrics"
+    metrics_root.mkdir(parents=True)
+
+    pack_path = tmp_path / "registry" / "packs" / "pack.yaml"
+    pack_path.parent.mkdir(parents=True, exist_ok=True)
+    pack_path.write_text("contents", encoding="utf-8")
+    dest = tmp_path / "out" / "customer={{ customer }}" / "governance"
+
+    override_path = tmp_path / "overrides" / "orde.yaml"
+    override_path.parent.mkdir(parents=True, exist_ok=True)
+    override_path.write_text(
+        "\n".join(
+            [
+                "schema: orde-pack",
+                "context:",
+                "  customer: ORDE",
+                "slides: []",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    captured: Dict[str, object] = {}
+
+    def fake_load_pack_config(path: Path) -> PackConfig:
+        return PackConfig(
+            schema="test-pack",
+            context={"customer": "Standard Lender"},
+            slides=[PackSlide(title="Slide One", id="slide-id-1", visual=PackVisualRef(ref="one.yaml"))],
+        )
+
+    def fake_run_pack(
+        pack_path_arg,
+        pack,
+        *,
+        project_root=None,
+        output_root,
+        max_powerbi_concurrency=None,
+        base_options=None,
+        visual_loader=None,
+        pipeline=None,
+        env=None,
+        only_slides=(),
+        evidence_only=False,
+    ):
+        captured["output_root"] = output_root
+        captured["base_options"] = base_options
+
+        result_file = None
+        if base_options and isinstance(base_options.metadata, Mapping):
+            raw = base_options.metadata.get("result_file")
+            if isinstance(raw, Path):
+                result_file = raw
+        if result_file is not None:
+            result_file.parent.mkdir(parents=True, exist_ok=True)
+            result_file.write_text("pptx", encoding="utf-8")
+
+        slide = pack.slides[0]
+        png_path = output_root / "slide-id-1.png"
+        png_path.parent.mkdir(parents=True, exist_ok=True)
+        png_path.write_text("png", encoding="utf-8")
+        return [
+            PackSlideResult(
+                slide=slide,
+                visual_path=pack_path_arg,
+                result=VisualExecutionResult(config=BaseVisualConfig(type="powerbi"), outputs=[]),
+                png_path=png_path,
+            )
+        ]
+
+    class FakePipeline:
+        def __init__(self, *_, **__):
+            pass
+
+    monkeypatch.setattr("praeparo.cli.load_pack_config", fake_load_pack_config)
+    monkeypatch.setattr("praeparo.cli.run_pack", fake_run_pack)
+    monkeypatch.setattr("praeparo.cli.VisualPipeline", FakePipeline)
+    monkeypatch.setattr("praeparo.cli.build_default_query_planner_provider", lambda: None)
+
+    with pytest.raises(SystemExit) as exc:
+        cli_main(
+            [
+                "pack",
+                "run",
+                str(pack_path),
+                str(dest),
+                "--metrics-root",
+                str(metrics_root),
+                "--context",
+                str(override_path),
+            ]
+        )
+
+    assert exc.value.code == 0
+    expected_dest = tmp_path / "out" / "customer=ORDE" / "governance"
+    expected_artefacts = expected_dest / "_artifacts"
+    assert captured["output_root"] == expected_artefacts
+    base_options = cast(PipelineOptions, captured["base_options"])
+    expected_result = expected_dest / f"{slugify(pack_path.stem)}_r01.pptx"
+    assert base_options.metadata.get("result_file") == expected_result
+    out = capsys.readouterr().out
+    assert f"[ok] Wrote PPTX to {expected_result}" in out
+
+
 def test_pack_cli_dest_directory_sets_defaults(monkeypatch, tmp_path, capsys) -> None:
     pack_path = tmp_path / "ing governance pack.yaml"
     pack_path.write_text("contents", encoding="utf-8")
@@ -702,6 +912,7 @@ def test_pack_cli_dest_directory_sets_defaults(monkeypatch, tmp_path, capsys) ->
         pipeline=None,
         env=None,
         only_slides=(),
+        evidence_only=False,
     ):
         captured["output_root"] = output_root
         captured["base_options"] = base_options
@@ -786,6 +997,7 @@ def test_pack_cli_dest_pptx_sets_result_and_artifacts(monkeypatch, tmp_path, cap
         pipeline=None,
         env=None,
         only_slides=(),
+        evidence_only=False,
     ):
         captured["output_root"] = output_root
         captured["base_options"] = base_options
@@ -872,6 +1084,7 @@ def test_pack_cli_dest_allows_flag_overrides(monkeypatch, tmp_path, capsys) -> N
         pipeline=None,
         env=None,
         only_slides=(),
+        evidence_only=False,
     ):
         captured["output_root"] = output_root
         captured["base_options"] = base_options
@@ -968,6 +1181,7 @@ def test_pack_cli_dest_templates_render_with_registry_context(monkeypatch, tmp_p
         pipeline=None,
         env=None,
         only_slides=(),
+        evidence_only=False,
     ):
         captured["output_root"] = output_root
         captured["base_options"] = base_options
@@ -1053,6 +1267,7 @@ def test_pack_cli_revision_updates_default_result(monkeypatch, tmp_path, capsys)
         pipeline=None,
         env=None,
         only_slides=(),
+        evidence_only=False,
     ):
         captured["output_root"] = output_root
         captured["base_options"] = base_options
@@ -1139,6 +1354,7 @@ def test_pack_cli_result_file_infers_artefact_dir(monkeypatch, tmp_path, capsys)
         pipeline=None,
         env=None,
         only_slides=(),
+        evidence_only=False,
     ):
         captured["output_root"] = output_root
         captured["base_options"] = base_options
@@ -1221,6 +1437,7 @@ def test_pack_run_defaults_to_live_data_mode(monkeypatch, tmp_path, capsys) -> N
         pipeline=None,
         env=None,
         only_slides=(),
+        evidence_only=False,
     ):
         captured["base_options"] = base_options
         slide = pack.slides[0]
@@ -1290,6 +1507,7 @@ def test_pack_run_respects_mock_data_mode_override(monkeypatch, tmp_path, capsys
         pipeline=None,
         env=None,
         only_slides=(),
+        evidence_only=False,
     ):
         captured["base_options"] = base_options
         slide = pack.slides[0]

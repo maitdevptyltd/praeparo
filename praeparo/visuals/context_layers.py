@@ -122,6 +122,12 @@ def _load_context_layer(path: Path) -> dict[str, object]:
     return payload
 
 
+def load_context_layer_file(path: Path) -> dict[str, object]:
+    """Load one context-layer file and return its merge-ready payload."""
+
+    return _load_context_layer(path)
+
+
 def _pack_payload_to_layer_base(payload: Mapping[str, object]) -> dict[str, object]:
     """Adapt a pack-like payload into a layer base mapping."""
 
@@ -221,4 +227,9 @@ def _raise_on_unrendered_templates(payload: Mapping[str, object]) -> None:
                     )
 
 
-__all__ = ["discover_registry_context_paths", "merge_context_layer_payload", "resolve_layered_context_payload"]
+__all__ = [
+    "discover_registry_context_paths",
+    "load_context_layer_file",
+    "merge_context_layer_payload",
+    "resolve_layered_context_payload",
+]

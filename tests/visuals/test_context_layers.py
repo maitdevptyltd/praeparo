@@ -5,7 +5,11 @@ from pathlib import Path
 import pytest
 
 from praeparo.pack.templating import create_pack_jinja_env, render_value
-from praeparo.visuals.context_layers import discover_registry_context_paths, resolve_layered_context_payload
+from praeparo.visuals.context_layers import (
+    discover_registry_context_paths,
+    load_context_layer_file,
+    resolve_layered_context_payload,
+)
 from praeparo.visuals.context import resolve_dax_context
 
 
@@ -205,3 +209,28 @@ def test_render_value_can_use_hoisted_registry_context_keys(tmp_path: Path) -> N
 
     assert isinstance(rendered, str)
     assert "x ge " in rendered
+
+
+def test_load_context_layer_file_adapts_pack_shaped_payload(tmp_path: Path) -> None:
+    context_path = tmp_path / "orde_pack.yaml"
+    context_path.write_text(
+        "\n".join(
+            [
+                "schema: orde-pack",
+                "context:",
+                "  lender_id: 178",
+                "  customer: ORDE",
+                "calculate:",
+                "  lender: \"'dim_lender'[LenderId] = {{ lender_id }}\"",
+                "slides: []",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    payload = load_context_layer_file(context_path)
+
+    assert payload["lender_id"] == 178
+    assert payload["customer"] == "ORDE"
+    assert payload["calculate"] == {"lender": "'dim_lender'[LenderId] = {{ lender_id }}"}

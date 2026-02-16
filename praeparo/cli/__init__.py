@@ -59,7 +59,10 @@ from praeparo.powerbi import (
     PowerBIQueryError,
 )
 from praeparo.visuals.context import ContextLoadError, load_context_file, merge_context_payload, resolve_dax_context
-from praeparo.visuals.context_layers import merge_context_layer_payload, resolve_layered_context_payload
+from praeparo.visuals.context_layers import (
+    load_context_layer_file,
+    resolve_layered_context_payload,
+)
 from praeparo.visuals.registry import (
     VisualCLIArgument,
     VisualCLIOptions,
@@ -396,21 +399,13 @@ def _resolve_pack_path_templates(
 ) -> None:
     """Render output-path templates using the same context payload as pack execution."""
 
-    # Start by resolving registry + pack context so output paths can reuse shared helpers.
-    raw_metrics_root = getattr(args, "metrics_root", None)
-    if raw_metrics_root is not None:
-        metrics_root = Path(raw_metrics_root).expanduser().resolve(strict=False)
-    else:
-        metrics_root = resolve_default_metrics_root_for_pack(pack_path)
-
     jinja_env = create_pack_jinja_env()
-    pack_context_layer = dump_context_payload(pack.context)
-    base_payload = resolve_layered_context_payload(
-        metrics_root=metrics_root,
-        context_layers=[pack_context_layer],
+    pack_payload = _resolve_pack_cli_context_payload(
+        pack_path=pack_path,
+        pack=pack,
+        args=args,
         env=jinja_env,
     )
-    pack_payload = merge_context_layer_payload(base=base_payload, incoming=pack_context_layer)
 
     # With context ready, render any CLI-supplied output paths in-place before defaults are derived.
     args.dest = _render_pack_path_template(getattr(args, "dest", None), env=jinja_env, context=pack_payload)
@@ -420,6 +415,42 @@ def _resolve_pack_path_templates(
         getattr(args, "build_artifacts_dir", None),
         env=jinja_env,
         context=pack_payload,
+    )
+
+
+def _resolve_pack_cli_context_payload(
+    *,
+    pack_path: Path,
+    pack: PackConfig,
+    args: argparse.Namespace,
+    env: Environment | None = None,
+) -> dict[str, object]:
+    """Resolve effective context payload for pack CLI templating and metadata.
+
+    Packs use registry context layers as shared defaults. The pack config then
+    applies baseline context values, and any explicit `--context` files provide
+    the highest-priority overrides for this invocation.
+    """
+
+    raw_metrics_root = getattr(args, "metrics_root", None)
+    if raw_metrics_root is not None:
+        metrics_root = Path(raw_metrics_root).expanduser().resolve(strict=False)
+    else:
+        metrics_root = resolve_default_metrics_root_for_pack(pack_path)
+
+    context_layers: list[Mapping[str, object]] = []
+    pack_context_layer = dump_context_payload(pack.context)
+    if pack_context_layer:
+        context_layers.append(pack_context_layer)
+
+    for path in getattr(args, "context_paths", None) or []:
+        context_layers.append(load_context_layer_file(Path(path)))
+
+    jinja_env = env or create_pack_jinja_env()
+    return resolve_layered_context_payload(
+        metrics_root=metrics_root,
+        context_layers=context_layers,
+        env=jinja_env,
     )
 
 
@@ -519,6 +550,14 @@ def _register_pack_parsers(parent: argparse._SubParsersAction[argparse.ArgumentP
         default=[],
         metavar="KEY=VALUE",
         help="Additional metadata key/value pairs forwarded to pipelines.",
+    )
+    run_parser.add_argument(
+        "--context",
+        dest="context_paths",
+        action="append",
+        default=[],
+        type=Path,
+        help="Optional YAML/JSON file containing top-level context overrides (repeatable).",
     )
     run_parser.add_argument(
         "--data-mode",
@@ -983,7 +1022,12 @@ def _prepare_metadata(args: argparse.Namespace, cli: VisualCLIOptions | None) ->
     return metadata
 
 
-def _prepare_pack_metadata(args: argparse.Namespace, *, pack_path: Path | None = None) -> Dict[str, object]:
+def _prepare_pack_metadata(
+    args: argparse.Namespace,
+    *,
+    pack_path: Path | None = None,
+    pack: PackConfig | None = None,
+) -> Dict[str, object]:
     metadata: Dict[str, object] = {}
     metadata.update(_parse_metadata_pairs(args.meta or []))
     metadata["data_mode"] = _normalise_data_mode(getattr(args, "data_mode", None))
@@ -1011,6 +1055,11 @@ def _prepare_pack_metadata(args: argparse.Namespace, *, pack_path: Path | None =
         from praeparo.datasets.context import resolve_default_metrics_root_for_pack
 
         metadata["metrics_root"] = resolve_default_metrics_root_for_pack(pack_path)
+
+    if pack_path is not None and pack is not None and (getattr(args, "context_paths", None) or []):
+        context_payload = _resolve_pack_cli_context_payload(pack_path=pack_path, pack=pack, args=args)
+        if context_payload:
+            metadata["context"] = context_payload
     return metadata
 
 
@@ -1345,7 +1394,7 @@ def _handle_pack_run(args: argparse.Namespace) -> int:
     if getattr(args, "pptx_only", False):
         if args.result_file is None:
             raise ValueError("PPTX-only restitch requires a result file; provide dest or --result-file.")
-        metadata = _prepare_pack_metadata(args, pack_path=pack_path)
+        metadata = _prepare_pack_metadata(args, pack_path=pack_path, pack=pack)
         options = _build_pipeline_options(args, metadata, include_outputs=False)
         if args.png_scale is not None:
             options.png_scale = args.png_scale
@@ -1361,7 +1410,7 @@ def _handle_pack_run(args: argparse.Namespace) -> int:
         print(f"[ok] Pack run completed in {format_duration(elapsed)}")
         return 0
 
-    metadata = _prepare_pack_metadata(args, pack_path=pack_path)
+    metadata = _prepare_pack_metadata(args, pack_path=pack_path, pack=pack)
     jinja_env = create_pack_jinja_env()
 
     options = _build_pipeline_options(args, metadata, include_outputs=False)

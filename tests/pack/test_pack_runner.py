@@ -125,6 +125,72 @@ def test_pack_base_context_renders_registry_defines_against_pack_context(tmp_pat
     assert all("\"09:00\"" not in block for block in define_blocks)
 
 
+def test_pack_base_context_prefers_metadata_context_over_pack_defaults(tmp_path: Path) -> None:
+    (tmp_path / "registry" / "metrics").mkdir(parents=True)
+
+    context_root = tmp_path / "registry" / "context"
+    context_root.mkdir(parents=True)
+    (context_root / "business_time.yaml").write_text(
+        "\n".join(
+            [
+                "context:",
+                "  business_time:",
+                "    work_start: \"09:00\"",
+                "    work_end: \"17:00\"",
+                "define:",
+                "  get_business_hours: |",
+                "    FUNCTION GetCustomerBusinessHours =",
+                "      () =>",
+                "        GetBusinessHours(",
+                "          BLANK(),",
+                "          BLANK(),",
+                "          \"{{ business_time.work_start }}\",",
+                "          \"{{ business_time.work_end }}\"",
+                "        )",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    pack_path = tmp_path / "registry" / "customers" / "foo" / "pack.yaml"
+    pack_path.parent.mkdir(parents=True, exist_ok=True)
+    pack_path.write_text(
+        "\n".join(
+            [
+                "schema: test-pack",
+                "context:",
+                "  business_time:",
+                "    work_start: \"08:00\"",
+                "    work_end: \"18:00\"",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    pack = load_pack_config(pack_path)
+    env = create_pack_jinja_env()
+
+    from praeparo.pack.runner import _resolve_pack_base_context_payload
+
+    payload = _resolve_pack_base_context_payload(
+        pack_path=pack_path,
+        metadata={
+            "metrics_root": tmp_path / "registry" / "metrics",
+            "context": {"business_time": {"work_start": "07:00", "work_end": "19:00"}},
+        },
+        pack_context_layer=dump_context_payload(pack.context),
+        env=env,
+    )
+
+    _, define_blocks = resolve_dax_context(base=payload, calculate=None, define=None)
+    assert any("\"07:00\"" in block for block in define_blocks)
+    assert any("\"19:00\"" in block for block in define_blocks)
+    assert all("\"08:00\"" not in block for block in define_blocks)
+    assert all("\"18:00\"" not in block for block in define_blocks)
+
+
 def test_merge_odata_filters_supports_dict_list_and_string() -> None:
     dict_merged = merge_odata_filters({"a": "one", "b": "two"}, {"b": "local", "c": "three"})
     assert dict_merged == {"a": "one", "b": "local", "c": "three"}
@@ -1106,6 +1172,76 @@ def test_run_pack_forwards_pack_context_into_visual_context(tmp_path: Path) -> N
     assert isinstance(visual_ctx, _TestContextModel)
     assert visual_ctx.reference_date == date(2025, 10, 1)
     assert visual_ctx.trailing_months == 3
+
+
+def test_run_pack_metadata_context_overrides_pack_context_in_visual_context(tmp_path: Path) -> None:
+    class _TestContextModel(VisualContextModel):
+        reference_date: date | None = None
+        trailing_months: int = 3
+
+        @model_validator(mode="before")
+        @classmethod
+        def _from_context(cls, values: Mapping[str, object]) -> Mapping[str, object]:
+            data = dict(values)
+            ctx = data.get("context") or {}
+            if isinstance(ctx, Mapping):
+                if "reference_date" not in data and "month" in ctx:
+                    data["reference_date"] = ctx["month"]
+                if "trailing_months" not in data and "trailing_months" in ctx:
+                    data["trailing_months"] = ctx["trailing_months"]
+            return data
+
+    register_visual_type(
+        "contextual_month_override",
+        lambda path, payload=None, stack=(): BaseVisualConfig(type="contextual_month_override"),
+        overwrite=True,
+        context_model=_TestContextModel,
+    )
+
+    pack_path = tmp_path / "pack.yaml"
+    pack_path.write_text("", encoding="utf-8")
+
+    pack = PackConfig(
+        schema="test-pack",
+        context=PackContext.model_validate({"month": "2025-10-01", "trailing_months": 3}),
+        slides=[
+            PackSlide(
+                title="Context Slide",
+                visual=PackVisualRef(ref="contextual_month_override.yaml"),
+            ),
+        ],
+    )
+
+    visuals: Dict[str, BaseVisualConfig] = {
+        "contextual_month_override.yaml": BaseVisualConfig(type="contextual_month_override")
+    }
+
+    def _loader(path: Path, payload: Mapping[str, object] | None = None, stack: tuple[Path, ...] = ()) -> BaseVisualConfig:
+        return visuals[path.name]
+
+    pipeline = _PngPipeline()
+    results = run_pack(
+        pack_path,
+        pack,
+        project_root=pack_path.parent,
+        output_root=tmp_path / "artefacts",
+        base_options=PipelineOptions(
+            metadata={
+                "metrics_root": "registry/metrics",
+                "context": {"month": "2025-11-01", "trailing_months": 6},
+            }
+        ),
+        visual_loader=_loader,
+        pipeline=cast(VisualPipeline[Any], pipeline),
+        env=create_pack_jinja_env(),
+    )
+
+    assert results
+    assert pipeline.contexts
+    visual_ctx = pipeline.contexts[0].visual_context
+    assert isinstance(visual_ctx, _TestContextModel)
+    assert visual_ctx.reference_date == date(2025, 11, 1)
+    assert visual_ctx.trailing_months == 6
 
 
 def test_run_pack_named_calculate_overrides_global(tmp_path: Path) -> None:
