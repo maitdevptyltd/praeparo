@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import struct
 import zlib
+import zipfile
 from pathlib import Path
+import xml.etree.ElementTree as ET
 
 from pptx import Presentation
 from pptx.enum.shapes import MSO_SHAPE_TYPE, PP_PLACEHOLDER
@@ -80,6 +82,85 @@ def _build_template_with_background(path: Path) -> None:
     slide.notes_slide.notes_text_frame.text = "TEMPLATE_TAG=home"
     prs.save(path)
     tmp_img.unlink(missing_ok=True)
+
+
+def _build_template_with_slide_background_fill(path: Path) -> None:
+    """Create a template where the home slide background is a slide-level image fill."""
+
+    prs = Presentation()
+    picture_with_caption = prs.slide_layouts[8]
+    slide = prs.slides.add_slide(picture_with_caption)
+
+    tmp_img = path.parent / "tmp_background_fill.png"
+    _write_png(tmp_img, width=10, height=10)
+    background_shape = slide.shapes.add_picture(
+        str(tmp_img),
+        Inches(0),
+        Inches(0),
+        width=prs.slide_width,
+        height=prs.slide_height,
+    )
+    background_shape.name = "background"
+
+    logo_placeholder = next(ph for ph in slide.placeholders if ph.placeholder_format.type == PP_PLACEHOLDER.PICTURE)
+    logo_placeholder.name = "logo"
+    logo_placeholder.left = Inches(1)
+    logo_placeholder.top = Inches(1)
+    logo_placeholder.width = Inches(2)
+    logo_placeholder.height = Inches(1.5)
+
+    slide.notes_slide.notes_text_frame.text = "TEMPLATE_TAG=home"
+    prs.save(path)
+    tmp_img.unlink(missing_ok=True)
+
+    namespaces = {
+        "p": "http://schemas.openxmlformats.org/presentationml/2006/main",
+        "a": "http://schemas.openxmlformats.org/drawingml/2006/main",
+        "r": "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
+    }
+
+    with zipfile.ZipFile(path, "r") as archive:
+        entries = {name: archive.read(name) for name in archive.namelist()}
+
+    slide_name = "ppt/slides/slide1.xml"
+    root = ET.fromstring(entries[slide_name])
+    c_sld = root.find("p:cSld", namespaces)
+    assert c_sld is not None
+
+    sp_tree = c_sld.find("p:spTree", namespaces)
+    assert sp_tree is not None
+
+    background_pic = sp_tree.find("p:pic", namespaces)
+    assert background_pic is not None
+
+    blip = background_pic.find(".//a:blip", namespaces)
+    assert blip is not None
+    embed_attr = f"{{{namespaces['r']}}}embed"
+    rel_id = blip.attrib.get(embed_attr)
+    assert rel_id is not None
+
+    sp_tree.remove(background_pic)
+
+    existing_bg = c_sld.find("p:bg", namespaces)
+    if existing_bg is not None:
+        c_sld.remove(existing_bg)
+
+    bg = ET.Element(f"{{{namespaces['p']}}}bg")
+    bg_pr = ET.SubElement(bg, f"{{{namespaces['p']}}}bgPr")
+    blip_fill = ET.SubElement(bg_pr, f"{{{namespaces['a']}}}blipFill")
+    blip_bg = ET.SubElement(blip_fill, f"{{{namespaces['a']}}}blip")
+    blip_bg.set(embed_attr, rel_id)
+    ET.SubElement(blip_fill, f"{{{namespaces['a']}}}srcRect")
+    stretch = ET.SubElement(blip_fill, f"{{{namespaces['a']}}}stretch")
+    ET.SubElement(stretch, f"{{{namespaces['a']}}}fillRect")
+    ET.SubElement(bg_pr, f"{{{namespaces['a']}}}effectLst")
+    c_sld.insert(0, bg)
+
+    entries[slide_name] = ET.tostring(root, encoding="utf-8", xml_declaration=True)
+
+    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as archive:
+        for name, payload in entries.items():
+            archive.writestr(name, payload)
 
 
 def test_assemble_pptx_single_placeholder_shorthand(tmp_path: Path) -> None:
@@ -319,3 +400,41 @@ def test_background_picture_ignored_for_single_visual_shorthand(tmp_path: Path) 
 
     assert len(pictures) >= 2, "Background image should remain alongside replaced placeholder"
     assert "logo" in [getattr(shape, "name", None) for shape in pictures]
+
+
+def test_single_visual_shorthand_preserves_slide_background_fill(tmp_path: Path) -> None:
+    template_path = tmp_path / "template_bg_fill.pptx"
+    _build_template_with_slide_background_fill(template_path)
+
+    template_bg_type = Presentation(template_path).slides[0].background.fill.type
+    assert template_bg_type is not None
+
+    pack = PackConfig(
+        schema="test-pack",
+        slides=[
+            PackSlide(
+                title="Home",
+                id="home",
+                template="home",
+                visual=PackVisualRef(ref="home.yaml"),
+            )
+        ],
+    )
+
+    slide_slug = slugify("home")
+    png_path = tmp_path / f"{slide_slug}.png"
+    _write_png(png_path, width=120, height=80)
+
+    out = tmp_path / "deck_bg_fill.pptx"
+    assemble_pack_pptx(
+        pack=pack,
+        results=[],
+        slide_pngs={slide_slug: png_path},
+        placeholder_pngs={},
+        result_path=out,
+        template_path=template_path,
+    )
+
+    prs = Presentation(out)
+    assert len(prs.slides) == 1
+    assert prs.slides[0].background.fill.type == template_bg_type
