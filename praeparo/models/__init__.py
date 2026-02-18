@@ -45,7 +45,10 @@ from .pack import (
     PackMetricBinding,
     PackPlaceholder,
     PackSlide,
+    PackSlideInsertOperation,
+    PackSlideReplaceOperation,
     PackSlideContext,
+    PackSlideUpdateOperation,
     PackVisualRef,
 )
 
@@ -96,7 +99,10 @@ __all__ = [
     "PackMetricBinding",
     "PackPlaceholder",
     "PackSlide",
+    "PackSlideInsertOperation",
+    "PackSlideReplaceOperation",
     "PackSlideContext",
+    "PackSlideUpdateOperation",
     "PackVisualRef",
     "FiltersType",
 ]

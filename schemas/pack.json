@@ -537,6 +537,91 @@
       "title": "PackSlideContext",
       "type": "object"
     },
+    "PackSlideInsertOperation": {
+      "additionalProperties": false,
+      "description": "Insert a new slide before or after an existing anchor slide id.",
+      "properties": {
+        "before": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Anchor slide id for insertion before this slide.",
+          "title": "Before"
+        },
+        "after": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Anchor slide id for insertion after this slide.",
+          "title": "After"
+        },
+        "slide": {
+          "$ref": "#/$defs/PackSlide",
+          "description": "Slide payload to insert."
+        }
+      },
+      "required": [
+        "slide"
+      ],
+      "title": "PackSlideInsertOperation",
+      "type": "object"
+    },
+    "PackSlideReplaceOperation": {
+      "additionalProperties": false,
+      "description": "Replace an inherited slide by id.",
+      "properties": {
+        "id": {
+          "description": "Inherited slide id to replace.",
+          "title": "Id",
+          "type": "string"
+        },
+        "slide": {
+          "$ref": "#/$defs/PackSlide",
+          "description": "Replacement slide payload."
+        }
+      },
+      "required": [
+        "id",
+        "slide"
+      ],
+      "title": "PackSlideReplaceOperation",
+      "type": "object"
+    },
+    "PackSlideUpdateOperation": {
+      "additionalProperties": false,
+      "description": "Patch an inherited slide by id.",
+      "properties": {
+        "id": {
+          "description": "Inherited slide id to patch.",
+          "title": "Id",
+          "type": "string"
+        },
+        "patch": {
+          "additionalProperties": true,
+          "description": "Deep-merged patch payload.",
+          "title": "Patch",
+          "type": "object"
+        }
+      },
+      "required": [
+        "id",
+        "patch"
+      ],
+      "title": "PackSlideUpdateOperation",
+      "type": "object"
+    },
     "PackVisualRef": {
       "additionalProperties": true,
       "description": "Reference to a visual or an inline visual config plus optional slide-level overrides.",
@@ -773,6 +858,19 @@
       "title": "Schema",
       "type": "string"
     },
+    "extends": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Optional parent pack path resolved relative to this pack file.",
+      "title": "Extends"
+    },
     "context": {
       "$ref": "#/$defs/PackContext",
       "description": "Template context shared by slides."
@@ -851,6 +949,70 @@
       ],
       "default": null,
       "description": "Optional evidence export configuration executed after pack completion."
+    },
+    "slides_remove": {
+      "anyOf": [
+        {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Optional inherited slide ids to remove (requires extends).",
+      "title": "Slides Remove"
+    },
+    "slides_replace": {
+      "anyOf": [
+        {
+          "items": {
+            "$ref": "#/$defs/PackSlideReplaceOperation"
+          },
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Optional slide replacements by id (requires extends).",
+      "title": "Slides Replace"
+    },
+    "slides_update": {
+      "anyOf": [
+        {
+          "items": {
+            "$ref": "#/$defs/PackSlideUpdateOperation"
+          },
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Optional slide patches by id (requires extends).",
+      "title": "Slides Update"
+    },
+    "slides_insert": {
+      "anyOf": [
+        {
+          "items": {
+            "$ref": "#/$defs/PackSlideInsertOperation"
+          },
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Optional slide inserts anchored before/after an existing id (requires extends).",
+      "title": "Slides Insert"
     },
     "slides": {
       "description": "Ordered slide definitions.",

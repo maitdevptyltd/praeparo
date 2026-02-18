@@ -12,7 +12,7 @@ import re
 import warnings
 from typing import Any, Mapping, Sequence
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator, model_validator
 
 from praeparo.formatting import parse_format_token
 
@@ -480,6 +480,7 @@ class PackSlide(BaseModel):
     """Single slide within a pack."""
 
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
+    _source_root: Path | None = PrivateAttr(default=None)
 
     title: str = Field(..., description="Human-friendly slide title.")
     id: str | None = Field(default=None, description="Optional stable identifier for the slide.")
@@ -579,6 +580,111 @@ class PackSlide(BaseModel):
             raise ValueError(msg)
         return self
 
+    @property
+    def source_root(self) -> Path | None:
+        """Directory that declared this slide; used for relative asset resolution."""
+
+        return self._source_root
+
+    def set_source_root(self, path: Path | None) -> None:
+        """Assign the directory used to resolve this slide's relative asset paths."""
+
+        self._source_root = path
+
+
+def _normalise_operation_slide_id(value: object, *, label: str) -> str:
+    """Normalize and validate operation slide identifiers."""
+
+    if not isinstance(value, str):
+        raise TypeError(f"{label} must be a string")
+    cleaned = value.strip()
+    if not cleaned:
+        raise ValueError(f"{label} cannot be empty")
+    return cleaned
+
+
+class PackSlideReplaceOperation(BaseModel):
+    """Replace an inherited slide by id."""
+
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    id: str = Field(..., description="Inherited slide id to replace.")
+    slide: PackSlide = Field(..., description="Replacement slide payload.")
+
+    @field_validator("id", mode="before")
+    @classmethod
+    def _normalise_id(cls, value: object) -> str:
+        return _normalise_operation_slide_id(value, label="slides_replace.id")
+
+    @model_validator(mode="after")
+    def _validate_slide_id_alignment(self) -> "PackSlideReplaceOperation":
+        if not self.slide.id:
+            raise ValueError("slides_replace.slide must define id")
+        if self.slide.id != self.id:
+            raise ValueError("slides_replace.slide.id must match slides_replace.id")
+        return self
+
+
+class PackSlideUpdateOperation(BaseModel):
+    """Patch an inherited slide by id."""
+
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    id: str = Field(..., description="Inherited slide id to patch.")
+    patch: dict[str, Any] = Field(..., description="Deep-merged patch payload.")
+
+    @field_validator("id", mode="before")
+    @classmethod
+    def _normalise_id(cls, value: object) -> str:
+        return _normalise_operation_slide_id(value, label="slides_update.id")
+
+    @field_validator("patch", mode="before")
+    @classmethod
+    def _normalise_patch(cls, value: object) -> dict[str, Any]:
+        if not isinstance(value, Mapping):
+            raise TypeError("slides_update.patch must be a mapping")
+        patch = {str(key): item for key, item in value.items()}
+        if not patch:
+            raise ValueError("slides_update.patch cannot be empty")
+        return patch
+
+    @model_validator(mode="after")
+    def _validate_patch_id(self) -> "PackSlideUpdateOperation":
+        raw_patch_id = self.patch.get("id")
+        if raw_patch_id is None:
+            return self
+        patch_id = _normalise_operation_slide_id(raw_patch_id, label="slides_update.patch.id")
+        if patch_id != self.id:
+            raise ValueError("slides_update.patch.id must match slides_update.id when provided")
+        return self
+
+
+class PackSlideInsertOperation(BaseModel):
+    """Insert a new slide before or after an existing anchor slide id."""
+
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    before: str | None = Field(default=None, description="Anchor slide id for insertion before this slide.")
+    after: str | None = Field(default=None, description="Anchor slide id for insertion after this slide.")
+    slide: PackSlide = Field(..., description="Slide payload to insert.")
+
+    @field_validator("before", "after", mode="before")
+    @classmethod
+    def _normalise_anchor(cls, value: object) -> str | None:
+        if value is None:
+            return None
+        return _normalise_operation_slide_id(value, label="slides_insert anchor")
+
+    @model_validator(mode="after")
+    def _validate_insert_operation(self) -> "PackSlideInsertOperation":
+        has_before = self.before is not None
+        has_after = self.after is not None
+        if has_before == has_after:
+            raise ValueError("slides_insert must define exactly one of before or after")
+        if not self.slide.id:
+            raise ValueError("slides_insert.slide must define id")
+        return self
+
 
 def _placeholder_from_shorthand(value: str) -> PackPlaceholder:
     """Convert string shorthand to a concrete placeholder binding."""
@@ -614,6 +720,10 @@ class PackConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", populate_by_name=True, protected_namespaces=())
 
     schema: str = Field(..., description="Schema or contract identifier for the pack.")
+    extends: str | None = Field(
+        default=None,
+        description="Optional parent pack path resolved relative to this pack file.",
+    )
     context: PackContext = Field(default_factory=PackContext, description="Template context shared by slides.")
     define: str | None = Field(
         default=None,
@@ -631,6 +741,22 @@ class PackConfig(BaseModel):
         default=None,
         description="Optional evidence export configuration executed after pack completion.",
     )
+    slides_remove: list[str] | None = Field(
+        default=None,
+        description="Optional inherited slide ids to remove (requires extends).",
+    )
+    slides_replace: list[PackSlideReplaceOperation] | None = Field(
+        default=None,
+        description="Optional slide replacements by id (requires extends).",
+    )
+    slides_update: list[PackSlideUpdateOperation] | None = Field(
+        default=None,
+        description="Optional slide patches by id (requires extends).",
+    )
+    slides_insert: list[PackSlideInsertOperation] | None = Field(
+        default=None,
+        description="Optional slide inserts anchored before/after an existing id (requires extends).",
+    )
     slides: list[PackSlide] = Field(default_factory=list, description="Ordered slide definitions.")
 
     @field_validator("schema")
@@ -641,6 +767,47 @@ class PackConfig(BaseModel):
             msg = "schema cannot be empty"
             raise ValueError(msg)
         return cleaned
+
+    @field_validator("extends", mode="before")
+    @classmethod
+    def _normalise_extends(cls, value: object) -> str | None:
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            raise TypeError("extends must be a string")
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("extends cannot be empty")
+        return cleaned
+
+    @field_validator("slides_remove", mode="before")
+    @classmethod
+    def _normalise_slides_remove(cls, value: object) -> list[str] | None:
+        if value is None:
+            return None
+        if not isinstance(value, Sequence) or isinstance(value, str):
+            raise TypeError("slides_remove must be a list of slide ids")
+        cleaned: list[str] = []
+        for entry in value:
+            cleaned.append(_normalise_operation_slide_id(entry, label="slides_remove entry"))
+        return cleaned or None
+
+    @model_validator(mode="after")
+    def _validate_inheritance_mode(self) -> "PackConfig":
+        operation_fields = ("slides_remove", "slides_replace", "slides_update", "slides_insert")
+        has_operations = any(field in self.model_fields_set for field in operation_fields)
+        has_slides = "slides" in self.model_fields_set
+
+        if self.extends is None:
+            if has_operations:
+                raise ValueError("slides_* operations require extends")
+            return self
+
+        if has_slides and has_operations:
+            raise ValueError(
+                "packs with extends cannot define both slides and slides_* operations; choose one mode"
+            )
+        return self
 
     @model_validator(mode="after")
     def _validate_slide_metric_overrides(self) -> "PackConfig":
@@ -698,6 +865,9 @@ __all__ = [
     "PackMetricBinding",
     "PackPlaceholder",
     "PackSlide",
+    "PackSlideInsertOperation",
+    "PackSlideReplaceOperation",
     "PackSlideContext",
+    "PackSlideUpdateOperation",
     "PackVisualRef",
 ]

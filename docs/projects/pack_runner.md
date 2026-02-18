@@ -23,6 +23,7 @@ and pipelines your project already depends on.
 A pack configuration is a small YAML document with:
 
 - A schema/id,
+- Optional `extends` path to a parent pack,
 - Shared `context` used for templating,
 - Optional pack-level `define` (DAX DEFINE block) rendered with the same context,
 - Optional pack-level `calculate` filters (for DAX-backed visuals),
@@ -76,6 +77,16 @@ slides:
 ### Fields
 
 - `schema` – free-form identifier for the pack contract.
+- `extends` – optional relative path to a parent pack YAML. Child packs can
+  either:
+  - define full `slides` (full override mode), or
+  - apply declarative slide operations (patch mode) via `slides_remove`,
+    `slides_replace`, `slides_update`, and `slides_insert`.
+  `slides` and `slides_*` operations are mutually exclusive when `extends` is
+  set.
+  Relative slide assets (`visual.ref`, placeholder `image`, slide `image`, and
+  Python module paths) resolve against the file where that slide was declared,
+  not necessarily the leaf child pack being executed.
 - `context` – key/value pairs exposed to Jinja templates (for example,
   `lender_id`, `month`, `customer`). May also include a `metrics` block that
   declaratively fetches catalogue KPIs into Jinja variables.
@@ -148,6 +159,27 @@ slides:
     - `visual` (render a visual into the placeholder),
     - `image` (bind a static image path), or
     - `text` (bind text into a named text shape).
+- `slides_remove` – optional list of inherited slide ids to remove (requires
+  `extends` + patch mode).
+- `slides_replace` – optional list of full slide replacements by id (requires
+  `extends` + patch mode). Each entry must provide matching `id` and `slide.id`.
+- `slides_update` – optional list of deep-merge slide patches by id (requires
+  `extends` + patch mode). If `patch.id` is supplied it must match the target
+  `id`.
+- `slides_insert` – optional list of insert operations (requires `extends` +
+  patch mode). Each entry must define exactly one anchor (`before` or `after`)
+  plus a new `slide` with unique `slide.id`.
+
+### Extends resolution order
+
+When using `extends` with patch mode, Praeparo resolves parent packs root →
+leaf, merges root mappings with child precedence, then applies slide operations
+in this deterministic order:
+
+1. `slides_remove`
+2. `slides_replace`
+3. `slides_update`
+4. `slides_insert`
 
 ### Evidence output layout (pack.evidence)
 

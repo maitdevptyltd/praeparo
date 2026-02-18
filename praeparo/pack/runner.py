@@ -295,6 +295,21 @@ def _format_selector_path(path: Path) -> str:
         return path.as_posix()
 
 
+def _resolve_slide_asset_path(*, raw_path: str, pack_path: Path, slide: PackSlide) -> Path:
+    """Resolve asset paths using the directory where the slide was declared."""
+
+    candidate = raw_path.strip()
+    if is_registry_anchored_path(candidate):
+        return resolve_registry_anchored_path(candidate, context_path=pack_path)
+
+    path = Path(candidate).expanduser()
+    if path.is_absolute():
+        return path.resolve(strict=False)
+
+    source_root = slide.source_root or pack_path.parent
+    return (source_root / path).resolve(strict=False)
+
+
 def _pack_inline_visual_token(
     base_token: str,
     *,
@@ -488,7 +503,7 @@ def _reuse_existing_assets(
     slide: PackSlide,
     slide_slug: str,
     ordinal: str,
-    pack_root: Path,
+    pack_path: Path,
     output_root: Path,
     slide_png_map: dict[str, Path],
     placeholder_png_map: dict[str, dict[str, Path]],
@@ -502,7 +517,7 @@ def _reuse_existing_assets(
     """
 
     if slide.image:
-        image_path = (pack_root / slide.image).expanduser().resolve(strict=False)
+        image_path = _resolve_slide_asset_path(raw_path=slide.image, pack_path=pack_path, slide=slide)
         if not image_path.exists():
             raise ValueError(f"Static slide image not found for '{slide_slug}': {image_path}")
         slide_png_map.setdefault(slide_slug, image_path)
@@ -519,7 +534,7 @@ def _reuse_existing_assets(
         placeholder_slug = f"{slide_slug}__{slugify(placeholder_id)}"
 
         if placeholder.image:
-            image_path = (pack_root / placeholder.image).expanduser().resolve(strict=False)
+            image_path = _resolve_slide_asset_path(raw_path=placeholder.image, pack_path=pack_path, slide=slide)
             if not image_path.exists():
                 raise ValueError(
                     f"Static placeholder image not found for '{placeholder_id}' on slide '{slide_slug}': {image_path}"
@@ -699,7 +714,6 @@ def run_pack(
     slide_png_map: dict[str, Path] = {}
     placeholder_png_map: dict[str, dict[str, Path]] = {}
     slide_contexts_by_slug: dict[str, dict[str, object]] = {}
-    pack_root = pack_path.parent
     pack_token = _format_selector_path(pack_path)
     evidence_targets: list[PackEvidenceTarget] = []
 
@@ -790,7 +804,7 @@ def run_pack(
                 slide=slide,
                 slide_slug=slide_slug,
                 ordinal=ordinal,
-                pack_root=pack_root,
+                pack_path=pack_path,
                 output_root=output_root,
                 slide_png_map=slide_png_map,
                 placeholder_png_map=placeholder_png_map,
@@ -816,10 +830,7 @@ def run_pack(
             try:
                 if visual_ref.ref:
                     raw_ref = str(visual_ref.ref).strip()
-                    if is_registry_anchored_path(raw_ref):
-                        visual_path = resolve_registry_anchored_path(raw_ref, context_path=pack_path)
-                    else:
-                        visual_path = (pack_path.parent / raw_ref).resolve()
+                    visual_path = _resolve_slide_asset_path(raw_path=raw_ref, pack_path=pack_path, slide=slide)
                     is_python_visual = visual_path.suffix.lower() == ".py"
 
                     if is_python_visual:
@@ -872,7 +883,7 @@ def run_pack(
                     is_python_visual = isinstance(raw_type, str) and _is_python_visual_type(raw_type)
 
                     if is_python_visual:
-                        module_path = (pack_path.parent / str(raw_type)).resolve()
+                        module_path = _resolve_slide_asset_path(raw_path=str(raw_type), pack_path=pack_path, slide=slide)
                         python_visual = load_python_visual(module_path, class_name=None)
                         register_visual_pipeline(PYTHON_VISUAL_TYPE, python_visual.to_definition(), overwrite=True)
             except PackExecutionError:
@@ -1181,7 +1192,7 @@ def run_pack(
             for placeholder_id, placeholder in slide.placeholders.items():
                 placeholder_slug = f"{slide_slug}__{slugify(placeholder_id)}"
                 if placeholder.image:
-                    image_path = (pack_root / placeholder.image).expanduser().resolve(strict=False)
+                    image_path = _resolve_slide_asset_path(raw_path=placeholder.image, pack_path=pack_path, slide=slide)
                     if not image_path.exists():
                         raise ValueError(
                             f"Static placeholder image not found for '{placeholder_id}' on slide '{slide_slug}': {image_path}"
@@ -1279,7 +1290,7 @@ def run_pack(
             continue
         if not slide.image:
             continue
-        image_path = (pack_root / slide.image).expanduser().resolve(strict=False)
+        image_path = _resolve_slide_asset_path(raw_path=slide.image, pack_path=pack_path, slide=slide)
         if not image_path.exists():
             raise ValueError(f"Static slide image not found for '{slide_slug}': {image_path}")
         slide_png_map[slide_slug] = image_path
@@ -1572,8 +1583,6 @@ def restitch_pack_pptx(
     slide_png_map: dict[str, Path] = {}
     placeholder_png_map: dict[str, dict[str, Path]] = {}
     slide_contexts_by_slug: dict[str, dict[str, object]] = {}
-    pack_root = pack_path.parent
-
     for index, slide in enumerate(pack.slides, start=1):
         slide_payload: dict[str, object] = dict(global_payload)
         raw_slide_context: dict[str, object] = {}
@@ -1638,7 +1647,7 @@ def restitch_pack_pptx(
             slide=slide,
             slide_slug=slide_slug,
             ordinal=ordinal,
-            pack_root=pack_root,
+            pack_path=pack_path,
             output_root=output_root,
             slide_png_map=slide_png_map,
             placeholder_png_map=placeholder_png_map,

@@ -275,6 +275,119 @@ def test_run_pack_uses_project_root_for_discovery(monkeypatch, tmp_path: Path) -
     assert captured["metrics_root"] == (tmp_path / "registry" / "metrics").resolve()
 
 
+def test_run_pack_resolves_inherited_visual_refs_relative_to_declaring_pack(tmp_path: Path) -> None:
+    (tmp_path / "registry" / "metrics").mkdir(parents=True)
+
+    base_dir = tmp_path / "registry" / "packs" / "base"
+    child_dir = tmp_path / "registry" / "packs" / "configs"
+    base_dir.mkdir(parents=True, exist_ok=True)
+    child_dir.mkdir(parents=True, exist_ok=True)
+
+    base_path = base_dir / "base.yaml"
+    base_path.write_text(
+        """
+schema: base-pack
+slides:
+  - id: overview
+    title: Overview
+    visual:
+      ref: ./visuals/example.yaml
+""",
+        encoding="utf-8",
+    )
+
+    child_path = child_dir / "child.yaml"
+    child_path.write_text(
+        """
+schema: child-pack
+extends: ../base/base.yaml
+""",
+        encoding="utf-8",
+    )
+
+    pack = load_pack_config(child_path)
+
+    captured: dict[str, Path] = {}
+
+    def visual_loader(path: Path, payload=None, stack=()):
+        captured["visual_path"] = path
+        return BaseVisualConfig(type="dummy_inherited_ref")
+
+    from praeparo.pipeline.registry import (
+        SchemaArtifact,
+        DatasetArtifact,
+        RenderOutcome,
+        VisualPipelineDefinition,
+        register_visual_pipeline,
+    )
+
+    register_visual_pipeline(
+        "dummy_inherited_ref",
+        VisualPipelineDefinition(
+            schema_builder=lambda pipeline, config, context: SchemaArtifact(value={}),
+            dataset_builder=lambda pipeline, config, schema, context: DatasetArtifact(value={}, filename="data.json"),
+            renderer=lambda pipeline, config, schema, dataset, context, outputs: RenderOutcome(outputs=[]),
+        ),
+        overwrite=True,
+    )
+
+    run_pack(
+        child_path,
+        pack,
+        project_root=tmp_path,
+        output_root=tmp_path / "out",
+        base_options=PipelineOptions(),
+        visual_loader=visual_loader,
+    )
+
+    assert captured["visual_path"] == (base_dir / "visuals" / "example.yaml").resolve()
+
+
+def test_run_pack_resolves_inherited_placeholder_images_relative_to_declaring_pack(tmp_path: Path) -> None:
+    (tmp_path / "registry" / "metrics").mkdir(parents=True)
+
+    base_dir = tmp_path / "registry" / "packs" / "base"
+    child_dir = tmp_path / "registry" / "packs" / "configs"
+    base_assets = base_dir / "assets"
+    base_assets.mkdir(parents=True, exist_ok=True)
+    child_dir.mkdir(parents=True, exist_ok=True)
+
+    logo_path = base_assets / "logo.png"
+    _write_coloured_png(logo_path, colour=(0, 255, 0, 255))
+
+    base_path = base_dir / "base.yaml"
+    base_path.write_text(
+        """
+schema: base-pack
+slides:
+  - id: branded
+    title: Branded
+    template: home
+    placeholders:
+      logo:
+        image: ./assets/logo.png
+""",
+        encoding="utf-8",
+    )
+
+    child_path = child_dir / "child.yaml"
+    child_path.write_text(
+        """
+schema: child-pack
+extends: ../base/base.yaml
+""",
+        encoding="utf-8",
+    )
+
+    pack = load_pack_config(child_path)
+    run_pack(
+        child_path,
+        pack,
+        project_root=tmp_path,
+        output_root=tmp_path / "out",
+        base_options=PipelineOptions(),
+    )
+
 def test_run_pack_resolves_registry_anchored_visual_refs(tmp_path: Path) -> None:
     (tmp_path / "registry" / "metrics").mkdir(parents=True)
 
