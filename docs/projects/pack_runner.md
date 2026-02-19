@@ -186,7 +186,8 @@ in this deterministic order:
 When enabled, evidence exports are written under the pack artefact directory:
 
 - `<artefact_dir>/<output_dir>/manifest.json`
-- `<artefact_dir>/<output_dir>/<slide_slug>/<placeholder_id_or_visual>/<binding_slug>/evidence_<metric_slug>.csv`
+- `<artefact_dir>/<output_dir>/<slide_slug>/<placeholder_id_or_visual>/<binding_slug>/evidence.csv`
+- `<artefact_dir>/<output_dir>/<slide_slug>/<placeholder_id_or_visual>/<binding_slug>.csv`
 - `<artefact_dir>/<output_dir>/<slide_slug>/<placeholder_id_or_visual>/<binding_slug>/_artifacts/explain.dax`
 - `<artefact_dir>/<output_dir>/<slide_slug>/<placeholder_id_or_visual>/<binding_slug>/_artifacts/summary.json`
 

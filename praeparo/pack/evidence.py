@@ -18,6 +18,7 @@ import concurrent.futures
 import hashlib
 import json
 import logging
+import shutil
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -107,9 +108,8 @@ def derive_evidence_outputs(
 
     placeholder_token = placeholder_id or "visual"
     binding_dir = artefact_dir / slide_slug / placeholder_token / slugify(binding.binding_id)
-    metric_slug = slugify(binding.metric_key or binding.binding_id)
 
-    evidence_path = binding_dir / f"evidence_{metric_slug}.csv"
+    evidence_path = binding_dir / "evidence.csv"
     dax_path = binding_dir / "_artifacts" / "explain.dax"
     summary_path = binding_dir / "_artifacts" / "summary.json"
     return MetricExplainOutputs(
@@ -118,6 +118,50 @@ def derive_evidence_outputs(
         dax_path=dax_path,
         summary_path=summary_path,
     )
+
+
+def derive_flat_evidence_output_path(
+    *,
+    artefact_dir: Path,
+    slide_slug: str,
+    placeholder_id: str | None,
+    binding: VisualMetricBinding,
+) -> Path:
+    """Return the root-level sibling CSV path for quick evidence access."""
+
+    placeholder_token = placeholder_id or "visual"
+    binding_slug = slugify(binding.binding_id)
+    return artefact_dir / slide_slug / placeholder_token / f"{binding_slug}.csv"
+
+
+def migrate_legacy_evidence_filename(*, outputs: MetricExplainOutputs, metric_slug: str) -> None:
+    """Promote legacy `evidence_<metric_slug>.csv` files to `evidence.csv`."""
+
+    if outputs.evidence_path.exists():
+        return
+
+    legacy_path = outputs.evidence_path.with_name(f"evidence_{metric_slug}.csv")
+    if not legacy_path.exists():
+        return
+
+    outputs.evidence_path.parent.mkdir(parents=True, exist_ok=True)
+    legacy_path.replace(outputs.evidence_path)
+
+
+def sync_flat_evidence_output(*, evidence_path: Path, flat_path: Path, overwrite: bool) -> None:
+    """Copy canonical evidence into the root-level flat alias path."""
+
+    if not evidence_path.exists():
+        return
+
+    if evidence_path == flat_path:
+        return
+
+    flat_path.parent.mkdir(parents=True, exist_ok=True)
+    if flat_path.exists() and not overwrite:
+        return
+
+    shutil.copy2(evidence_path, flat_path)
 
 
 def compute_inputs_fingerprint(payload: Mapping[str, object]) -> str:
@@ -366,6 +410,13 @@ def run_pack_evidence_exports(
             placeholder_id=target.placeholder_id,
             binding=binding,
         )
+        flat_evidence_path = derive_flat_evidence_output_path(
+            artefact_dir=evidence_root,
+            slide_slug=target.slide_slug,
+            placeholder_id=target.placeholder_id,
+            binding=binding,
+        )
+        migrate_legacy_evidence_filename(outputs=outputs, metric_slug=metric_slug)
 
         plan = None
         plan_statement_fingerprint = None
@@ -420,6 +471,11 @@ def run_pack_evidence_exports(
             prior_fingerprints=prior_fingerprints,
             outputs=outputs,
         ):
+            sync_flat_evidence_output(
+                evidence_path=outputs.evidence_path,
+                flat_path=flat_evidence_path,
+                overwrite=False,
+            )
             logger.info(
                 "Skipped evidence export (fingerprint match)",
                 extra={
@@ -440,6 +496,7 @@ def run_pack_evidence_exports(
                 "plan_statement_fingerprint": plan_statement_fingerprint,
                 "paths": {
                     "evidence": str(outputs.evidence_path),
+                    "evidence_flat": str(flat_evidence_path),
                     "dax": str(outputs.dax_path),
                     "summary": str(outputs.summary_path),
                 },
@@ -477,6 +534,7 @@ def run_pack_evidence_exports(
                 "explicitly_included": explicitly_included,
                 "paths": {
                     "evidence": str(outputs.evidence_path),
+                    "evidence_flat": str(flat_evidence_path),
                     "dax": str(outputs.dax_path),
                     "summary": str(outputs.summary_path),
                 },
@@ -506,6 +564,11 @@ def run_pack_evidence_exports(
                 datasource=datasource,
                 outputs=outputs,
             )
+            sync_flat_evidence_output(
+                evidence_path=evidence_path,
+                flat_path=flat_evidence_path,
+                overwrite=True,
+            )
             elapsed_ms = int((time.perf_counter() - started) * 1000)
             logger.info(
                 "Evidence export completed",
@@ -534,6 +597,7 @@ def run_pack_evidence_exports(
                 "duration_ms": elapsed_ms,
                 "paths": {
                     "evidence": str(evidence_path),
+                    "evidence_flat": str(flat_evidence_path),
                     "dax": str(dax_path),
                     "summary": str(summary_path),
                 },
@@ -563,6 +627,7 @@ def run_pack_evidence_exports(
                 "duration_ms": elapsed_ms,
                 "paths": {
                     "evidence": str(outputs.evidence_path),
+                    "evidence_flat": str(flat_evidence_path),
                     "dax": str(outputs.dax_path),
                     "summary": str(outputs.summary_path),
                 },

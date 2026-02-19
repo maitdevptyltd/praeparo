@@ -215,6 +215,18 @@ def test_run_pack_exports_evidence_for_selected_bindings(tmp_path: Path) -> None
     bindings = manifest.get("bindings")
     assert isinstance(bindings, list)
     assert len(bindings) == 2
+    for entry in bindings:
+        paths = entry.get("paths")
+        assert isinstance(paths, Mapping)
+
+        evidence_path = Path(str(paths["evidence"]))
+        evidence_flat_path = Path(str(paths["evidence_flat"]))
+
+        assert evidence_path.name == "evidence.csv"
+        assert evidence_path.exists()
+        assert evidence_flat_path.exists()
+        assert evidence_flat_path.name == f"{evidence_path.parent.name}.csv"
+        assert evidence_flat_path.read_text(encoding="utf-8") == evidence_path.read_text(encoding="utf-8")
 
     # Re-run against the same artefact directory to confirm fingerprint-based skipping.
     run_pack(
@@ -311,6 +323,101 @@ def test_run_pack_evidence_reruns_when_metric_definition_changes(tmp_path: Path)
     bindings = manifest.get("bindings")
     assert isinstance(bindings, list)
     assert {entry.get("status") for entry in bindings} == {"success"}
+
+
+def test_run_pack_evidence_migrates_legacy_filename_and_rehydrates_flat_copy(tmp_path: Path) -> None:
+    metrics_root = tmp_path / "registry" / "metrics"
+    _write_test_metric(metrics_root)
+
+    pack_path = tmp_path / "registry" / "customers" / "foo" / "pack.yaml"
+    pack_path.parent.mkdir(parents=True, exist_ok=True)
+    pack_path.write_text("{}", encoding="utf-8")
+
+    visual_path = pack_path.parent / "visual.yaml"
+    visual_path.write_text("type: dummy_evidence\n", encoding="utf-8")
+
+    register_visual_bindings_adapter("dummy_evidence", _DummyEvidenceBindingsAdapter(), overwrite=True)
+
+    def stub_visual_loader(path: Path):
+        assert path == visual_path.resolve()
+        from praeparo.models import BaseVisualConfig
+
+        return BaseVisualConfig(type="dummy_evidence")
+
+    pack = PackConfig(
+        schema="test-pack",
+        evidence=PackEvidenceConfig(enabled=True, bindings=PackEvidenceBindingsConfig(select=["sla"])),
+        slides=[PackSlide(id="performance_dashboard", title="Performance", visual=PackVisualRef(ref="visual.yaml"))],
+    )
+
+    options = PipelineOptions(data=PipelineDataOptions(provider_key="mock"))
+    output_root = tmp_path / "artefacts"
+    env = create_pack_jinja_env()
+
+    run_pack(
+        pack_path,
+        pack,
+        project_root=tmp_path,
+        output_root=output_root,
+        base_options=options,
+        pipeline=_StubPipeline(),  # type: ignore[arg-type]
+        visual_loader=stub_visual_loader,
+        env=env,
+    )
+
+    manifest_path = output_root / "_evidence" / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    bindings = manifest.get("bindings")
+    assert isinstance(bindings, list)
+    assert bindings
+
+    for entry in bindings:
+        paths = entry.get("paths")
+        assert isinstance(paths, Mapping)
+        metric_slug = entry.get("metric_slug")
+        assert isinstance(metric_slug, str)
+
+        evidence_path = Path(str(paths["evidence"]))
+        evidence_flat_path = Path(str(paths["evidence_flat"]))
+        legacy_path = evidence_path.parent / f"evidence_{metric_slug}.csv"
+
+        evidence_path.replace(legacy_path)
+        if evidence_flat_path.exists():
+            evidence_flat_path.unlink()
+
+        assert legacy_path.exists()
+        assert not evidence_path.exists()
+        assert not evidence_flat_path.exists()
+
+    run_pack(
+        pack_path,
+        pack,
+        project_root=tmp_path,
+        output_root=output_root,
+        base_options=options,
+        pipeline=_StubPipeline(),  # type: ignore[arg-type]
+        visual_loader=stub_visual_loader,
+        env=env,
+    )
+
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    bindings = manifest.get("bindings")
+    assert isinstance(bindings, list)
+    assert {entry.get("status") for entry in bindings} == {"skipped"}
+
+    for entry in bindings:
+        paths = entry.get("paths")
+        assert isinstance(paths, Mapping)
+        metric_slug = entry.get("metric_slug")
+        assert isinstance(metric_slug, str)
+
+        evidence_path = Path(str(paths["evidence"]))
+        evidence_flat_path = Path(str(paths["evidence_flat"]))
+        legacy_path = evidence_path.parent / f"evidence_{metric_slug}.csv"
+
+        assert evidence_path.exists()
+        assert not legacy_path.exists()
+        assert evidence_flat_path.exists()
 
 
 def test_pack_evidence_exports_include_registry_month_scoping(tmp_path: Path) -> None:
