@@ -722,14 +722,18 @@ visual:
 - Slide-level `image` — use when the template has a single picture slot.
 - Placeholder-level `image` — use when the template has multiple picture slots.
 
-Slide-level image example (path is resolved relative to the pack file):
+Slide-level image example (path is resolved relative to the pack file after
+Jinja templating):
 
 ```yaml
+context:
+  logo: ./assets/customer_logo.png
+
 slides:
   - id: home
     title: Home
     template: home
-    image: ./assets/customer_logo.png
+    image: "{{ logo }}"
 ```
 
 Placeholder-level image example (mix static images with visuals):
@@ -752,6 +756,9 @@ Notes:
 - Slide-level `image` is mutually exclusive with `visual` and requires `template`.
 - Placeholders are mutually exclusive per entry: each placeholder must define
   exactly one of `visual`, `image`, or `text`.
+- `image` values support the same Jinja context as other pack fields, so shared
+  base packs can define placeholder contracts like `image: "{{ logo }}"` and
+  let customer overlays supply `context.logo`.
 - When `--slides` is used and a skipped slide is missing PNGs, Praeparo leaves
   its template placeholders unchanged/blank; template-only slides still pass
   through unchanged.

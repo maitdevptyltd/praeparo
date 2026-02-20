@@ -2209,6 +2209,47 @@ def test_run_pack_binds_static_slide_image(tmp_path: Path) -> None:
     assert pictures.get("image") == logo_path.read_bytes()
 
 
+def test_run_pack_binds_templated_static_slide_image(tmp_path: Path) -> None:
+    pack_path = tmp_path / "pack.yaml"
+    pack_path.write_text("", encoding="utf-8")
+
+    template_path = tmp_path / "pack_template.pptx"
+    _build_pack_template(template_path)
+    result_path = tmp_path / "deck" / "templated_static_home.pptx"
+
+    logo_path = pack_path.parent / "logo.png"
+    _write_coloured_png(logo_path, colour=(0, 255, 0, 255))
+
+    pack = PackConfig(
+        schema="test-pack",
+        context=PackContext.model_validate({"logo": "logo.png"}),
+        slides=[
+            PackSlide(
+                title="Static Home",
+                id="home",
+                template="single_image",
+                image="{{ logo }}",
+            )
+        ],
+    )
+
+    base_options = PipelineOptions(metadata={"result_file": result_path, "pptx_template": template_path})
+    run_pack(
+        pack_path,
+        pack,
+        project_root=pack_path.parent,
+        output_root=tmp_path / "artefacts",
+        base_options=base_options,
+        pipeline=cast(VisualPipeline[Any], _PngPipeline()),
+        env=create_pack_jinja_env(),
+    )
+
+    deck = Presentation(result_path)
+    assert len(deck.slides) == 1
+    pictures = _picture_blobs_by_name(deck.slides[0])
+    assert pictures.get("image") == logo_path.read_bytes()
+
+
 def test_run_pack_binds_static_placeholder_image(tmp_path: Path) -> None:
     pack_path = tmp_path / "pack.yaml"
     pack_path.write_text("", encoding="utf-8")
@@ -2231,6 +2272,59 @@ def test_run_pack_binds_static_placeholder_image(tmp_path: Path) -> None:
                 placeholders={
                     "left_chart": PackPlaceholder(visual=PackVisualRef(ref="left.yaml")),
                     "right_chart": PackPlaceholder(image="logo.png"),
+                },
+            )
+        ],
+    )
+
+    visuals: Dict[str, BaseVisualConfig] = {"left.yaml": BaseVisualConfig(type="matrix")}
+
+    def _loader(path: Path, payload: Mapping[str, object] | None = None, stack: tuple[Path, ...] = ()) -> BaseVisualConfig:
+        return visuals[path.name]
+
+    pipeline = _PngPipeline()
+    base_options = PipelineOptions(metadata={"result_file": result_path, "pptx_template": template_path})
+    run_pack(
+        pack_path,
+        pack,
+        project_root=pack_path.parent,
+        output_root=tmp_path / "artefacts",
+        base_options=base_options,
+        visual_loader=_loader,
+        pipeline=cast(VisualPipeline[Any], pipeline),
+        env=create_pack_jinja_env(),
+    )
+
+    deck = Presentation(result_path)
+    assert len(deck.slides) == 1
+    pictures = _picture_blobs_by_name(deck.slides[0])
+    left_png = (tmp_path / "artefacts" / f"[01]_{slugify('two-up')}__{slugify('left_chart')}.png").read_bytes()
+    assert pictures.get("left_chart") == left_png
+    assert pictures.get("right_chart") == logo_path.read_bytes()
+
+
+def test_run_pack_binds_templated_static_placeholder_image(tmp_path: Path) -> None:
+    pack_path = tmp_path / "pack.yaml"
+    pack_path.write_text("", encoding="utf-8")
+
+    template_path = tmp_path / "pack_template.pptx"
+    result_path = tmp_path / "deck" / "templated_static_placeholder.pptx"
+    _build_pack_template(template_path)
+
+    logo_path = pack_path.parent / "logo.png"
+    _write_coloured_png(logo_path, colour=(0, 0, 255, 255))
+
+    pack = PackConfig(
+        schema="test-pack",
+        context=PackContext.model_validate({"logo": "logo.png"}),
+        slides=[
+            PackSlide(
+                title="Two Up",
+                id="two-up",
+                template="two_up",
+                placeholders={
+                    "left_chart": PackPlaceholder(visual=PackVisualRef(ref="left.yaml")),
+                    "right_chart": PackPlaceholder(image="{{ logo }}"),
                 },
             )
         ],
@@ -2307,6 +2401,37 @@ def test_run_pack_errors_on_missing_static_images(tmp_path: Path) -> None:
         run_pack(
             pack_path,
             placeholder_pack,
+            project_root=pack_path.parent,
+            output_root=tmp_path / "artefacts",
+            base_options=PipelineOptions(),
+            pipeline=cast(VisualPipeline[Any], _PngPipeline()),
+            env=create_pack_jinja_env(),
+        )
+
+
+def test_run_pack_errors_when_templated_static_image_resolves_empty(tmp_path: Path) -> None:
+    pack_path = tmp_path / "pack.yaml"
+    pack_path.write_text("", encoding="utf-8")
+
+    template_path = tmp_path / "pack_template.pptx"
+    _build_pack_template(template_path)
+
+    pack = PackConfig(
+        schema="test-pack",
+        slides=[
+            PackSlide(
+                title="Broken Templated Image",
+                id="broken-templated-image",
+                template="single_image",
+                image="{{ logo }}",
+            ),
+        ],
+    )
+
+    with pytest.raises(ValueError, match="resolved to an empty path"):
+        run_pack(
+            pack_path,
+            pack,
             project_root=pack_path.parent,
             output_root=tmp_path / "artefacts",
             base_options=PipelineOptions(),
@@ -2541,6 +2666,50 @@ def test_restitch_pack_pptx_honours_templated_titles(tmp_path: Path) -> None:
     assert len(prs.slides) == 1
     blobs = _picture_blobs_by_name(prs.slides[0])
     assert blobs.get("image") == png_path.read_bytes()
+
+
+def test_restitch_pack_pptx_binds_templated_static_placeholder_image(tmp_path: Path) -> None:
+    pack_path = tmp_path / "pack.yaml"
+    pack_path.write_text("", encoding="utf-8")
+
+    template_path = tmp_path / "pack_template.pptx"
+    _build_pack_template(template_path)
+
+    result_path = tmp_path / "deck" / "restitched_templated_static_placeholder.pptx"
+
+    logo_path = pack_path.parent / "logo.png"
+    _write_coloured_png(logo_path, colour=(0, 255, 0, 255))
+
+    pack = PackConfig(
+        schema="test-pack",
+        context=PackContext.model_validate({"logo": "logo.png"}),
+        slides=[
+            PackSlide(
+                title="Two Up Slide",
+                template="two_up",
+                placeholders={
+                    "right_chart": PackPlaceholder(image="{{ logo }}"),
+                },
+            ),
+        ],
+    )
+
+    output_root = tmp_path / "artefacts"
+    output_root.mkdir(parents=True, exist_ok=True)
+
+    base_options = PipelineOptions(metadata={"pptx_template": template_path, "result_file": result_path})
+    restitch_pack_pptx(
+        pack_path,
+        pack,
+        output_root=output_root,
+        result_file=result_path,
+        base_options=base_options,
+    )
+
+    prs = Presentation(result_path)
+    assert len(prs.slides) == 1
+    blobs = _picture_blobs_by_name(prs.slides[0])
+    assert blobs.get("right_chart") == logo_path.read_bytes()
 
 
 def test_restitch_pack_pptx_reuses_existing_assets(tmp_path: Path) -> None:

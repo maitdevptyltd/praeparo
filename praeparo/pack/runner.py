@@ -400,6 +400,49 @@ def _build_display_payload(
     return payload
 
 
+def _render_static_image_bindings(
+    *,
+    slide: PackSlide,
+    slide_slug: str,
+    env: Environment,
+    context: Mapping[str, object],
+) -> None:
+    """Render slide/placeholder static image templates using the slide context.
+
+    Packs commonly define one shared placeholder binding (for example
+    ``image: "{{ logo }}"``) and inject customer-specific assets through
+    context overlays. Render these bindings before filesystem resolution so
+    inherited pack variants can stay declarative and boilerplate-light.
+    """
+
+    def _render_path(value: str, *, location: str) -> str:
+        rendered = render_value(value, env=env, context=context)
+        if not isinstance(rendered, str):
+            raise ValueError(f"{location} must render to a string path.")
+
+        resolved = rendered.strip()
+        if not resolved:
+            raise ValueError(f"{location} resolved to an empty path.")
+        return resolved
+
+    if slide.image:
+        slide.image = _render_path(
+            slide.image,
+            location=f"slide image on '{slide_slug}'",
+        )
+
+    if not slide.placeholders:
+        return
+
+    for placeholder_id, placeholder in slide.placeholders.items():
+        if not placeholder.image:
+            continue
+        placeholder.image = _render_path(
+            placeholder.image,
+            location=f"placeholder image '{placeholder_id}' on '{slide_slug}'",
+        )
+
+
 def _slug_for_slide(slide: PackSlide, index: int) -> str:
     if slide.id:
         return slugify(slide.id)
@@ -924,6 +967,16 @@ def run_pack(
                 "slide_slug": slide_slug,
             }
         )
+
+        # Render static image bindings once the full slide payload (including
+        # slide metadata) is available.
+        _render_static_image_bindings(
+            slide=slide,
+            slide_slug=slide_slug,
+            env=jinja_env,
+            context=slide_payload,
+        )
+
         slide_contexts_by_slug[slide_slug] = _build_display_payload(
             raw_payload=slide_payload,
             formats_by_alias=effective_metrics_context.formats_by_alias,
@@ -1779,6 +1832,16 @@ def restitch_pack_pptx(
                 "slide_slug": slide_slug,
             }
         )
+
+        # Restitch runs still need templated static image paths resolved before
+        # we reuse prior PNG artefacts and static assets.
+        _render_static_image_bindings(
+            slide=slide,
+            slide_slug=slide_slug,
+            env=jinja_env,
+            context=slide_payload,
+        )
+
         slide_contexts_by_slug[slide_slug] = _build_display_payload(
             raw_payload=slide_payload,
             formats_by_alias=effective_metrics_context.formats_by_alias,
