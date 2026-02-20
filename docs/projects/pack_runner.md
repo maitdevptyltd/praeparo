@@ -147,6 +147,17 @@ slides:
     visual (for example, `title`). Overrides are shallow (top-level only) and are
     validated against the referenced visual’s Pydantic model, so unknown fields are
     rejected.
+  - `visual.series_remove` – optional list of series ids removed from the referenced
+    visual before validation.
+  - `visual.series_update` – optional list of `{ id, patch }` operations. Each patch
+    is deep-merged into the target series by id.
+  - `visual.series_add` – optional list of series payloads appended after remove/update.
+    Each entry must declare a unique `id`.
+    These operations are only supported for visuals that expose a top-level `series`
+    list (for example cartesian-style visuals).
+    Operation order is fixed: `series_remove` -> `series_update` -> `series_add`.
+    Do not combine `visual.series` with `visual.series_*` operations in the same
+    mapping.
   - `visual.filters` – slide-level OData filters (merged with pack-level
     `filters`).
   - `visual.calculate` – per-visual DAX filters (merged after pack-level and
@@ -169,6 +180,28 @@ slides:
 - `slides_insert` – optional list of insert operations (requires `extends` +
   patch mode). Each entry must define exactly one anchor (`before` or `after`)
   plus a new `slide` with unique `slide.id`.
+
+Series operation example (cartesian visual):
+
+```yaml
+visual:
+  ref: "./visuals/dashboard/digital_documents_timeframes_for_return.yaml"
+  series_remove:
+    - legacy_other_lender
+  series_update:
+    - id: customer_lender
+      patch:
+        label: "ORDE"
+  series_add:
+    - id: other_lender
+      label: "Other Lender"
+      type: line
+      metric:
+        key: docusign_completions_cumulative_pct
+        calculate:
+          - REMOVEFILTERS('dim_lender')
+          - "'dim_lender'[LenderId] = 166"
+```
 
 ### Extends resolution order
 

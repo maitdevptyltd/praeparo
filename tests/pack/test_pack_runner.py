@@ -639,6 +639,202 @@ def test_run_pack_preserves_excluded_discriminator_when_applying_overrides(tmp_p
     assert executed.title == "Override"
 
 
+def test_run_pack_applies_series_add_to_referenced_visual(tmp_path: Path) -> None:
+    class _SeriesVisualConfig(BaseVisualConfig):
+        model_config = ConfigDict(extra="forbid", populate_by_name=True)
+        type: str | None = Field(default="series_visual")
+        title: str | None = None
+        series: list[dict[str, object]] = Field(default_factory=list)
+
+    (tmp_path / "registry" / "metrics").mkdir(parents=True)
+
+    pack_path = tmp_path / "pack.yaml"
+    pack_path.write_text("{}", encoding="utf-8")
+
+    referenced_visual = tmp_path / "series.yaml"
+    referenced_visual.write_text("type: matrix\n", encoding="utf-8")
+
+    pack = PackConfig(
+        schema="test-pack",
+        slides=[
+            PackSlide(
+                id="slide-1",
+                title="Series add",
+                visual=PackVisualRef.model_validate(
+                    {
+                        "ref": "series.yaml",
+                        "series_add": [
+                            {
+                                "id": "other_lender",
+                                "label": "Other Lender",
+                            }
+                        ],
+                    }
+                ),
+            ),
+        ],
+    )
+
+    pipeline = _StubPipeline()
+
+    def stub_visual_loader(path: Path) -> BaseVisualConfig:
+        assert path == referenced_visual.resolve()
+        return _SeriesVisualConfig(
+            type="series_visual",
+            title="Base",
+            series=[{"id": "customer_lender", "label": "ORDE"}],
+        )
+
+    run_pack(
+        pack_path,
+        pack,
+        project_root=tmp_path,
+        output_root=tmp_path / "artefacts",
+        base_options=PipelineOptions(),
+        visual_loader=stub_visual_loader,
+        pipeline=cast(Any, pipeline),
+        env=create_pack_jinja_env(),
+    )
+
+    assert pipeline.calls
+    executed = cast(Any, pipeline.calls[0][0])
+    assert [entry["id"] for entry in executed.series] == ["customer_lender", "other_lender"]
+    assert executed.series[1]["label"] == "Other Lender"
+
+
+def test_run_pack_applies_series_remove_and_update_to_referenced_visual(tmp_path: Path) -> None:
+    class _SeriesVisualConfig(BaseVisualConfig):
+        model_config = ConfigDict(extra="forbid", populate_by_name=True)
+        type: str | None = Field(default="series_visual")
+        series: list[dict[str, object]] = Field(default_factory=list)
+
+    (tmp_path / "registry" / "metrics").mkdir(parents=True)
+
+    pack_path = tmp_path / "pack.yaml"
+    pack_path.write_text("{}", encoding="utf-8")
+
+    referenced_visual = tmp_path / "series.yaml"
+    referenced_visual.write_text("type: matrix\n", encoding="utf-8")
+
+    pack = PackConfig(
+        schema="test-pack",
+        slides=[
+            PackSlide(
+                id="slide-1",
+                title="Series update/remove",
+                visual=PackVisualRef.model_validate(
+                    {
+                        "ref": "series.yaml",
+                        "series_remove": ["legacy_line"],
+                        "series_update": [
+                            {
+                                "id": "customer_lender",
+                                "patch": {
+                                    "label": "ORDE",
+                                    "style": {"color": "#5B9BD5"},
+                                },
+                            }
+                        ],
+                    }
+                ),
+            ),
+        ],
+    )
+
+    pipeline = _StubPipeline()
+
+    def stub_visual_loader(path: Path) -> BaseVisualConfig:
+        assert path == referenced_visual.resolve()
+        return _SeriesVisualConfig(
+            type="series_visual",
+            series=[
+                {"id": "customer_lender", "label": "Customer"},
+                {"id": "legacy_line", "label": "Legacy"},
+            ],
+        )
+
+    run_pack(
+        pack_path,
+        pack,
+        project_root=tmp_path,
+        output_root=tmp_path / "artefacts",
+        base_options=PipelineOptions(),
+        visual_loader=stub_visual_loader,
+        pipeline=cast(Any, pipeline),
+        env=create_pack_jinja_env(),
+    )
+
+    assert pipeline.calls
+    executed = cast(Any, pipeline.calls[0][0])
+    assert [entry["id"] for entry in executed.series] == ["customer_lender"]
+    assert executed.series[0]["label"] == "ORDE"
+    assert executed.series[0]["style"]["color"] == "#5B9BD5"
+
+
+def test_run_pack_rejects_unknown_series_update_id(tmp_path: Path) -> None:
+    class _SeriesVisualConfig(BaseVisualConfig):
+        model_config = ConfigDict(extra="forbid", populate_by_name=True)
+        type: str | None = Field(default="series_visual")
+        series: list[dict[str, object]] = Field(default_factory=list)
+
+    (tmp_path / "registry" / "metrics").mkdir(parents=True)
+
+    pack_path = tmp_path / "pack.yaml"
+    pack_path.write_text("{}", encoding="utf-8")
+
+    referenced_visual = tmp_path / "series.yaml"
+    referenced_visual.write_text("type: matrix\n", encoding="utf-8")
+
+    pack = PackConfig(
+        schema="test-pack",
+        slides=[
+            PackSlide(
+                id="slide-1",
+                title="Series update invalid",
+                visual=PackVisualRef.model_validate(
+                    {
+                        "ref": "series.yaml",
+                        "series_update": [
+                            {
+                                "id": "missing_series",
+                                "patch": {"label": "Updated"},
+                            }
+                        ],
+                    }
+                ),
+            ),
+        ],
+    )
+
+    pipeline = _StubPipeline()
+
+    def stub_visual_loader(path: Path) -> BaseVisualConfig:
+        assert path == referenced_visual.resolve()
+        return _SeriesVisualConfig(
+            type="series_visual",
+            series=[{"id": "customer_lender", "label": "Customer"}],
+        )
+
+    with pytest.raises(PackExecutionError) as excinfo:
+        run_pack(
+            pack_path,
+            pack,
+            project_root=tmp_path,
+            output_root=tmp_path / "artefacts",
+            base_options=PipelineOptions(),
+            visual_loader=stub_visual_loader,
+            pipeline=cast(Any, pipeline),
+            env=create_pack_jinja_env(),
+        )
+
+    message = str(excinfo.value)
+    assert "series_update" in message
+    cause = excinfo.value.__cause__
+    assert cause is not None
+    detailed = str(cause.__cause__ or cause)
+    assert "missing_series" in detailed
+
+
 class _StubPipeline:
     def __init__(self) -> None:
         self.calls: list[Tuple[BaseVisualConfig, PipelineOptions]] = []
@@ -2167,6 +2363,22 @@ def test_pack_visual_ref_requires_ref_or_type() -> None:
 
     with pytest.raises(ValidationError):
         PackVisualRef(ref="one.yaml", type="two.yaml")
+
+
+def test_pack_visual_ref_series_operations_require_ref() -> None:
+    with pytest.raises(ValidationError):
+        PackVisualRef.model_validate({"type": "matrix", "series_add": [{"id": "other_lender"}]})
+
+
+def test_pack_visual_ref_rejects_series_and_series_operations_mix() -> None:
+    with pytest.raises(ValidationError):
+        PackVisualRef.model_validate(
+            {
+                "ref": "one.yaml",
+                "series": [{"id": "customer_lender"}],
+                "series_add": [{"id": "other_lender"}],
+            }
+        )
 
 
 def test_run_pack_supports_python_visual_ref(tmp_path: Path, monkeypatch) -> None:

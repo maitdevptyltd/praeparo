@@ -62,7 +62,9 @@ VisualLoader = Callable[[Path], BaseVisualConfig]
 
 logger = logging.getLogger(__name__)
 
-_PACK_VISUAL_REF_RESERVED_KEYS = frozenset({"ref", "type", "filters", "calculate"})
+_PACK_VISUAL_REF_RESERVED_KEYS = frozenset(
+    {"ref", "type", "filters", "calculate", "series_add", "series_update", "series_remove"}
+)
 
 
 def _resolve_registry_metrics_calculate_defaults(pack_payload: Mapping[str, object]) -> ScopedCalculateMap | None:
@@ -105,6 +107,139 @@ def _extract_pack_visual_ref_overrides(visual_ref: PackVisualRef) -> dict[str, o
 
     payload = visual_ref.model_dump(mode="python", exclude_none=True)
     return {key: value for key, value in payload.items() if key not in _PACK_VISUAL_REF_RESERVED_KEYS}
+
+
+def _deep_merge_payload(base: Mapping[str, object], patch: Mapping[str, object]) -> dict[str, object]:
+    """Deep-merge two mappings, replacing scalar/list values and recursing into nested mappings."""
+
+    merged = dict(base)
+    for key, value in patch.items():
+        existing = merged.get(key)
+        if isinstance(existing, Mapping) and isinstance(value, Mapping):
+            merged[key] = _deep_merge_payload(
+                cast(Mapping[str, object], existing),
+                cast(Mapping[str, object], value),
+            )
+        else:
+            merged[key] = value
+    return merged
+
+
+def _normalise_series_payload(raw_series: object) -> list[dict[str, object]]:
+    """Return a validated, mutable series payload list suitable for operation-based patching."""
+
+    if not isinstance(raw_series, Sequence) or isinstance(raw_series, (str, bytes, bytearray)):
+        raise ValueError("Series operations require the target visual to define `series` as a list.")
+
+    series_rows: list[dict[str, object]] = []
+    series_ids: set[str] = set()
+
+    for index, raw_entry in enumerate(raw_series):
+        if not isinstance(raw_entry, Mapping):
+            raise ValueError(f"series[{index}] must be a mapping.")
+
+        entry = {str(key): value for key, value in raw_entry.items()}
+        raw_id = entry.get("id")
+        if not isinstance(raw_id, str):
+            raise ValueError(f"series[{index}] is missing string id.")
+
+        series_id = raw_id.strip()
+        if not series_id:
+            raise ValueError(f"series[{index}] has an empty id.")
+        if series_id in series_ids:
+            raise ValueError(f"series contains duplicate id '{series_id}'.")
+
+        entry["id"] = series_id
+        series_rows.append(entry)
+        series_ids.add(series_id)
+
+    return series_rows
+
+
+def _series_operation_keys(visual_ref: PackVisualRef) -> tuple[str, ...]:
+    """Return the set of series operation keys present on a visual ref."""
+
+    keys: list[str] = []
+    if visual_ref.series_remove:
+        keys.append("series_remove")
+    if visual_ref.series_update:
+        keys.append("series_update")
+    if visual_ref.series_add:
+        keys.append("series_add")
+    return tuple(keys)
+
+
+def _apply_pack_visual_series_operations(
+    *,
+    base_payload: Mapping[str, object],
+    visual_ref: PackVisualRef,
+) -> dict[str, object]:
+    """Apply pack-authored series operations to a visual payload.
+
+    Series operations are scoped to cartesian-style configs that expose a top-level
+    `series` list. The operations run in deterministic order:
+    remove -> update -> add.
+    """
+
+    if not _series_operation_keys(visual_ref):
+        return dict(base_payload)
+
+    series_rows = _normalise_series_payload(base_payload.get("series"))
+
+    remove_ids = list(visual_ref.series_remove or [])
+    if remove_ids:
+        existing_ids = {cast(str, row["id"]) for row in series_rows}
+        missing_remove = [series_id for series_id in remove_ids if series_id not in existing_ids]
+        if missing_remove:
+            missing = ", ".join(sorted(set(missing_remove)))
+            raise ValueError(f"series_remove targets unknown id(s): {missing}")
+
+        remove_set = set(remove_ids)
+        series_rows = [row for row in series_rows if cast(str, row["id"]) not in remove_set]
+
+    for operation in visual_ref.series_update or []:
+        target_id = operation.id
+        target_index = next((idx for idx, row in enumerate(series_rows) if row.get("id") == target_id), None)
+        if target_index is None:
+            raise ValueError(f"series_update targets unknown id '{target_id}'")
+
+        merged_row = _deep_merge_payload(series_rows[target_index], operation.patch)
+        raw_merged_id = merged_row.get("id")
+        if not isinstance(raw_merged_id, str):
+            raise ValueError(f"series_update for '{target_id}' produced a non-string id")
+
+        merged_id = raw_merged_id.strip()
+        if not merged_id:
+            raise ValueError(f"series_update for '{target_id}' produced an empty id")
+        if merged_id != target_id:
+            raise ValueError(
+                f"series_update for '{target_id}' changed id to '{merged_id}'; ids are immutable in update patches."
+            )
+
+        merged_row["id"] = merged_id
+        series_rows[target_index] = merged_row
+
+    if visual_ref.series_add:
+        existing_after_update = {cast(str, row["id"]) for row in series_rows}
+        for added in visual_ref.series_add:
+            added_payload = added.model_dump(mode="python", exclude_none=True)
+            raw_added_id = added_payload.get("id")
+            if not isinstance(raw_added_id, str):
+                raise ValueError("series_add entries require string id fields.")
+
+            added_id = raw_added_id.strip()
+            if not added_id:
+                raise ValueError("series_add entries require non-empty ids.")
+            if added_id in existing_after_update:
+                raise ValueError(f"series_add duplicates existing id '{added_id}'")
+
+            added_payload["id"] = added_id
+            series_rows.append(added_payload)
+            existing_after_update.add(added_id)
+
+    merged_payload = dict(base_payload)
+    merged_payload["series"] = series_rows
+    return merged_payload
 
 
 @dataclass
@@ -841,21 +976,27 @@ def run_pack(
                     else:
                         visual = visual_loader(visual_path)
 
-                    # Apply inline config overrides (e.g. title) after loading the file-backed visual
-                    # so pack authors can tweak presentation without duplicating the underlying YAML.
+                    # Apply pack-side visual overrides after loading the file-backed visual
+                    # so slides can adapt shared YAML definitions without duplicating files.
                     inline_overrides = _extract_pack_visual_ref_overrides(visual_ref)
-                    if inline_overrides:
+                    series_operation_keys = _series_operation_keys(visual_ref)
+                    if inline_overrides or series_operation_keys:
                         base_payload = visual.model_dump(mode="python")
-                        # Some config models (notably Python visual configs that reuse shared base
-                        # models) intentionally exclude the discriminator from serialisation so the
-                        # YAML `type:` meta field does not conflict with their schema. Preserve the
-                        # resolved discriminator explicitly so we don't accidentally drop it during
-                        # override re-validation.
-                        merged = {**base_payload, "type": visual.type, **inline_overrides}
                         try:
+                            base_payload = _apply_pack_visual_series_operations(
+                                base_payload=base_payload,
+                                visual_ref=visual_ref,
+                            )
+                            # Some config models (notably Python visual configs that reuse shared base
+                            # models) intentionally exclude the discriminator from serialisation so the
+                            # YAML `type:` meta field does not conflict with their schema. Preserve the
+                            # resolved discriminator explicitly so we don't accidentally drop it during
+                            # override re-validation.
+                            merged = {**base_payload, "type": visual.type, **inline_overrides}
                             visual = visual.__class__.model_validate(merged)
-                        except ValidationError as exc:
-                            keys = ", ".join(sorted(inline_overrides))
+                        except (ValidationError, ValueError) as exc:
+                            override_keys = sorted({*inline_overrides.keys(), *series_operation_keys})
+                            keys = ", ".join(override_keys)
                             wrapped = ValueError(f"Inline visual override validation failed for key(s): {keys}")
                             wrapped.__cause__ = exc
                             raise PackExecutionError(

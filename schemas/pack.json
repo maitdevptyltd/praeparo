@@ -701,9 +701,96 @@
           "default": null,
           "description": "Optional DAX filters applied on top of pack-level defaults.",
           "title": "Calculate"
+        },
+        "series_add": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/PackVisualSeriesConfig"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional series entries appended to a referenced visual's series list.",
+          "title": "Series Add"
+        },
+        "series_update": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/PackVisualSeriesUpdateOperation"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional series patches applied by id to a referenced visual's series list.",
+          "title": "Series Update"
+        },
+        "series_remove": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional series ids removed from a referenced visual's series list.",
+          "title": "Series Remove"
         }
       },
       "title": "PackVisualRef",
+      "type": "object"
+    },
+    "PackVisualSeriesConfig": {
+      "additionalProperties": true,
+      "description": "Series payload used by pack-level visual series operations.",
+      "properties": {
+        "id": {
+          "description": "Series identifier.",
+          "title": "Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "PackVisualSeriesConfig",
+      "type": "object"
+    },
+    "PackVisualSeriesUpdateOperation": {
+      "additionalProperties": false,
+      "description": "Patch operation targeting one existing visual series by id.",
+      "properties": {
+        "id": {
+          "description": "Target series id to patch.",
+          "title": "Id",
+          "type": "string"
+        },
+        "patch": {
+          "additionalProperties": true,
+          "description": "Deep-merge patch applied to the target series payload.",
+          "title": "Patch",
+          "type": "object"
+        }
+      },
+      "required": [
+        "id",
+        "patch"
+      ],
+      "title": "PackVisualSeriesUpdateOperation",
       "type": "object"
     },
     "ScopedCalculateEntry": {

@@ -385,6 +385,70 @@ class PackSlideContext(PackContext):
     """Context payload specific to an individual slide."""
 
 
+class PackVisualSeriesConfig(BaseModel):
+    """Series payload used by pack-level visual series operations."""
+
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    id: str = Field(
+        ...,
+        description="Series identifier.",
+    )
+
+    @field_validator("id")
+    @classmethod
+    def _normalise_id(cls, value: str) -> str:
+        candidate = value.strip()
+        if not candidate:
+            raise ValueError("series id cannot be empty")
+        return candidate
+
+
+class PackVisualSeriesUpdateOperation(BaseModel):
+    """Patch operation targeting one existing visual series by id."""
+
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    id: str = Field(
+        ...,
+        description="Target series id to patch.",
+    )
+    patch: Mapping[str, Any] = Field(
+        ...,
+        description="Deep-merge patch applied to the target series payload.",
+    )
+
+    @field_validator("id")
+    @classmethod
+    def _normalise_id(cls, value: str) -> str:
+        candidate = value.strip()
+        if not candidate:
+            raise ValueError("series_update.id cannot be empty")
+        return candidate
+
+    @field_validator("patch", mode="before")
+    @classmethod
+    def _normalise_patch(cls, value: object) -> Mapping[str, Any]:
+        if not isinstance(value, Mapping):
+            raise TypeError("series_update.patch must be a mapping")
+        patch = {str(key): item for key, item in value.items()}
+        if not patch:
+            raise ValueError("series_update.patch cannot be empty")
+        return patch
+
+    @model_validator(mode="after")
+    def _validate_patch_id(self) -> "PackVisualSeriesUpdateOperation":
+        raw_patch_id = self.patch.get("id")
+        if raw_patch_id is None:
+            return self
+        if not isinstance(raw_patch_id, str):
+            raise ValueError("series_update.patch.id must be a string when provided")
+        patch_id = raw_patch_id.strip()
+        if patch_id != self.id:
+            raise ValueError("series_update.patch.id must match series_update.id when provided")
+        return self
+
+
 class PackVisualRef(BaseModel):
     """Reference to a visual or an inline visual config plus optional slide-level overrides."""
 
@@ -406,6 +470,18 @@ class PackVisualRef(BaseModel):
         default=None,
         description="Optional DAX filters applied on top of pack-level defaults.",
     )
+    series_add: list[PackVisualSeriesConfig] | None = Field(
+        default=None,
+        description="Optional series entries appended to a referenced visual's series list.",
+    )
+    series_update: list[PackVisualSeriesUpdateOperation] | None = Field(
+        default=None,
+        description="Optional series patches applied by id to a referenced visual's series list.",
+    )
+    series_remove: list[str] | None = Field(
+        default=None,
+        description="Optional series ids removed from a referenced visual's series list.",
+    )
 
     @field_validator("ref")
     @classmethod
@@ -424,6 +500,43 @@ class PackVisualRef(BaseModel):
         has_type = bool(self.type)
         if has_ref == has_type:
             raise ValueError("visual must define exactly one of 'ref' or 'type'")
+        return self
+
+    @field_validator("series_remove", mode="before")
+    @classmethod
+    def _normalise_series_remove(cls, value: object) -> list[str] | None:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            values: Sequence[object] = [value]
+        elif isinstance(value, Sequence):
+            values = value
+        else:
+            raise TypeError("series_remove must be a string or sequence of strings")
+
+        cleaned: list[str] = []
+        for entry in values:
+            if not isinstance(entry, str):
+                raise TypeError("series_remove entries must be strings")
+            candidate = entry.strip()
+            if not candidate:
+                continue
+            cleaned.append(candidate)
+        return cleaned or None
+
+    @model_validator(mode="after")
+    def _validate_series_operations(self) -> "PackVisualRef":
+        has_series_operations = bool(self.series_add or self.series_update or self.series_remove)
+        if not has_series_operations:
+            return self
+
+        if not self.ref:
+            raise ValueError("series_add/series_update/series_remove are only supported when visual.ref is set")
+
+        extra = self.model_extra or {}
+        if "series" in extra:
+            raise ValueError("visual.series cannot be combined with series_add/series_update/series_remove")
+
         return self
 
 
@@ -869,5 +982,7 @@ __all__ = [
     "PackSlideReplaceOperation",
     "PackSlideContext",
     "PackSlideUpdateOperation",
+    "PackVisualSeriesConfig",
+    "PackVisualSeriesUpdateOperation",
     "PackVisualRef",
 ]

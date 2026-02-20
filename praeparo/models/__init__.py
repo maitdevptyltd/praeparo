@@ -49,6 +49,8 @@ from .pack import (
     PackSlideReplaceOperation,
     PackSlideContext,
     PackSlideUpdateOperation,
+    PackVisualSeriesConfig,
+    PackVisualSeriesUpdateOperation,
     PackVisualRef,
 )
 
@@ -103,6 +105,8 @@ __all__ = [
     "PackSlideReplaceOperation",
     "PackSlideContext",
     "PackSlideUpdateOperation",
+    "PackVisualSeriesConfig",
+    "PackVisualSeriesUpdateOperation",
     "PackVisualRef",
     "FiltersType",
 ]
