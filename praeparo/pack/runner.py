@@ -96,6 +96,27 @@ def _resolve_registry_metrics_calculate_defaults(pack_payload: Mapping[str, obje
         ) from exc
 
 
+def _resolve_slide_metric_context_calculate(
+    *,
+    inherited_metrics_calculate: ScopedCalculateMap | None,
+    slide_calculate: FiltersType,
+    slide_metrics_calculate: ScopedCalculateMap | None,
+) -> ScopedCalculateMap:
+    """Merge metric-context predicates for one slide.
+
+    Start from inherited metric-context calculate scopes (registry + pack root),
+    then layer the slide's `calculate` payload so slide-level scoping applies to
+    context metric bindings by default. Finally, apply explicit
+    `context.metrics.calculate` overrides, which retain highest precedence.
+    """
+
+    merged_with_slide = ScopedCalculateMap.merge(
+        inherited_metrics_calculate,
+        ScopedCalculateMap.from_raw(slide_calculate) if slide_calculate else None,
+    )
+    return ScopedCalculateMap.merge(merged_with_slide, slide_metrics_calculate)
+
+
 def _extract_pack_visual_ref_overrides(visual_ref: PackVisualRef) -> dict[str, object]:
     """Collect inline visual config overrides from a PackVisualRef.
 
@@ -967,9 +988,10 @@ def run_pack(
         effective_metrics_context = global_metrics_context
         if has_metric_bindings and builder_context is not None and catalog is not None:
             slide_metrics_config = slide.context.metrics if slide.context else None
-            slide_metrics_calculate = ScopedCalculateMap.merge(
-                root_metrics_calculate,
-                slide_metrics_config.calculate if slide_metrics_config else None,
+            slide_metrics_calculate = _resolve_slide_metric_context_calculate(
+                inherited_metrics_calculate=root_metrics_calculate,
+                slide_calculate=slide.calculate,
+                slide_metrics_calculate=slide_metrics_config.calculate if slide_metrics_config else None,
             )
             slide_metrics_context = resolve_metric_context(
                 bindings=slide_metrics_config.bindings if slide_metrics_config else None,
@@ -1822,9 +1844,10 @@ def restitch_pack_pptx(
         effective_metrics_context = global_metrics_context
         if has_metric_bindings and builder_context is not None and catalog is not None:
             slide_metrics_config = slide.context.metrics if slide.context else None
-            slide_metrics_calculate = ScopedCalculateMap.merge(
-                root_metrics_calculate,
-                slide_metrics_config.calculate if slide_metrics_config else None,
+            slide_metrics_calculate = _resolve_slide_metric_context_calculate(
+                inherited_metrics_calculate=root_metrics_calculate,
+                slide_calculate=slide.calculate,
+                slide_metrics_calculate=slide_metrics_config.calculate if slide_metrics_config else None,
             )
             slide_metrics_context = resolve_metric_context(
                 bindings=slide_metrics_config.bindings if slide_metrics_config else None,

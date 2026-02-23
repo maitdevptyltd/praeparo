@@ -21,11 +21,12 @@ from praeparo.pack.filters import merge_odata_filters
 from praeparo.pack.loader import load_pack_config
 from praeparo.pack import PackExecutionError
 from praeparo.pack.runner import PackPowerBIFailure, restitch_pack_pptx, run_pack
-from praeparo.pack.metric_context import dump_context_payload
+from praeparo.pack.metric_context import ResolvedMetricContext, dump_context_payload
 from praeparo.pack.templating import create_pack_jinja_env, render_value
 from praeparo.pipeline import PipelineOptions, VisualExecutionResult, VisualPipeline, build_default_query_planner_provider
 from praeparo.pipeline.outputs import OutputKind, PipelineOutputArtifact
 from praeparo.powerbi import PowerBIQueryError
+from praeparo.models.scoped_calculate import ScopedCalculateMap
 from praeparo.visuals.context import resolve_dax_context
 from praeparo.visuals.dax.planner_core import slugify
 from praeparo.visuals import VisualContextModel, register_visual_type
@@ -2805,6 +2806,81 @@ def test_restitch_pack_pptx_honours_templated_titles(tmp_path: Path) -> None:
     assert len(prs.slides) == 1
     blobs = _picture_blobs_by_name(prs.slides[0])
     assert blobs.get("image") == png_path.read_bytes()
+
+
+def test_restitch_pack_pptx_flows_slide_calculate_into_metric_context(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    pack_path = tmp_path / "pack.yaml"
+    pack_path.write_text("", encoding="utf-8")
+
+    template_path = tmp_path / "pack_template.pptx"
+    _build_pack_template(template_path)
+
+    result_path = tmp_path / "deck" / "restitched.pptx"
+    output_root = tmp_path / "artefacts"
+    output_root.mkdir(parents=True, exist_ok=True)
+
+    slide_title = "Highlights"
+    slide_slug = slugify(slide_title)
+    _write_coloured_png(output_root / f"[01]_{slide_slug}.png", colour=(0, 0, 255, 255))
+
+    pack = PackConfig.model_validate(
+        {
+            "schema": "test-pack",
+            "slides": [
+                {
+                    "title": slide_title,
+                    "template": "single_image",
+                    "calculate": {
+                        "segment": "'dim_funding_channel_type'[FundingChannelTypeName] = \"First Party\""
+                    },
+                    "context": {"metrics": {"bindings": {"documents_sent": "total_documents"}}},
+                    "visual": {"ref": "visual.yaml"},
+                }
+            ],
+        }
+    )
+
+    captured: dict[str, object] = {}
+
+    def _fake_resolve_slide_metric_context_calculate(
+        *,
+        inherited_metrics_calculate: ScopedCalculateMap | None,
+        slide_calculate,
+        slide_metrics_calculate: ScopedCalculateMap | None,
+    ) -> ScopedCalculateMap:
+        captured["slide_calculate"] = slide_calculate
+        return ScopedCalculateMap()
+
+    def _fake_resolve_metric_context(**_: object) -> ResolvedMetricContext:
+        return ResolvedMetricContext(
+            aliases={},
+            by_key={},
+            signatures_by_key={},
+            formats_by_alias={},
+        )
+
+    monkeypatch.setattr(
+        "praeparo.pack.runner._resolve_slide_metric_context_calculate",
+        _fake_resolve_slide_metric_context_calculate,
+    )
+    monkeypatch.setattr("praeparo.pack.runner.discover_builder_context_for_pack", lambda **_: object())
+    monkeypatch.setattr("praeparo.pack.runner.load_catalog_for_context", lambda _: object())
+    monkeypatch.setattr("praeparo.pack.runner.resolve_metric_context", _fake_resolve_metric_context)
+
+    base_options = PipelineOptions(metadata={"pptx_template": template_path, "result_file": result_path})
+    restitch_pack_pptx(
+        pack_path,
+        pack,
+        output_root=output_root,
+        result_file=result_path,
+        base_options=base_options,
+    )
+
+    assert captured["slide_calculate"] == {
+        "segment": "'dim_funding_channel_type'[FundingChannelTypeName] = \"First Party\""
+    }
 
 
 def test_restitch_pack_pptx_uses_pack_level_template_when_metadata_missing(

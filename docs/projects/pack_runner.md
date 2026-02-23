@@ -244,9 +244,14 @@ Root-level metrics are resolved **once per pack** and inherited by every slide.
 Slides may extend the inherited metric dict or override an alias only when
 `override: true` is set.
 
-Metric-context scoping (`context.metrics.calculate`) is also inherited by slides.
-Slide-level `context.metrics.calculate` may add new named predicates or override
-root predicates by name (and by scope) without duplicating every slide.
+Metric-context scoping layers per slide in this order (lowest precedence first):
+
+1. inherited `context.metrics.calculate` (registry defaults + pack root),
+2. `slide.calculate` (applied to metric-context in DEFINE scope),
+3. slide `context.metrics.calculate` (highest precedence for by-name overrides).
+
+Slide-level `context.metrics.calculate` can add new named predicates or override
+inherited/slide predicates by name (and by scope) without duplicating every slide.
 
 Templating note:
 
@@ -394,7 +399,11 @@ Notes:
   Root calculate entries are inherited by slides; slide entries may add or override
   root entries by name and by scope (slide DEFINE replaces root DEFINE only when
   the slide supplies a DEFINE predicate for that key; likewise for EVALUATE).
-  These predicates affect only `context.metrics` resolution, not slide visuals.
+  `slide.calculate` also flows into metric-context resolution as DEFINE-scope
+  predicates before slide `context.metrics.calculate` is merged.
+  `context.metrics.calculate` predicates affect only `context.metrics`
+  resolution, not slide visuals. `slide.calculate` still applies to slide
+  visual execution as usual.
 - `context.calculate` is a deprecated alias for `metrics.calculate` and will be removed
   in a future release.
 
@@ -851,6 +860,7 @@ legacy `<pack-slug>.pptx`.
 
 ## Changelog
 
+- 2026-02-23: Flow `slide.calculate` into slide metric-context resolution (DEFINE scope) before applying slide `context.metrics.calculate` overrides.
 - 2025-12-12: Inherit `context.metrics.calculate` into slide metric-context execution, with DEFINE/EVALUATE scoping preserved and per-slide by-name overrides.
 - 2025-12-12: Added `ratio_to` support for `context.metrics.bindings` so packs can inject scalar rates/attainment values without duplicating expression bindings.
 - 2025-12-12: Apply `bindings[].format` automatically for display-only Jinja rendering (PPTX text + `governance_highlights`), with `.value` escape hatch for raw numbers.

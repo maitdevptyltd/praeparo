@@ -330,3 +330,115 @@ define: "COUNTROWS('fact_documents')"
     dax_text = dax_path.read_text(encoding="utf-8")
     assert "TRUE()" in dax_text
     assert "DATEVALUE" not in dax_text
+
+
+def test_slide_calculate_applies_to_slide_metric_context(tmp_path: Path) -> None:
+    metrics_root = tmp_path / "registry" / "metrics"
+    metrics_root.mkdir(parents=True)
+    (metrics_root / "documents_sent.yaml").write_text(
+        """
+key: documents_sent
+display_name: Documents Sent
+section: documents
+define: "COUNTROWS('fact_documents')"
+""",
+        encoding="utf-8",
+    )
+
+    pack = PackConfig.model_validate(
+        {
+            "schema": "test-pack",
+            "context": {"customer": "Example Bank"},
+            "slides": [
+                {
+                    "title": "Highlights",
+                    "calculate": {
+                        "segment": "'dim_funding_channel_type'[FundingChannelTypeName] = \"First Party\"",
+                    },
+                    "context": {"metrics": {"documents_sent": "total_documents"}},
+                    "visual": {"ref": "dummy.yaml"},
+                }
+            ],
+        }
+    )
+
+    pipeline = _StubPipeline()
+
+    def dummy_loader(_: Path) -> BaseVisualConfig:
+        return BaseVisualConfig(type="dummy_metric_ctx")
+
+    output_root = tmp_path / "artefacts"
+    run_pack(
+        tmp_path / "pack.yaml",
+        pack,
+        project_root=tmp_path,
+        output_root=output_root,
+        base_options=PipelineOptions(metadata={"metrics_root": metrics_root, "data_mode": "mock"}),
+        visual_loader=dummy_loader,
+        pipeline=cast(VisualPipeline, pipeline),
+    )
+
+    dax_path = output_root / "metric_context.slide_1.dax"
+    assert dax_path.exists()
+    dax_text = dax_path.read_text(encoding="utf-8")
+    assert "'dim_funding_channel_type'[FundingChannelTypeName] = \"First Party\"" in dax_text
+
+
+def test_slide_metrics_calculate_overrides_slide_calculate_by_name(tmp_path: Path) -> None:
+    metrics_root = tmp_path / "registry" / "metrics"
+    metrics_root.mkdir(parents=True)
+    (metrics_root / "documents_sent.yaml").write_text(
+        """
+key: documents_sent
+display_name: Documents Sent
+section: documents
+define: "COUNTROWS('fact_documents')"
+""",
+        encoding="utf-8",
+    )
+
+    pack = PackConfig.model_validate(
+        {
+            "schema": "test-pack",
+            "context": {"customer": "Example Bank"},
+            "slides": [
+                {
+                    "title": "Highlights",
+                    "calculate": {
+                        "segment": "'dim_funding_channel_type'[FundingChannelTypeName] = \"From Slide\"",
+                    },
+                    "context": {
+                        "metrics": {
+                            "calculate": {
+                                "segment": "'dim_funding_channel_type'[FundingChannelTypeName] = \"From Metrics\"",
+                            },
+                            "bindings": {"documents_sent": "total_documents"},
+                        }
+                    },
+                    "visual": {"ref": "dummy.yaml"},
+                }
+            ],
+        }
+    )
+
+    pipeline = _StubPipeline()
+
+    def dummy_loader(_: Path) -> BaseVisualConfig:
+        return BaseVisualConfig(type="dummy_metric_ctx")
+
+    output_root = tmp_path / "artefacts"
+    run_pack(
+        tmp_path / "pack.yaml",
+        pack,
+        project_root=tmp_path,
+        output_root=output_root,
+        base_options=PipelineOptions(metadata={"metrics_root": metrics_root, "data_mode": "mock"}),
+        visual_loader=dummy_loader,
+        pipeline=cast(VisualPipeline, pipeline),
+    )
+
+    dax_path = output_root / "metric_context.slide_1.dax"
+    assert dax_path.exists()
+    dax_text = dax_path.read_text(encoding="utf-8")
+    assert "'dim_funding_channel_type'[FundingChannelTypeName] = \"From Metrics\"" in dax_text
+    assert "'dim_funding_channel_type'[FundingChannelTypeName] = \"From Slide\"" not in dax_text
