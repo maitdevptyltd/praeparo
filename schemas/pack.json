@@ -958,6 +958,19 @@
       "description": "Optional parent pack path resolved relative to this pack file.",
       "title": "Extends"
     },
+    "pptx_template": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Optional PPTX template path for this pack. Relative paths resolve from the pack file location; registry-anchored paths (`@/...`) are supported.",
+      "title": "Pptx Template"
+    },
     "context": {
       "$ref": "#/$defs/PackContext",
       "description": "Template context shared by slides."

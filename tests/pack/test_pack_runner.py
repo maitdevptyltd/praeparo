@@ -1037,6 +1037,45 @@ def test_run_pack_attaches_geometry_to_slide_metadata(tmp_path: Path) -> None:
     assert isinstance(slide_meta.get("height"), int) and slide_meta["height"] > 0
 
 
+def test_run_pack_attaches_geometry_from_pack_level_template(tmp_path: Path) -> None:
+    pack_path = tmp_path / "pack.yaml"
+    pack_path.write_text("", encoding="utf-8")
+
+    template_path = tmp_path / "templates" / "custom_template.pptx"
+    template_path.parent.mkdir(parents=True, exist_ok=True)
+    _build_pack_template(template_path)
+
+    pack = PackConfig(
+        schema="test-pack",
+        pptx_template="./templates/custom_template.pptx",
+        slides=[
+            PackSlide(title="Deck Slide", id="deck-slide", template="single_image", visual=PackVisualRef(ref="one.yaml")),
+        ],
+    )
+
+    visuals: Dict[str, BaseVisualConfig] = {"one.yaml": BaseVisualConfig(type="matrix")}
+
+    def _loader(path: Path, payload: Mapping[str, object] | None = None, stack: tuple[Path, ...] = ()) -> BaseVisualConfig:
+        return visuals[path.name]
+
+    pipeline = _PngPipeline()
+    run_pack(
+        pack_path,
+        pack,
+        project_root=pack_path.parent,
+        output_root=tmp_path / "artefacts",
+        base_options=PipelineOptions(),
+        visual_loader=_loader,
+        pipeline=cast(VisualPipeline[Any], pipeline),
+        env=create_pack_jinja_env(),
+    )
+
+    assert pipeline.contexts
+    slide_meta = pipeline.contexts[0].options.metadata
+    assert isinstance(slide_meta.get("width"), int) and slide_meta["width"] > 0
+    assert isinstance(slide_meta.get("height"), int) and slide_meta["height"] > 0
+
+
 def test_run_pack_attaches_placeholder_geometry(tmp_path: Path) -> None:
     pack_path = tmp_path / "pack.yaml"
     pack_path.write_text("", encoding="utf-8")
@@ -2011,6 +2050,106 @@ def test_run_pack_invokes_pptx_when_result_file(monkeypatch, tmp_path: Path) -> 
     assert captured["template_path"] == template_path
 
 
+def test_run_pack_invokes_pptx_with_pack_level_template(monkeypatch, tmp_path: Path) -> None:
+    pack_path = tmp_path / "pack.yaml"
+    pack_path.write_text("", encoding="utf-8")
+
+    template_path = tmp_path / "templates" / "pack_level_template.pptx"
+    template_path.parent.mkdir(parents=True, exist_ok=True)
+    _build_pack_template(template_path)
+
+    pack = PackConfig(
+        schema="test-pack",
+        pptx_template="./templates/pack_level_template.pptx",
+        slides=[
+            PackSlide(title="Deck Slide", id="deck-slide", template="full_page_image", visual=PackVisualRef(ref="one.yaml")),
+        ],
+    )
+
+    visuals: Dict[str, BaseVisualConfig] = {
+        "one.yaml": BaseVisualConfig(type="matrix"),
+    }
+
+    def _loader(path: Path, payload: Mapping[str, object] | None = None, stack: tuple[Path, ...] = ()) -> BaseVisualConfig:
+        return visuals[path.name]
+
+    captured: Dict[str, object] = {}
+
+    def _fake_assemble(**kwargs) -> None:
+        captured.update(kwargs)
+
+    monkeypatch.setattr("praeparo.pack.runner.assemble_pack_pptx", _fake_assemble)
+
+    pipeline = _StubPipeline()
+    base_options = PipelineOptions(metadata={"result_file": tmp_path / "deck.pptx"})
+    run_pack(
+        pack_path,
+        pack,
+        project_root=pack_path.parent,
+        output_root=tmp_path / "artefacts",
+        base_options=base_options,
+        visual_loader=_loader,
+        pipeline=cast(VisualPipeline[Any], pipeline),
+        env=create_pack_jinja_env(),
+    )
+
+    assert captured, "assemble_pack_pptx should be invoked when result_file is set"
+    assert captured["result_path"] == tmp_path / "deck.pptx"
+    assert captured["template_path"] == template_path.resolve(strict=False)
+
+
+def test_run_pack_metadata_template_override_wins_over_pack_level_template(monkeypatch, tmp_path: Path) -> None:
+    pack_path = tmp_path / "pack.yaml"
+    pack_path.write_text("", encoding="utf-8")
+
+    configured_template = tmp_path / "templates" / "configured_template.pptx"
+    override_template = tmp_path / "templates" / "override_template.pptx"
+    configured_template.parent.mkdir(parents=True, exist_ok=True)
+    _build_pack_template(configured_template)
+    _build_pack_template(override_template)
+
+    pack = PackConfig(
+        schema="test-pack",
+        pptx_template="./templates/configured_template.pptx",
+        slides=[
+            PackSlide(title="Deck Slide", id="deck-slide", template="full_page_image", visual=PackVisualRef(ref="one.yaml")),
+        ],
+    )
+
+    visuals: Dict[str, BaseVisualConfig] = {"one.yaml": BaseVisualConfig(type="matrix")}
+
+    def _loader(path: Path, payload: Mapping[str, object] | None = None, stack: tuple[Path, ...] = ()) -> BaseVisualConfig:
+        return visuals[path.name]
+
+    captured: Dict[str, object] = {}
+
+    def _fake_assemble(**kwargs) -> None:
+        captured.update(kwargs)
+
+    monkeypatch.setattr("praeparo.pack.runner.assemble_pack_pptx", _fake_assemble)
+
+    pipeline = _StubPipeline()
+    base_options = PipelineOptions(
+        metadata={
+            "result_file": tmp_path / "deck.pptx",
+            "pptx_template": override_template,
+        }
+    )
+    run_pack(
+        pack_path,
+        pack,
+        project_root=pack_path.parent,
+        output_root=tmp_path / "artefacts",
+        base_options=base_options,
+        visual_loader=_loader,
+        pipeline=cast(VisualPipeline[Any], pipeline),
+        env=create_pack_jinja_env(),
+    )
+
+    assert captured, "assemble_pack_pptx should be invoked when result_file is set"
+    assert captured["template_path"] == override_template
+
+
 def test_run_pack_builds_pptx_with_template_only_slide(tmp_path: Path) -> None:
     pack_path = tmp_path / "pack.yaml"
     pack_path.write_text("", encoding="utf-8")
@@ -2666,6 +2805,39 @@ def test_restitch_pack_pptx_honours_templated_titles(tmp_path: Path) -> None:
     assert len(prs.slides) == 1
     blobs = _picture_blobs_by_name(prs.slides[0])
     assert blobs.get("image") == png_path.read_bytes()
+
+
+def test_restitch_pack_pptx_uses_pack_level_template_when_metadata_missing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    pack_path = tmp_path / "pack.yaml"
+    pack_path.write_text("", encoding="utf-8")
+
+    template_path = tmp_path / "templates" / "restitched_template.pptx"
+    template_path.parent.mkdir(parents=True, exist_ok=True)
+
+    result_path = tmp_path / "deck" / "restitched.pptx"
+    pack = PackConfig(schema="test-pack", pptx_template="./templates/restitched_template.pptx", slides=[])
+
+    captured: Dict[str, object] = {}
+
+    def _fake_assemble(**kwargs) -> None:
+        captured.update(kwargs)
+
+    monkeypatch.setattr("praeparo.pack.runner.assemble_pack_pptx", _fake_assemble)
+
+    output_root = tmp_path / "artefacts"
+    base_options = PipelineOptions(metadata={"result_file": result_path})
+    restitch_pack_pptx(
+        pack_path,
+        pack,
+        output_root=output_root,
+        result_file=result_path,
+        base_options=base_options,
+    )
+
+    assert captured
+    assert captured["template_path"] == template_path.resolve(strict=False)
 
 
 def test_restitch_pack_pptx_binds_templated_static_placeholder_image(tmp_path: Path) -> None:

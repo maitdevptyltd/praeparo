@@ -153,6 +153,19 @@ def _rebase_slide_fragment_paths(fragment: dict[str, Any], *, from_root: Path, t
     return rebased
 
 
+def _rebase_pack_fragment_paths(fragment: dict[str, Any], *, from_root: Path, to_root: Path) -> dict[str, Any]:
+    """Rebase pack-level path fields when inherited across different folders."""
+
+    rebased = copy.deepcopy(fragment)
+    if "pptx_template" in rebased:
+        rebased["pptx_template"] = _rebase_path_literal(
+            rebased.get("pptx_template"),
+            from_root=from_root,
+            to_root=to_root,
+        )
+    return rebased
+
+
 def _read_pack_payload(path: Path) -> Mapping[str, Any]:
     """Load one pack YAML payload from disk."""
 
@@ -381,6 +394,17 @@ def _compose_pack_payload(path: Path, *, stack: PackLoadStack = ()) -> dict[str,
         exclude={"extends", "slides", "slides_remove", "slides_replace", "slides_update", "slides_insert"},
     )
     merged_payload = _deep_merge(copy.deepcopy(parent_payload), root_overrides)
+
+    # Parent pack path literals are authored relative to the parent file. Rebase
+    # inherited pack-level paths so the composed payload still resolves from the
+    # child pack location at execution time.
+    if "pptx_template" not in root_overrides and "pptx_template" in parent_payload:
+        inherited_fragment = _rebase_pack_fragment_paths(
+            {"pptx_template": parent_payload.get("pptx_template")},
+            from_root=parent_path.parent,
+            to_root=path.parent,
+        )
+        merged_payload.update(inherited_fragment)
 
     if has_explicit_slides:
         slides = [slide.model_dump(mode="python", exclude_none=True) for slide in config.slides]

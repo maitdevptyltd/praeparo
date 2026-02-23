@@ -87,6 +87,11 @@ slides:
   Relative slide assets (`visual.ref`, placeholder `image`, slide `image`, and
   Python module paths) resolve against the file where that slide was declared,
   not necessarily the leaf child pack being executed.
+- `pptx_template` – optional pack-level PPTX template path used for both
+  template-geometry hints and PPTX assembly.
+  - Relative paths resolve from the pack file location.
+  - Registry-anchored paths (`@/...`) resolve from `registry/`.
+  - CLI metadata `pptx_template` still overrides this field for one-off runs.
 - `context` – key/value pairs exposed to Jinja templates (for example,
   `lender_id`, `month`, `customer`). May also include a `metrics` block that
   declaratively fetches catalogue KPIs into Jinja variables.
@@ -677,9 +682,12 @@ PPTX assembly is now part of `pack run` when `result_file` is present in pipelin
 metadata (automatically set via positional `dest`, `--result-file`, or a revision
 allocation). Templates are resolved in order:
 
-- `pack_template.pptx` next to the pack file,
-- parent folders, or
-- `registry/packs/pack_template.pptx`.
+1. Pipeline metadata override `pptx_template` (if supplied).
+2. Pack YAML `pptx_template` (if supplied).
+3. Default discovery:
+   - `pack_template.pptx` next to the pack file,
+   - parent folders, then
+   - `registry/packs/pack_template.pptx`.
 
 Slides without a `template` are skipped; slides with a template but no visual or
 placeholders now pass through untouched so “static” template-only pages do not

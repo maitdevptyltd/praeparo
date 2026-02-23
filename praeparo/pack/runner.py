@@ -676,6 +676,48 @@ def _resolve_default_template(pack_path: Path) -> Path | None:
     return None
 
 
+def _resolve_pack_declared_template_path(raw_template: str, *, pack_path: Path) -> Path:
+    """Resolve pack-configured template paths relative to the pack location."""
+
+    candidate = raw_template.strip()
+    if is_registry_anchored_path(candidate):
+        return resolve_registry_anchored_path(candidate, context_path=pack_path)
+
+    path = Path(candidate).expanduser()
+    if path.is_absolute():
+        return path.resolve(strict=False)
+    return (pack_path.parent / path).resolve(strict=False)
+
+
+def _resolve_pack_template_path(
+    *,
+    pack_path: Path,
+    pack: PackConfig,
+    metadata: Mapping[str, object] | None,
+) -> Path | None:
+    """Resolve the effective PPTX template path for the pack run.
+
+    Precedence:
+    1) Pipeline metadata override (`pptx_template`)
+    2) Pack YAML `pptx_template`
+    3) Default template discovery near the pack path
+    """
+
+    raw_template = metadata.get("pptx_template") if metadata else None
+    if isinstance(raw_template, (str, Path)):
+        return Path(raw_template)
+    if raw_template is not None:
+        logger.warning(
+            "Ignoring pptx_template metadata because it is not path-like",
+            extra={"pack": str(pack_path), "template_type": type(raw_template).__name__},
+        )
+
+    if pack.pptx_template:
+        return _resolve_pack_declared_template_path(pack.pptx_template, pack_path=pack_path)
+
+    return _resolve_default_template(pack_path)
+
+
 def _reuse_existing_assets(
     *,
     slide: PackSlide,
@@ -894,20 +936,24 @@ def run_pack(
     slide_contexts_by_slug: dict[str, dict[str, object]] = {}
     pack_token = _format_selector_path(pack_path)
     evidence_targets: list[PackEvidenceTarget] = []
+    template_path = _resolve_pack_template_path(
+        pack_path=pack_path,
+        pack=pack,
+        metadata=base_metadata,
+    )
 
     # Resolve PPTX template geometry once per pack so visuals can size their canvases.
     template_geometry_by_template: dict[str, PlaceholderSize] = {}
     template_geometry_by_placeholder: dict[tuple[str, str], PlaceholderSize] = {}
-    template_for_geometry = _resolve_default_template(pack_path)
-    if template_for_geometry is not None:
+    if template_path is not None:
         try:
-            slide_geom, placeholder_geom = resolve_template_geometry(template_for_geometry)
+            slide_geom, placeholder_geom = resolve_template_geometry(template_path)
             template_geometry_by_template = slide_geom
             template_geometry_by_placeholder = placeholder_geom
         except Exception:
             logger.exception(
                 "Failed to resolve PPTX template geometry; continuing without width/height hints",
-                extra={"template_path": str(template_for_geometry)},
+                extra={"template_path": str(template_path)},
             )
 
     for index, slide in enumerate(pack.slides, start=1):
@@ -1636,17 +1682,6 @@ def run_pack(
         )
 
     if result_file:
-        raw_template = base.metadata.get("pptx_template") if base.metadata else None
-        if isinstance(raw_template, (str, Path)):
-            template_path: Path | None = Path(raw_template)
-        else:
-            if raw_template is not None:
-                logger.warning(
-                    "Ignoring pptx_template metadata because it is not path-like",
-                    extra={"pack": str(pack_path), "template_type": type(raw_template).__name__},
-                )
-            template_path = _resolve_default_template(pack_path)
-
         if template_path is None:
             logger.warning(
                 "Skipping PPTX assembly because no template was found",
@@ -1857,16 +1892,11 @@ def restitch_pack_pptx(
             placeholder_png_map=placeholder_png_map,
         )
 
-    template_override = base_options.metadata.get("pptx_template") if base_options.metadata else None
-    if isinstance(template_override, (str, Path)):
-        template_path: Path | None = Path(template_override)
-    else:
-        if template_override is not None:
-            logger.warning(
-                "Ignoring pptx_template metadata because it is not path-like",
-                extra={"pack": str(pack_path), "template_type": type(template_override).__name__},
-            )
-        template_path = _resolve_default_template(pack_path)
+    template_path = _resolve_pack_template_path(
+        pack_path=pack_path,
+        pack=pack,
+        metadata=base_metadata,
+    )
     if template_path is None:
         logger.warning(
             "Skipping PPTX assembly because no template was found",

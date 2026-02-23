@@ -256,3 +256,36 @@ def test_pack_extends_patch_mode_requires_inherited_slide_ids(tmp_path: Path) ->
 
     with pytest.raises(PackConfigError, match="requires slide.id"):
         load_pack_config(child)
+
+
+def test_pack_extends_rebases_inherited_pptx_template_path(tmp_path: Path) -> None:
+    base_dir = tmp_path / "base"
+    child_dir = tmp_path / "child"
+    base_dir.mkdir(parents=True, exist_ok=True)
+    child_dir.mkdir(parents=True, exist_ok=True)
+
+    base = base_dir / "base.yaml"
+    _write(
+        base,
+        """
+        schema: base-pack
+        pptx_template: ./templates/base_template.pptx
+        slides:
+          - id: a
+            title: "A"
+            visual:
+              ref: one.yaml
+        """,
+    )
+
+    child = child_dir / "child.yaml"
+    _write(
+        child,
+        """
+        schema: child-pack
+        extends: ../base/base.yaml
+        """,
+    )
+
+    pack = load_pack_config(child)
+    assert pack.pptx_template == "../base/templates/base_template.pptx"

@@ -837,6 +837,13 @@ class PackConfig(BaseModel):
         default=None,
         description="Optional parent pack path resolved relative to this pack file.",
     )
+    pptx_template: str | None = Field(
+        default=None,
+        description=(
+            "Optional PPTX template path for this pack. Relative paths resolve "
+            "from the pack file location; registry-anchored paths (`@/...`) are supported."
+        ),
+    )
     context: PackContext = Field(default_factory=PackContext, description="Template context shared by slides.")
     define: str | None = Field(
         default=None,
@@ -891,6 +898,18 @@ class PackConfig(BaseModel):
         cleaned = value.strip()
         if not cleaned:
             raise ValueError("extends cannot be empty")
+        return cleaned
+
+    @field_validator("pptx_template", mode="before")
+    @classmethod
+    def _normalise_pptx_template(cls, value: object) -> str | None:
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            raise TypeError("pptx_template must be a string")
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("pptx_template cannot be empty")
         return cleaned
 
     @field_validator("slides_remove", mode="before")
