@@ -61,6 +61,7 @@ def test_context_metrics_object_form_supports_variant_and_expression() -> None:
         }
     )
 
+    assert pack.context.metrics is not None
     bindings = pack.context.metrics.bindings or []
     assert bindings[0].full_key == "documents_verified.within_1_day"
     assert bindings[0].alias == "documents_verified_within_1_day"
@@ -161,6 +162,24 @@ def test_context_metrics_wrapper_supports_calculate_and_bindings() -> None:
     assert pack.context.metrics.calculate is not None
     bindings = pack.context.metrics.bindings or []
     assert bindings[0].alias == "total_verified"
+
+
+def test_context_metrics_wrapper_supports_allow_empty() -> None:
+    pack = PackConfig.model_validate(
+        {
+            "schema": "test-pack",
+            "context": {
+                "metrics": {
+                    "allow_empty": False,
+                    "bindings": {"documents_verified": "total_verified"},
+                }
+            },
+            "slides": [_minimal_slide()],
+        }
+    )
+
+    assert pack.context.metrics is not None
+    assert pack.context.metrics.allow_empty is False
 
 
 def test_binding_calculate_named_shorthand_defaults_to_define() -> None:

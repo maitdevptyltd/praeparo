@@ -284,6 +284,14 @@ class PackMetricsContext(BaseModel):
             "bound series in SUMMARIZECOLUMNS."
         ),
     )
+    allow_empty: bool | None = Field(
+        default=None,
+        description=(
+            "Whether context.metrics may resolve to zero rows without raising. "
+            "Defaults to true when omitted. Slides inherit the pack-level value unless "
+            "they provide an explicit override."
+        ),
+    )
     bindings: list[PackMetricBinding] | None = Field(
         default=None,
         description="Metric bindings resolved into Jinja variables.",
@@ -346,13 +354,8 @@ class PackContext(BaseModel):
             return value
 
         if isinstance(value, Mapping):
-            if "bindings" in value or "calculate" in value:
-                return PackMetricsContext.model_validate(
-                    {
-                        "calculate": value.get("calculate"),
-                        "bindings": value.get("bindings"),
-                    }
-                )
+            if "bindings" in value or "calculate" in value or "allow_empty" in value:
+                return PackMetricsContext.model_validate(value)
 
             bindings = _normalise_metric_bindings(value)
             return PackMetricsContext(bindings=bindings)

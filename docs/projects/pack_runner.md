@@ -307,6 +307,7 @@ Recommended wrapper form (bindings + optional metrics-only calculate):
 ```yaml
 context:
   metrics:
+    allow_empty: true
     calculate:
       month: "'dim_calendar'[month] = DATEVALUE(\"{{ month }}\")"
       period:
@@ -406,6 +407,11 @@ Notes:
   visual execution as usual.
 - `context.calculate` is a deprecated alias for `metrics.calculate` and will be removed
   in a future release.
+- `allow_empty` controls zero-row metric-context results:
+  - Defaults to `true` when omitted.
+  - `true` treats zero-row results as empty values (`None`) so packs can render no-data months.
+  - `false` preserves strict single-row enforcement and raises when the query returns zero rows.
+  - Slide `context.metrics.allow_empty` inherits the pack-level setting unless explicitly overridden.
 
 ## CLI usage
 
@@ -860,6 +866,7 @@ legacy `<pack-slug>.pptx`.
 
 ## Changelog
 
+- 2026-02-25: Default `context.metrics` zero-row handling to allow empty results (`allow_empty: true` by default), with optional strict mode via `allow_empty: false`.
 - 2026-02-23: Flow `slide.calculate` into slide metric-context resolution (DEFINE scope) before applying slide `context.metrics.calculate` overrides.
 - 2025-12-12: Inherit `context.metrics.calculate` into slide metric-context execution, with DEFINE/EVALUATE scoping preserved and per-slide by-name overrides.
 - 2025-12-12: Added `ratio_to` support for `context.metrics.bindings` so packs can inject scalar rates/attainment values without duplicating expression bindings.

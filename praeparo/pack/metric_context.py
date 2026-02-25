@@ -110,6 +110,7 @@ def resolve_metric_context(
     base_payload: Mapping[str, object],
     scope: str,
     metrics_calculate: ScopedCalculateMap | FiltersType | None = None,
+    allow_empty: bool = True,
     artefact_dir: Path | None = None,
 ) -> ResolvedMetricContext:
     """Resolve bindings into scalars, reusing inherited values where valid."""
@@ -293,12 +294,20 @@ def resolve_metric_context(
         rows = _execute_builder_rows(builder, scope=scope)
         if artefact_dir is not None:
             _emit_metric_context_results(rows=rows, artefact_dir=artefact_dir, scope=scope)
-        if len(rows) != 1:
+        if not rows:
+            if not allow_empty:
+                raise ValueError(
+                    f"{scope} context.metrics expected a single-row dataset but received {len(rows)} rows. "
+                    "Add pack or slide filters to scope the grain."
+                )
+            row: Mapping[str, object] = {}
+        elif len(rows) > 1:
             raise ValueError(
                 f"{scope} context.metrics expected a single-row dataset but received {len(rows)} rows. "
                 "Add pack or slide filters to scope the grain."
             )
-        row = rows[0]
+        else:
+            row = rows[0]
 
         for binding in bindings_to_fetch:
             full_key = binding.full_key

@@ -287,6 +287,19 @@
           "default": null,
           "description": "Optional DAX CALCULATE predicates applied to metric-context execution. Shorthand entries default to DEFINE scope (outer dataset scoping). Use calculate.<name>.evaluate to apply calculation-group filters around every bound series in SUMMARIZECOLUMNS."
         },
+        "allow_empty": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Whether context.metrics may resolve to zero rows without raising. Defaults to true when omitted. Slides inherit the pack-level value unless they provide an explicit override.",
+          "title": "Allow Empty"
+        },
         "bindings": {
           "anyOf": [
             {

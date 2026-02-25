@@ -9,6 +9,7 @@ import pytest
 from praeparo.datasets import MetricDatasetBuilderContext
 from praeparo.metrics import load_metric_catalog
 from praeparo.models import PackMetricBinding
+from praeparo.models.scoped_calculate import ScopedCalculateMap
 from praeparo.pack.metric_context import ResolvedMetricContext, resolve_metric_context
 from praeparo.pack.templating import create_pack_jinja_env
 
@@ -354,7 +355,7 @@ define: "COUNTROWS('fact_documents')"
         env=env,
         base_payload={},
         scope="root",
-        metrics_calculate={"period": {"evaluate": evaluate_filter}},
+        metrics_calculate=ScopedCalculateMap.from_raw({"period": {"evaluate": evaluate_filter}}),
         artefact_dir=artefact_dir,
     )
 
@@ -404,7 +405,7 @@ define: "COUNTROWS('fact_documents')"
         env=env,
         base_payload={},
         scope="root",
-        metrics_calculate={"period": {"evaluate": root_filter}},
+        metrics_calculate=ScopedCalculateMap.from_raw({"period": {"evaluate": root_filter}}),
         artefact_dir=artefact_dir,
     )
 
@@ -566,4 +567,91 @@ variants:
             env=env,
             base_payload={},
             scope="root",
+        )
+
+
+def test_resolve_metric_context_defaults_to_allow_empty_for_zero_rows(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    metrics_root = tmp_path / "registry" / "metrics"
+    metrics_root.mkdir(parents=True, exist_ok=True)
+    (metrics_root / "documents_sent.yaml").write_text(
+        """
+key: documents_sent
+display_name: Documents Sent
+section: documents
+define: "COUNTROWS('fact_documents')"
+""",
+        encoding="utf-8",
+    )
+
+    builder_context = MetricDatasetBuilderContext.discover(
+        project_root=tmp_path,
+        metrics_root=metrics_root,
+        use_mock=True,
+    )
+    catalog = load_metric_catalog([metrics_root])
+    env = create_pack_jinja_env()
+    binding = PackMetricBinding(key="documents_sent", alias="total_documents")
+
+    monkeypatch.setattr(
+        "praeparo.pack.metric_context._execute_builder_rows",
+        lambda builder, scope: [],
+    )
+
+    resolved = resolve_metric_context(
+        bindings=[binding],
+        inherited=None,
+        builder_context=builder_context,
+        catalog=catalog,
+        env=env,
+        base_payload={},
+        scope="root",
+    )
+
+    assert resolved.aliases["total_documents"] is None
+    assert resolved.by_key["documents_sent"] is None
+
+
+def test_resolve_metric_context_zero_rows_errors_when_allow_empty_false(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    metrics_root = tmp_path / "registry" / "metrics"
+    metrics_root.mkdir(parents=True, exist_ok=True)
+    (metrics_root / "documents_sent.yaml").write_text(
+        """
+key: documents_sent
+display_name: Documents Sent
+section: documents
+define: "COUNTROWS('fact_documents')"
+""",
+        encoding="utf-8",
+    )
+
+    builder_context = MetricDatasetBuilderContext.discover(
+        project_root=tmp_path,
+        metrics_root=metrics_root,
+        use_mock=True,
+    )
+    catalog = load_metric_catalog([metrics_root])
+    env = create_pack_jinja_env()
+    binding = PackMetricBinding(key="documents_sent", alias="total_documents")
+
+    monkeypatch.setattr(
+        "praeparo.pack.metric_context._execute_builder_rows",
+        lambda builder, scope: [],
+    )
+
+    with pytest.raises(ValueError, match="expected a single-row dataset but received 0 rows"):
+        resolve_metric_context(
+            bindings=[binding],
+            inherited=None,
+            builder_context=builder_context,
+            catalog=catalog,
+            env=env,
+            base_payload={},
+            scope="root",
+            allow_empty=False,
         )

@@ -844,6 +844,9 @@ def run_pack(
     root_metrics_context = pack.context.metrics
     root_bindings = root_metrics_context.bindings if root_metrics_context else []
     root_metrics_calculate = root_metrics_context.calculate if root_metrics_context else None
+    root_metrics_allow_empty = (
+        root_metrics_context.allow_empty if root_metrics_context and root_metrics_context.allow_empty is not None else True
+    )
     root_metrics_calculate = ScopedCalculateMap.merge(registry_metrics_calculate, root_metrics_calculate)
     slide_bindings_present = any(
         slide.context is not None
@@ -887,6 +890,7 @@ def run_pack(
             base_payload=pack_payload,
             scope="root",
             metrics_calculate=root_metrics_calculate,
+            allow_empty=root_metrics_allow_empty,
             artefact_dir=output_root,
         )
     else:
@@ -988,6 +992,11 @@ def run_pack(
         effective_metrics_context = global_metrics_context
         if has_metric_bindings and builder_context is not None and catalog is not None:
             slide_metrics_config = slide.context.metrics if slide.context else None
+            slide_metrics_allow_empty = (
+                slide_metrics_config.allow_empty
+                if slide_metrics_config and slide_metrics_config.allow_empty is not None
+                else root_metrics_allow_empty
+            )
             slide_metrics_calculate = _resolve_slide_metric_context_calculate(
                 inherited_metrics_calculate=root_metrics_calculate,
                 slide_calculate=slide.calculate,
@@ -1002,6 +1011,7 @@ def run_pack(
                 base_payload=slide_payload,
                 scope=f"slide_{index}",
                 metrics_calculate=slide_metrics_calculate,
+                allow_empty=slide_metrics_allow_empty,
                 artefact_dir=output_root,
             )
             effective_metrics_context = slide_metrics_context
@@ -1781,6 +1791,9 @@ def restitch_pack_pptx(
     root_metrics_context = pack.context.metrics
     root_bindings = root_metrics_context.bindings if root_metrics_context else []
     root_metrics_calculate = root_metrics_context.calculate if root_metrics_context else None
+    root_metrics_allow_empty = (
+        root_metrics_context.allow_empty if root_metrics_context and root_metrics_context.allow_empty is not None else True
+    )
     slide_bindings_present = any(
         slide.context is not None
         and slide.context.metrics is not None
@@ -1815,6 +1828,7 @@ def restitch_pack_pptx(
             base_payload=pack_payload,
             scope="root",
             metrics_calculate=root_metrics_calculate,
+            allow_empty=root_metrics_allow_empty,
             artefact_dir=output_root,
         )
     else:
@@ -1844,6 +1858,11 @@ def restitch_pack_pptx(
         effective_metrics_context = global_metrics_context
         if has_metric_bindings and builder_context is not None and catalog is not None:
             slide_metrics_config = slide.context.metrics if slide.context else None
+            slide_metrics_allow_empty = (
+                slide_metrics_config.allow_empty
+                if slide_metrics_config and slide_metrics_config.allow_empty is not None
+                else root_metrics_allow_empty
+            )
             slide_metrics_calculate = _resolve_slide_metric_context_calculate(
                 inherited_metrics_calculate=root_metrics_calculate,
                 slide_calculate=slide.calculate,
@@ -1858,6 +1877,7 @@ def restitch_pack_pptx(
                 base_payload=slide_payload,
                 scope=f"slide_{index}",
                 metrics_calculate=slide_metrics_calculate,
+                allow_empty=slide_metrics_allow_empty,
                 artefact_dir=output_root,
             )
             effective_metrics_context = slide_metrics_context

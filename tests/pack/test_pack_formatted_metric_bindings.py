@@ -74,6 +74,7 @@ def test_governance_highlights_formats_bindings_but_preserves_raw_context(monkey
         base_payload,
         scope: str,
         metrics_calculate=None,
+        allow_empty=True,
         artefact_dir=None,
     ) -> ResolvedMetricContext:
         if scope == "root":
@@ -157,6 +158,7 @@ def test_key_insights_formats_bindings_but_preserves_raw_context(monkeypatch, tm
         base_payload,
         scope: str,
         metrics_calculate=None,
+        allow_empty=True,
         artefact_dir=None,
     ) -> ResolvedMetricContext:
         if scope == "root":
@@ -240,6 +242,7 @@ def test_display_render_skips_execution_keys(monkeypatch, tmp_path: Path) -> Non
         base_payload,
         scope: str,
         metrics_calculate=None,
+        allow_empty=True,
         artefact_dir=None,
     ) -> ResolvedMetricContext:
         if scope == "root":
