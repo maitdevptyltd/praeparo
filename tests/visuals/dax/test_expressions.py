@@ -56,10 +56,36 @@ def test_parse_metric_expression_ratio_to_accepts_explicit_denominator() -> None
     assert numerator_ref.ratio_to_ref == "lodgements.total"
 
 
+def test_parse_metric_expression_ratio_to_accepts_inferred_denominator_with_fallback() -> None:
+    parsed = parse_metric_expression("ratio_to(documents_sent.manual, 1)")
+    identifiers = [ref.identifier for ref in parsed.references]
+    assert identifiers == ["documents_sent", "documents_sent.manual"]
+    numerator_ref = next(ref for ref in parsed.references if ref.identifier == "documents_sent.manual")
+    assert numerator_ref.ratio_to_ref == "documents_sent"
+
+
 def test_parse_metric_expression_ratio_to_emits_divide_dax() -> None:
     expr = parse_metric_expression("ratio_to(a.b)")
     dax = expr.to_dax({"a": "[Denominator]", "a.b": "[Numerator]"})
     assert dax == "DIVIDE(([Numerator]), ([Denominator]))"
+
+
+def test_parse_metric_expression_ratio_to_emits_divide_with_fallback_dax() -> None:
+    expr = parse_metric_expression("ratio_to(a.b, 1)")
+    dax = expr.to_dax({"a": "[Denominator]", "a.b": "[Numerator]"})
+    assert dax == (
+        "(VAR __ratio_den_1 = ([Denominator]) "
+        "RETURN IF(ISBLANK(__ratio_den_1) || __ratio_den_1 = 0, 1, DIVIDE(([Numerator]), __ratio_den_1)))"
+    )
+
+
+def test_parse_metric_expression_ratio_to_emits_divide_with_explicit_denominator_and_fallback_dax() -> None:
+    expr = parse_metric_expression('ratio_to(a.b, "c", 0.5)')
+    dax = expr.to_dax({"a.b": "[Numerator]", "c": "[Denominator]"})
+    assert dax == (
+        "(VAR __ratio_den_1 = ([Denominator]) "
+        "RETURN IF(ISBLANK(__ratio_den_1) || __ratio_den_1 = 0, 0.5, DIVIDE(([Numerator]), __ratio_den_1)))"
+    )
 
 
 def test_parse_metric_expression_min_collects_references_in_order() -> None:
@@ -101,8 +127,12 @@ def test_parse_metric_expression_ratio_to_invalid_usage_raises() -> None:
         parse_metric_expression("ratio_to(a)")
     with pytest.raises(ValueError, match="non-empty string"):
         parse_metric_expression('ratio_to(a.b, "")')
-    with pytest.raises(TypeError, match="string metric key"):
-        parse_metric_expression("ratio_to(a.b, 123)")
+    with pytest.raises(TypeError, match="string metric key when a fallback is provided"):
+        parse_metric_expression("ratio_to(a.b, 0, 1)")
+    with pytest.raises(TypeError, match="numeric literal"):
+        parse_metric_expression('ratio_to(a.b, "c", "x")')
+    with pytest.raises(TypeError, match="numeric literal"):
+        parse_metric_expression("ratio_to(a.b, test)")
 
 
 def test_parse_metric_expression_min_invalid_usage_raises() -> None:

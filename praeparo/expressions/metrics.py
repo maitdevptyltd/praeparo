@@ -99,11 +99,23 @@ class ParsedExpression:
             if isinstance(node, ast.Call):
                 func = _parse_expression_call(node)
                 if func == "ratio_to":
-                    numerator_id, _ = _parse_ratio_to_call(node)
-                    denominator_id = _lookup_ratio_to_denominator(self.references, numerator_id)
+                    numerator_id, denominator_id, fallback_value = _parse_ratio_to_call(node)
                     numerator_expr = f"({substitutions[numerator_id]})"
                     denominator_expr = f"({substitutions[denominator_id]})"
-                    return f"DIVIDE({numerator_expr}, {denominator_expr})"
+                    if fallback_value is None:
+                        return f"DIVIDE({numerator_expr}, {denominator_expr})"
+                    call_counter += 1
+                    denominator_var = f"__ratio_den_{call_counter}"
+                    return (
+                        "("
+                        f"VAR {denominator_var} = {denominator_expr} "
+                        f"RETURN IF("
+                        f"ISBLANK({denominator_var}) || {denominator_var} = 0, "
+                        f"{fallback_value}, "
+                        f"DIVIDE({numerator_expr}, {denominator_var})"
+                        ")"
+                        ")"
+                    )
 
                 if node.keywords:
                     raise TypeError(f"{func}() does not accept keyword arguments.")
@@ -234,7 +246,7 @@ class _ExpressionVisitor(ast.NodeVisitor):
                 self.visit(arg)
             return
 
-        numerator_id, denominator_id = _parse_ratio_to_call(node)
+        numerator_id, denominator_id, _ = _parse_ratio_to_call(node)
 
         # Record denominator first so dependency discovery works even if the only
         # mention is inside a ratio_to() call.
@@ -284,15 +296,15 @@ def _flatten_attribute(node: ast.Attribute) -> str:
     return ".".join(reversed(parts))
 
 
-def _parse_ratio_to_call(node: ast.Call) -> tuple[str, str]:
+def _parse_ratio_to_call(node: ast.Call) -> tuple[str, str, float | int | None]:
     """Validate and extract identifiers from a ratio_to() call."""
 
     if not isinstance(node.func, ast.Name) or node.func.id != "ratio_to":
         raise TypeError("Only ratio_to() calls are supported by this helper.")
     if node.keywords:
         raise TypeError("ratio_to() does not accept keyword arguments.")
-    if len(node.args) not in (1, 2):
-        raise ValueError("ratio_to() requires one or two arguments.")
+    if len(node.args) not in (1, 2, 3):
+        raise ValueError("ratio_to() requires one, two, or three arguments.")
 
     numerator_id = _flatten_metric_identifier(node.args[0])
 
@@ -300,16 +312,31 @@ def _parse_ratio_to_call(node: ast.Call) -> tuple[str, str]:
         if "." not in numerator_id:
             raise ValueError("ratio_to() requires a dotted metric key to infer the parent denominator.")
         denominator_id = numerator_id.rsplit(".", 1)[0]
-        return numerator_id, denominator_id
+        return numerator_id, denominator_id, None
 
-    denominator_arg = node.args[1]
-    if not isinstance(denominator_arg, ast.Constant) or not isinstance(denominator_arg.value, str):
-        raise TypeError("Second argument to ratio_to() must be a string metric key.")
+    second_arg = node.args[1]
+    if len(node.args) == 2:
+        if isinstance(second_arg, ast.Constant) and isinstance(second_arg.value, str):
+            denominator_id = second_arg.value.strip()
+            if not denominator_id:
+                raise ValueError("Second argument to ratio_to() must be a non-empty string metric key.")
+            return numerator_id, denominator_id, None
 
-    denominator_id = denominator_arg.value.strip()
+        fallback_value = _parse_numeric_literal(second_arg, argument_name="Second")
+        if "." not in numerator_id:
+            raise ValueError("ratio_to() requires a dotted metric key to infer the parent denominator.")
+        denominator_id = numerator_id.rsplit(".", 1)[0]
+        return numerator_id, denominator_id, fallback_value
+
+    if not isinstance(second_arg, ast.Constant) or not isinstance(second_arg.value, str):
+        raise TypeError("Second argument to ratio_to() must be a string metric key when a fallback is provided.")
+
+    denominator_id = second_arg.value.strip()
     if not denominator_id:
         raise ValueError("Second argument to ratio_to() must be a non-empty string metric key.")
-    return numerator_id, denominator_id
+
+    fallback_value = _parse_numeric_literal(node.args[2], argument_name="Third")
+    return numerator_id, denominator_id, fallback_value
 
 
 def _parse_expression_call(node: ast.Call) -> str:
@@ -336,11 +363,21 @@ def _flatten_metric_identifier(node: ast.AST) -> str:
     raise TypeError("First argument to ratio_to() must be a metric reference.")
 
 
-def _lookup_ratio_to_denominator(references: List[MetricReference], numerator_id: str) -> str:
-    for reference in references:
-        if reference.identifier == numerator_id and reference.ratio_to_ref:
-            return reference.ratio_to_ref
-    raise KeyError(f"ratio_to() denominator could not be resolved for '{numerator_id}'.")
+def _parse_numeric_literal(node: ast.AST, *, argument_name: str) -> float | int:
+    if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)) and not isinstance(node.value, bool):
+        return node.value
+
+    if isinstance(node, ast.UnaryOp) and type(node.op) in _UNARY_SYMBOLS:
+        operand = node.operand
+        if isinstance(operand, ast.Constant) and isinstance(operand.value, (int, float)) and not isinstance(
+            operand.value, bool
+        ):
+            numeric_value: float | int = operand.value
+            if isinstance(node.op, ast.USub):
+                return -numeric_value
+            return +numeric_value
+
+    raise TypeError(f"{argument_name} argument to ratio_to() must be a numeric literal.")
 
 
 __all__ = ["MetricReference", "ParsedExpression", "parse_metric_expression", "resolve_expression_metric"]

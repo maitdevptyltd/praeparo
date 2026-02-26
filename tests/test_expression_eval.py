@@ -36,6 +36,33 @@ def test_expression_eval_ratio_to_handles_missing_or_zero_denominator() -> None:
     assert evaluate_expression(parsed, {"a.b": 5}) is None
 
 
+def test_expression_eval_ratio_to_uses_fallback_for_missing_or_zero_denominator() -> None:
+    parsed = parse_metric_expression("ratio_to(a.b, 1)")
+    assert evaluate_expression(parsed, {"a.b": 5, "a": 0}) == 1
+    assert evaluate_expression(parsed, {"a.b": 5}) == 1
+
+
+def test_expression_eval_ratio_to_uses_explicit_denominator_with_fallback() -> None:
+    parsed = parse_metric_expression('ratio_to(a.b, "c", 0.25)')
+    assert evaluate_expression(parsed, {"a.b": 5, "c": 0}) == pytest.approx(0.25)
+    assert evaluate_expression(parsed, {"a.b": 5}) == pytest.approx(0.25)
+
+
+def test_expression_eval_ratio_to_with_fallback_keeps_real_ratio_when_denominator_present() -> None:
+    parsed = parse_metric_expression("ratio_to(a.b, 1)")
+    assert evaluate_expression(parsed, {"a.b": 5, "a": 10}) == pytest.approx(0.5)
+
+
+def test_expression_eval_ratio_to_with_fallback_still_propagates_missing_numerator() -> None:
+    parsed = parse_metric_expression("ratio_to(a.b, 1)")
+    assert evaluate_expression(parsed, {"a": 10}) is None
+
+
+def test_expression_eval_ratio_to_with_fallback_returns_fallback_when_numerator_and_denominator_missing() -> None:
+    parsed = parse_metric_expression("ratio_to(a.b, 1)")
+    assert evaluate_expression(parsed, {}) == 1
+
+
 def test_expression_eval_ratio_to_weighted_expression() -> None:
     parsed = parse_metric_expression("ratio_to(a.b) * 0.85 + ratio_to(a.c) * 1.0")
     value = evaluate_expression(parsed, {"a.b": 5, "a.c": 2, "a": 10})
@@ -51,3 +78,8 @@ def test_expression_eval_min_max_functions() -> None:
 def test_expression_eval_min_propagates_ratio_to_missing_value() -> None:
     parsed = parse_metric_expression("min(ratio_to(a.b) / 0.85, 1)")
     assert evaluate_expression(parsed, {"a.b": 5, "a": 0}) is None
+
+
+def test_expression_eval_min_with_ratio_to_fallback_does_not_propagate_blank() -> None:
+    parsed = parse_metric_expression("min(ratio_to(a.b, 1) / 0.85, 1)")
+    assert evaluate_expression(parsed, {"a.b": 5, "a": 0}) == pytest.approx(1.0)
