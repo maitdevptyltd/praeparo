@@ -640,6 +640,172 @@ def test_run_pack_preserves_excluded_discriminator_when_applying_overrides(tmp_p
     assert executed.title == "Override"
 
 
+def test_run_pack_renders_referenced_visual_templates_with_slide_context(tmp_path: Path) -> None:
+    class _SeriesVisualConfig(BaseVisualConfig):
+        model_config = ConfigDict(extra="forbid", populate_by_name=True)
+        type: str | None = Field(default="series_visual")
+        series: list[dict[str, object]] = Field(default_factory=list)
+
+    (tmp_path / "registry" / "metrics").mkdir(parents=True)
+
+    pack_path = tmp_path / "pack.yaml"
+    pack_path.write_text("{}", encoding="utf-8")
+
+    referenced_visual = tmp_path / "series.yaml"
+    referenced_visual.write_text("type: matrix\n", encoding="utf-8")
+
+    pack = PackConfig(
+        schema="test-pack",
+        context=PackContext.model_validate({"sla_benchmark": {"document_preparation": 0.85}}),
+        slides=[
+            PackSlide(
+                id="slide-1",
+                title="Templated expression",
+                visual=PackVisualRef.model_validate({"ref": "series.yaml"}),
+            ),
+        ],
+    )
+
+    pipeline = _StubPipeline()
+
+    def stub_visual_loader(path: Path) -> BaseVisualConfig:
+        assert path == referenced_visual.resolve()
+        return _SeriesVisualConfig(
+            type="series_visual",
+            series=[
+                {
+                    "id": "benchmark",
+                    "type": "line",
+                    "metric": {"expression": "{{ sla_benchmark.document_preparation }}"},
+                }
+            ],
+        )
+
+    run_pack(
+        pack_path,
+        pack,
+        project_root=tmp_path,
+        output_root=tmp_path / "artefacts",
+        base_options=PipelineOptions(),
+        visual_loader=stub_visual_loader,
+        pipeline=cast(Any, pipeline),
+        env=create_pack_jinja_env(),
+    )
+
+    assert pipeline.calls
+    executed = cast(Any, pipeline.calls[0][0])
+    assert executed.series[0]["metric"]["expression"] == "0.85"
+
+
+def test_run_pack_rejects_unresolved_templates_in_referenced_visual_payload(tmp_path: Path) -> None:
+    class _SeriesVisualConfig(BaseVisualConfig):
+        model_config = ConfigDict(extra="forbid", populate_by_name=True)
+        type: str | None = Field(default="series_visual")
+        series: list[dict[str, object]] = Field(default_factory=list)
+
+    (tmp_path / "registry" / "metrics").mkdir(parents=True)
+
+    pack_path = tmp_path / "pack.yaml"
+    pack_path.write_text("{}", encoding="utf-8")
+
+    referenced_visual = tmp_path / "series.yaml"
+    referenced_visual.write_text("type: matrix\n", encoding="utf-8")
+
+    pack = PackConfig(
+        schema="test-pack",
+        slides=[
+            PackSlide(
+                id="slide-1",
+                title="Unresolved expression",
+                visual=PackVisualRef.model_validate({"ref": "series.yaml"}),
+            ),
+        ],
+    )
+
+    pipeline = _StubPipeline()
+
+    def stub_visual_loader(path: Path) -> BaseVisualConfig:
+        assert path == referenced_visual.resolve()
+        return _SeriesVisualConfig(
+            type="series_visual",
+            series=[
+                {
+                    "id": "benchmark",
+                    "type": "line",
+                    "metric": {"expression": "{{ sla_benchmark.document_preparation }}"},
+                }
+            ],
+        )
+
+    with pytest.raises(PackExecutionError) as excinfo:
+        run_pack(
+            pack_path,
+            pack,
+            project_root=tmp_path,
+            output_root=tmp_path / "artefacts",
+            base_options=PipelineOptions(),
+            visual_loader=stub_visual_loader,
+            pipeline=cast(Any, pipeline),
+            env=create_pack_jinja_env(),
+        )
+
+    cause = excinfo.value.__cause__
+    assert cause is not None
+    detailed = str(cause.__cause__ or cause)
+    assert "Failed to render visual payload templates" in detailed
+    assert "sla_benchmark" in detailed
+
+
+def test_run_pack_renders_inline_visual_templates_with_slide_context(tmp_path: Path) -> None:
+    class _TemplatedInlineVisualConfig(BaseVisualConfig):
+        model_config = ConfigDict(extra="forbid", populate_by_name=True)
+        type: str | None = Field(default="templated_inline_context_test")
+        title: str | None = None
+
+    register_visual_type(
+        "templated_inline_context_test",
+        lambda path, payload, stack: _TemplatedInlineVisualConfig.model_validate(payload),
+        overwrite=True,
+    )
+
+    (tmp_path / "registry" / "metrics").mkdir(parents=True)
+
+    pack_path = tmp_path / "pack.yaml"
+    pack_path.write_text("{}", encoding="utf-8")
+
+    pack = PackConfig(
+        schema="test-pack",
+        context=PackContext.model_validate({"customer": "AMP"}),
+        slides=[
+            PackSlide(
+                id="slide-1",
+                title="Inline template",
+                visual=PackVisualRef.model_validate(
+                    {
+                        "type": "templated_inline_context_test",
+                        "title": "{{ customer }} Chart",
+                    }
+                ),
+            ),
+        ],
+    )
+
+    pipeline = _StubPipeline()
+    run_pack(
+        pack_path,
+        pack,
+        project_root=tmp_path,
+        output_root=tmp_path / "artefacts",
+        base_options=PipelineOptions(),
+        pipeline=cast(VisualPipeline[Any], pipeline),
+        env=create_pack_jinja_env(),
+    )
+
+    assert pipeline.calls
+    executed = cast(Any, pipeline.calls[0][0])
+    assert executed.title == "AMP Chart"
+
+
 def test_run_pack_applies_series_add_to_referenced_visual(tmp_path: Path) -> None:
     class _SeriesVisualConfig(BaseVisualConfig):
         model_config = ConfigDict(extra="forbid", populate_by_name=True)

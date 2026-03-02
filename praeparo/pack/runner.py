@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import copy
 import logging
+import re
 import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Iterable, Mapping, Sequence, cast
 
-from jinja2 import Environment
+from jinja2 import Environment, StrictUndefined
 from pydantic import ValidationError
 
 from praeparo.models import BaseVisualConfig, FiltersType, PackConfig, PackPlaceholder, PackSlide, PackVisualRef
@@ -65,6 +66,7 @@ logger = logging.getLogger(__name__)
 _PACK_VISUAL_REF_RESERVED_KEYS = frozenset(
     {"ref", "type", "filters", "calculate", "series_add", "series_update", "series_remove"}
 )
+_JINJA_PLACEHOLDER_PATTERN = re.compile(r"\{\{\s*(?P<expr>[^}]+?)\s*\}\}")
 
 
 def _resolve_registry_metrics_calculate_defaults(pack_payload: Mapping[str, object]) -> ScopedCalculateMap | None:
@@ -144,6 +146,67 @@ def _deep_merge_payload(base: Mapping[str, object], patch: Mapping[str, object])
         else:
             merged[key] = value
     return merged
+
+
+def _collect_unresolved_template_paths(value: object, *, path: str = "") -> list[str]:
+    """Collect unresolved Jinja placeholders that remain in a rendered payload."""
+
+    unresolved: list[str] = []
+    if isinstance(value, str):
+        for match in _JINJA_PLACEHOLDER_PATTERN.finditer(value):
+            expression = match.group("expr").strip()
+            location = path or "<root>"
+            unresolved.append(f"{location}: {expression}")
+        return unresolved
+
+    if isinstance(value, Mapping):
+        for key, item in value.items():
+            child_path = f"{path}.{key}" if path else str(key)
+            unresolved.extend(_collect_unresolved_template_paths(item, path=child_path))
+        return unresolved
+
+    if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+        for index, item in enumerate(value):
+            child_path = f"{path}[{index}]" if path else f"[{index}]"
+            unresolved.extend(_collect_unresolved_template_paths(item, path=child_path))
+
+    return unresolved
+
+
+def _render_visual_payload_with_slide_context(
+    *,
+    payload: Mapping[str, object],
+    env: Environment,
+    context: Mapping[str, object],
+) -> dict[str, object]:
+    """Render visual payload templates using the current slide context.
+
+    Visual YAML files are shared across customers and often include Jinja placeholders
+    for per-pack values (for example SLA benchmark thresholds). Render those values
+    immediately before model validation so both referenced and inline visuals can use
+    slide context safely.
+    """
+
+    strict_env = Environment(undefined=StrictUndefined)
+    strict_env.globals.update(env.globals)
+    strict_env.filters.update(env.filters)
+    strict_env.tests.update(env.tests)
+
+    try:
+        rendered = render_value(payload, env=strict_env, context=context)
+    except Exception as exc:  # noqa: BLE001
+        raise ValueError(f"Failed to render visual payload templates: {exc}") from exc
+    if not isinstance(rendered, Mapping):
+        raise ValueError("Rendered visual payload must remain a mapping.")
+
+    normalised = {str(key): value for key, value in rendered.items()}
+    unresolved = _collect_unresolved_template_paths(normalised)
+    if unresolved:
+        sample = ", ".join(unresolved[:3])
+        suffix = "..." if len(unresolved) > 3 else ""
+        raise ValueError(f"Unresolved template variable(s) in visual payload: {sample}{suffix}")
+
+    return normalised
 
 
 def _normalise_series_payload(raw_series: object) -> list[dict[str, object]]:
@@ -1107,47 +1170,57 @@ def run_pack(
                     else:
                         visual = visual_loader(visual_path)
 
-                    # Apply pack-side visual overrides after loading the file-backed visual
-                    # so slides can adapt shared YAML definitions without duplicating files.
+                    # Apply any pack-side series operations and inline overrides after loading the
+                    # file-backed visual. Then render Jinja templates with the full slide context
+                    # so shared visuals can consume per-customer values like SLA benchmarks.
                     inline_overrides = _extract_pack_visual_ref_overrides(visual_ref)
                     series_operation_keys = _series_operation_keys(visual_ref)
-                    if inline_overrides or series_operation_keys:
-                        base_payload = visual.model_dump(mode="python")
-                        try:
-                            base_payload = _apply_pack_visual_series_operations(
-                                base_payload=base_payload,
-                                visual_ref=visual_ref,
-                            )
-                            # Some config models (notably Python visual configs that reuse shared base
-                            # models) intentionally exclude the discriminator from serialisation so the
-                            # YAML `type:` meta field does not conflict with their schema. Preserve the
-                            # resolved discriminator explicitly so we don't accidentally drop it during
-                            # override re-validation.
-                            merged = {**base_payload, "type": visual.type, **inline_overrides}
-                            visual = visual.__class__.model_validate(merged)
-                        except (ValidationError, ValueError) as exc:
-                            override_keys = sorted({*inline_overrides.keys(), *series_operation_keys})
-                            keys = ", ".join(override_keys)
-                            wrapped = ValueError(f"Inline visual override validation failed for key(s): {keys}")
-                            wrapped.__cause__ = exc
-                            raise PackExecutionError(
-                                pack_path=pack_path,
-                                slide_index=index,
-                                slide_slug=slide_slug_for_error,
-                                slide_id=slide.id,
-                                slide_title=slide.title,
-                                visual_ref=visual_ref_label,
-                                visual_path=visual_path,
-                                phase="visual_override",
-                                dax_artifact_paths=(),
-                                cause=wrapped,
-                            )
+                    base_payload = visual.model_dump(mode="python")
+                    try:
+                        base_payload = _apply_pack_visual_series_operations(
+                            base_payload=base_payload,
+                            visual_ref=visual_ref,
+                        )
+                        # Some config models (notably Python visual configs that reuse shared base
+                        # models) intentionally exclude the discriminator from serialisation so the
+                        # YAML `type:` meta field does not conflict with their schema. Preserve the
+                        # resolved discriminator explicitly so we don't accidentally drop it during
+                        # override re-validation.
+                        merged = {**base_payload, "type": visual.type, **inline_overrides}
+                        rendered_payload = _render_visual_payload_with_slide_context(
+                            payload=merged,
+                            env=jinja_env,
+                            context=slide_payload,
+                        )
+                        visual = visual.__class__.model_validate(rendered_payload)
+                    except (ValidationError, ValueError) as exc:
+                        override_keys = sorted({*inline_overrides.keys(), *series_operation_keys})
+                        keys = ", ".join(override_keys) if override_keys else "template_render"
+                        wrapped = ValueError(f"Inline visual override validation failed for key(s): {keys}")
+                        wrapped.__cause__ = exc
+                        raise PackExecutionError(
+                            pack_path=pack_path,
+                            slide_index=index,
+                            slide_slug=slide_slug_for_error,
+                            slide_id=slide.id,
+                            slide_title=slide.title,
+                            visual_ref=visual_ref_label,
+                            visual_path=visual_path,
+                            phase="visual_override",
+                            dax_artifact_paths=(),
+                            cause=wrapped,
+                        )
                 else:
                     visual_path = pack_path
-                    payload = visual_ref.model_dump()
+                    payload = visual_ref.model_dump(mode="python", exclude_none=True)
                     payload.pop("ref", None)
                     payload.pop("filters", None)
                     payload.pop("calculate", None)
+                    payload = _render_visual_payload_with_slide_context(
+                        payload=payload,
+                        env=jinja_env,
+                        context=slide_payload,
+                    )
 
                     visual = load_visual_from_payload(visual_path, payload, preprocess=True)
 
