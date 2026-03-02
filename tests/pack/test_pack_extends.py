@@ -258,6 +258,71 @@ def test_pack_extends_patch_mode_requires_inherited_slide_ids(tmp_path: Path) ->
         load_pack_config(child)
 
 
+def test_pack_extends_additively_merges_visual_series_operations(tmp_path: Path) -> None:
+    base = tmp_path / "base.yaml"
+    _write(
+        base,
+        """
+        schema: base-pack
+        slides:
+          - id: dashboard
+            title: "Dashboard"
+            visual:
+              ref: dashboard.yaml
+              series_remove:
+                - legacy_line
+              series_update:
+                - id: customer_lender
+                  patch:
+                    label: "Base label"
+              series_add:
+                - id: split_a
+                  label: "Split A"
+                  type: line
+                  metric:
+                    key: docusign_completions_cumulative_pct
+        """,
+    )
+
+    child = tmp_path / "child.yaml"
+    _write(
+        child,
+        """
+        schema: child-pack
+        extends: ./base.yaml
+        slides_update:
+          - id: dashboard
+            patch:
+              visual:
+                series_remove:
+                  - obsolete_line
+                series_update:
+                  - id: customer_lender
+                    patch:
+                      style:
+                        color: "#5B9BD5"
+                series_add:
+                  - id: split_b
+                    label: "Split B"
+                    type: line
+                    metric:
+                      key: docusign_completions_cumulative_pct
+        """,
+    )
+
+    pack = load_pack_config(child)
+    slide = next(item for item in pack.slides if item.id == "dashboard")
+    assert slide.visual is not None
+
+    assert slide.visual.series_remove == ["legacy_line", "obsolete_line"]
+
+    update_ids = [operation.id for operation in slide.visual.series_update or []]
+    assert update_ids == ["customer_lender", "customer_lender"]
+
+    add_ids = [series.id for series in slide.visual.series_add or []]
+    assert add_ids == ["split_a", "split_b"]
+
+
 def test_pack_extends_rebases_inherited_pptx_template_path(tmp_path: Path) -> None:
     base_dir = tmp_path / "base"
     child_dir = tmp_path / "child"

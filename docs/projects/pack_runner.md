@@ -161,6 +161,9 @@ slides:
     These operations are only supported for visuals that expose a top-level `series`
     list (for example cartesian-style visuals).
     Operation order is fixed: `series_remove` -> `series_update` -> `series_add`.
+    When packs use `extends` + `slides_update`, inherited `visual.series_remove`,
+    `visual.series_update`, and `visual.series_add` lists are additive (parent
+    entries are preserved and child entries append in inheritance order).
     Do not combine `visual.series` with `visual.series_*` operations in the same
     mapping.
   - `visual.filters` – slide-level OData filters (merged with pack-level

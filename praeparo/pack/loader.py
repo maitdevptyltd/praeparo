@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import os
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Mapping, Any
 
@@ -188,11 +189,30 @@ def _read_pack_payload(path: Path) -> Mapping[str, Any]:
     return payload
 
 
+_ADDITIVE_LIST_KEYS = frozenset({"series_add", "series_update", "series_remove"})
+
+
 def _deep_merge(base: dict[str, Any], update: Mapping[str, Any]) -> dict[str, Any]:
-    """Deep-merge mapping values while letting update win for non-mappings."""
+    """Deep-merge mapping values while letting update win for non-mappings.
+
+    Most list values remain replacement-based (child overrides parent). Pack
+    visual series operations are the exception: when those list keys are
+    present in both payloads, append parent -> child so extends chains can add
+    operations incrementally without re-declaring inherited entries.
+    """
 
     merged = dict(base)
     for key, value in update.items():
+        if (
+            key in _ADDITIVE_LIST_KEYS
+            and key in merged
+            and isinstance(merged[key], Sequence)
+            and isinstance(value, Sequence)
+            and not isinstance(merged[key], (str, bytes, bytearray))
+            and not isinstance(value, (str, bytes, bytearray))
+        ):
+            merged[key] = [*list(merged[key]), *list(value)]
+            continue
         if (
             key in merged
             and isinstance(merged[key], Mapping)
