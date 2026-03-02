@@ -628,6 +628,13 @@ class PackSlide(BaseModel):
         default=None,
         description="Optional static image path when using a PPTX template without a visual.",
     )
+    manual_replace: bool = Field(
+        default=False,
+        description=(
+            "When true, overlay a diagonal red 'REPLACE' watermark in PPTX output so "
+            "manual-owned template slides are obvious to reviewers."
+        ),
+    )
 
     @field_validator("title")
     @classmethod

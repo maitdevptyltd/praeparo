@@ -169,6 +169,9 @@ slides:
     slide-level `calculate`).
   - `image` – optional static image path (relative to the pack file) used for
     PPTX slides that do not declare a visual. Requires `template`.
+  - `manual_replace` – optional boolean. When `true`, Praeparo overlays a large
+    diagonal red `REPLACE` marker in the assembled PPTX slide so manual-owned
+    placeholders are explicit during review.
   - `placeholders` – optional map of placeholder ids to bindings for multi-slot
     templates (for example a two-up slide). Each placeholder must define
     exactly one of:
@@ -206,6 +209,16 @@ visual:
         calculate:
           - REMOVEFILTERS('dim_lender')
           - "'dim_lender'[LenderId] = 166"
+```
+
+Manual replacement watermark example:
+
+```yaml
+slides:
+  - id: executive_summary
+    title: "Executive Summary"
+    template: "full_page_image"
+    manual_replace: true
 ```
 
 ### Extends resolution order

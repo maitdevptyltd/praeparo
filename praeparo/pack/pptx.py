@@ -18,13 +18,16 @@ from typing import Iterable, Mapping, Sequence
 
 from jinja2 import Environment
 
+from pptx.dml.color import RGBColor
 from pptx import Presentation
 from pptx.enum.shapes import MSO_SHAPE_TYPE, PP_PLACEHOLDER
+from pptx.enum.text import PP_ALIGN
 from pptx.oxml.ns import qn
 from pptx.opc.constants import RELATIONSHIP_TYPE as RT
 from pptx.shapes.group import GroupShape
 import pptx.shapes.picture as pptx_picture
 from pptx.text.text import _Run
+from pptx.util import Pt
 
 from praeparo.models import PackConfig, PackSlide
 from praeparo.pack.metric_context import dump_context_payload
@@ -325,6 +328,27 @@ def _render_jinja_in_slide(
                 i = j + 1
 
 
+def _add_manual_replace_watermark(*, slide, slide_width: int, slide_height: int) -> None:
+    """Overlay a prominent diagonal marker for manual-owned placeholder slides."""
+
+    box_width = int(slide_width * 1.1)
+    box_height = int(slide_height * 0.2)
+    left = int((slide_width - box_width) / 2)
+    top = int((slide_height - box_height) / 2)
+    text_box = slide.shapes.add_textbox(left, top, box_width, box_height)
+
+    text_box.rotation = 45
+    text_frame = text_box.text_frame
+    text_frame.clear()
+    paragraph = text_frame.paragraphs[0]
+    paragraph.alignment = PP_ALIGN.CENTER
+    run = paragraph.add_run()
+    run.text = "REPLACE"
+    run.font.bold = True
+    run.font.size = Pt(96)
+    run.font.color.rgb = RGBColor(255, 0, 0)
+
+
 def assemble_pack_pptx(
     *,
     pack: PackConfig,
@@ -487,6 +511,13 @@ def assemble_pack_pptx(
             logger.info(
                 "Rendering template-only slide without visual or placeholders",
                 extra={"slide": slide_slug, "template": slide.template},
+            )
+
+        if slide.manual_replace:
+            _add_manual_replace_watermark(
+                slide=cloned,
+                slide_width=int(presentation.slide_width),
+                slide_height=int(presentation.slide_height),
             )
 
     result_path.parent.mkdir(parents=True, exist_ok=True)

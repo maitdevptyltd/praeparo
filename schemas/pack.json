@@ -497,6 +497,12 @@
           "default": null,
           "description": "Optional static image path when using a PPTX template without a visual.",
           "title": "Image"
+        },
+        "manual_replace": {
+          "default": false,
+          "description": "When true, overlay a diagonal red 'REPLACE' watermark in PPTX output so manual-owned template slides are obvious to reviewers.",
+          "title": "Manual Replace",
+          "type": "boolean"
         }
       },
       "required": [

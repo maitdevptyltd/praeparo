@@ -6,13 +6,22 @@ import zipfile
 from pathlib import Path
 import xml.etree.ElementTree as ET
 
+import pptx.enum.shapes as pptx_shapes
+from pptx.dml.color import RGBColor
 from pptx import Presentation
-from pptx.enum.shapes import MSO_SHAPE_TYPE, PP_PLACEHOLDER
+from pptx.enum.shapes import MSO_SHAPE_TYPE
 from pptx.util import Inches
 
 from praeparo.pack.pptx import assemble_pack_pptx
 from praeparo.models import PackConfig, PackPlaceholder, PackSlide, PackVisualRef
 from praeparo.visuals.dax.planner_core import slugify
+
+PP_PLACEHOLDER_ENUM = getattr(
+    pptx_shapes,
+    "PP_PLACEHOLDER_TYPE",
+    getattr(pptx_shapes, "PP_PLACEHOLDER"),
+)
+MSO_PICTURE = getattr(MSO_SHAPE_TYPE, "PICTURE")
 
 
 def _write_png(path: Path, width: int = 1, height: int = 1) -> None:
@@ -41,7 +50,7 @@ def _build_template(path: Path) -> None:
 
     # Single-image template uses the built-in picture placeholder layout so we exercise placeholder logic.
     single = prs.slides.add_slide(picture_with_caption)
-    picture_placeholder = next(ph for ph in single.placeholders if ph.placeholder_format.type == PP_PLACEHOLDER.PICTURE)
+    picture_placeholder = next(ph for ph in single.placeholders if ph.placeholder_format.type == PP_PLACEHOLDER_ENUM.PICTURE)
     picture_placeholder.name = "image"
     picture_placeholder.left = Inches(1)
     picture_placeholder.top = Inches(1)
@@ -72,7 +81,7 @@ def _build_template_with_background(path: Path) -> None:
     background = slide.shapes.add_picture(str(tmp_img), Inches(0), Inches(0), width=prs.slide_width, height=prs.slide_height)
     background.name = "background"
 
-    logo_placeholder = next(ph for ph in slide.placeholders if ph.placeholder_format.type == PP_PLACEHOLDER.PICTURE)
+    logo_placeholder = next(ph for ph in slide.placeholders if ph.placeholder_format.type == PP_PLACEHOLDER_ENUM.PICTURE)
     logo_placeholder.name = "logo"
     logo_placeholder.left = Inches(1)
     logo_placeholder.top = Inches(1)
@@ -102,7 +111,7 @@ def _build_template_with_slide_background_fill(path: Path) -> None:
     )
     background_shape.name = "background"
 
-    logo_placeholder = next(ph for ph in slide.placeholders if ph.placeholder_format.type == PP_PLACEHOLDER.PICTURE)
+    logo_placeholder = next(ph for ph in slide.placeholders if ph.placeholder_format.type == PP_PLACEHOLDER_ENUM.PICTURE)
     logo_placeholder.name = "logo"
     logo_placeholder.left = Inches(1)
     logo_placeholder.top = Inches(1)
@@ -197,7 +206,7 @@ def test_assemble_pptx_single_placeholder_shorthand(tmp_path: Path) -> None:
 
     prs = Presentation(out)
     assert len(prs.slides) == 1
-    picture_shapes = [s for s in prs.slides[0].shapes if s.shape_type == MSO_SHAPE_TYPE.PICTURE]
+    picture_shapes = [s for s in prs.slides[0].shapes if s.shape_type == MSO_PICTURE]
     assert picture_shapes  # image placed
     assert prs.slides[0].slide_layout.name == template_layout_name
 
@@ -237,7 +246,7 @@ def test_replace_picture_fits_and_centers(tmp_path: Path) -> None:
     )
 
     prs = Presentation(out)
-    picture_shapes = [s for s in prs.slides[0].shapes if s.shape_type == MSO_SHAPE_TYPE.PICTURE]
+    picture_shapes = [s for s in prs.slides[0].shapes if s.shape_type == MSO_PICTURE]
     assert len(picture_shapes) == 1
 
     pic = picture_shapes[0]
@@ -313,10 +322,10 @@ def test_assemble_pptx_multi_placeholder_and_skip_no_template(tmp_path: Path) ->
     prs = Presentation(out)
     assert len(prs.slides) == 2  # no-template slide skipped
 
-    first_slide_pictures = [s for s in prs.slides[0].shapes if s.shape_type == MSO_SHAPE_TYPE.PICTURE]
+    first_slide_pictures = [s for s in prs.slides[0].shapes if s.shape_type == MSO_PICTURE]
     assert len(first_slide_pictures) >= 2
 
-    second_slide_pictures = [s for s in prs.slides[1].shapes if s.shape_type == MSO_SHAPE_TYPE.PICTURE]
+    second_slide_pictures = [s for s in prs.slides[1].shapes if s.shape_type == MSO_PICTURE]
     assert second_slide_pictures
 
 
@@ -353,15 +362,53 @@ def test_assemble_pptx_handles_template_only_slide(tmp_path: Path) -> None:
 
     prs = Presentation(out)
     assert len(prs.slides) == 2
-    static_pictures = [s for s in prs.slides[0].shapes if s.shape_type == MSO_SHAPE_TYPE.PICTURE]
+    static_pictures = [s for s in prs.slides[0].shapes if s.shape_type == MSO_PICTURE]
     picture_placeholders = [
         s
         for s in prs.slides[0].shapes
         if getattr(s, "is_placeholder", False)
         and getattr(s, "placeholder_format", None)
-        and s.placeholder_format.type == PP_PLACEHOLDER.PICTURE
+        and s.placeholder_format.type == PP_PLACEHOLDER_ENUM.PICTURE
     ]
     assert static_pictures or picture_placeholders, "Template-only slide should retain its image without errors"
+
+
+def test_assemble_pptx_adds_manual_replace_watermark(tmp_path: Path) -> None:
+    template_path = tmp_path / "template.pptx"
+    _build_template(template_path)
+
+    pack = PackConfig(
+        schema="test-pack",
+        slides=[PackSlide(title="Manual Placeholder", id="manual-placeholder", template="single_image", manual_replace=True)],
+    )
+
+    out = tmp_path / "deck_manual_replace.pptx"
+    assemble_pack_pptx(
+        pack=pack,
+        results=[],
+        slide_pngs={},
+        placeholder_pngs={},
+        result_path=out,
+        template_path=template_path,
+    )
+
+    prs = Presentation(out)
+    assert len(prs.slides) == 1
+    slide = prs.slides[0]
+
+    replace_shapes = [
+        shape
+        for shape in slide.shapes
+        if getattr(shape, "has_text_frame", False) and "REPLACE" in getattr(shape, "text", "")
+    ]
+    assert replace_shapes
+
+    watermark = replace_shapes[0]
+    assert abs(float(watermark.rotation) - 45.0) < 0.1
+
+    runs = [run for paragraph in watermark.text_frame.paragraphs for run in paragraph.runs if run.text == "REPLACE"]
+    assert runs
+    assert runs[0].font.color.rgb == RGBColor(255, 0, 0)
 
 
 def test_background_picture_ignored_for_single_visual_shorthand(tmp_path: Path) -> None:
@@ -396,7 +443,7 @@ def test_background_picture_ignored_for_single_visual_shorthand(tmp_path: Path) 
 
     prs = Presentation(out)
     slide = prs.slides[0]
-    pictures = [shape for shape in slide.shapes if shape.shape_type == MSO_SHAPE_TYPE.PICTURE]
+    pictures = [shape for shape in slide.shapes if shape.shape_type == MSO_PICTURE]
 
     assert len(pictures) >= 2, "Background image should remain alongside replaced placeholder"
     assert "logo" in [getattr(shape, "name", None) for shape in pictures]
