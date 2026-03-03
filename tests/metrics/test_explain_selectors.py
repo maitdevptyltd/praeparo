@@ -97,6 +97,50 @@ def _write_metric_registry(metrics_root: Path) -> None:
     )
 
 
+def _write_lodgement_metric_registry(metrics_root: Path) -> None:
+    metrics_root.mkdir(parents=True, exist_ok=True)
+    (metrics_root / "lodged_with_lto.yaml").write_text(
+        "\n".join(
+            [
+                "schema: draft-1",
+                "key: lodged_with_lto",
+                "display_name: Lodged with LTO",
+                "section: Lodgement",
+                "define: \"DISTINCTCOUNT ( 'fact_events'[MatterId] )\"",
+                "calculate:",
+                "  - dim_matter[IsLodgementRequired] = TRUE()",
+                "explain:",
+                "  from: |",
+                "    FILTER(",
+                "      dim_matter,",
+                "      dim_matter[IsLodgementRequired] = TRUE()",
+                "    )",
+                "  grain:",
+                "    matter_id: dim_matter[MatterId]",
+                "variants:",
+                "  within_3_network_days:",
+                "    display_name: Lodged with LTO within 3 network days",
+                "    calculate:",
+                "      - |",
+                "        FILTER(",
+                "          fact_events,",
+                "          VAR SettlementDate =",
+                "            LOOKUPVALUE(",
+                "              'fact_settlement_schedule'[SettlementDate],",
+                "              'fact_settlement_schedule'[SettlementScheduleId],",
+                "              RELATED('dim_matter'[SettlementScheduleId])",
+                "            )",
+                "          RETURN",
+                "            NOT ISBLANK(SettlementDate)",
+                "              && GetCustomerNetworkDays(SettlementDate, fact_events[EventTimestampUTC]) <= 3",
+                "        )",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+
 def _extract_var_block(statement: str, *, var_name: str) -> str:
     lines = statement.splitlines()
     start = None
@@ -213,6 +257,24 @@ def test_explain_binding_ratio_does_not_apply_define_filters_to_denominator(tmp_
     metric_measure_block = _extract_measure_block(plan.statement, measure_name="__praeparo_explain_metric")
     assert numerator_filter in metric_measure_block
     assert eval_filter not in metric_measure_block
+
+
+def test_explain_binding_emits_passes_variant_for_cross_table_variant_filters(tmp_path: Path) -> None:
+    metrics_root = tmp_path / "metrics"
+    _write_lodgement_metric_registry(metrics_root)
+    catalog = load_metric_catalog([metrics_root])
+
+    plan = build_metric_binding_explain_plan(
+        catalog,
+        metric_reference="lodged_with_lto.within_3_network_days",
+        metric_identifier="dashboard#lodgement#lodged_with_lto.within_3_network_days",
+        context_calculate_filters=["'dim_calendar'[month] = DATEVALUE(\"2026-02-01\")"],
+        limit=100,
+    )
+
+    assert "\"__passes_variant\"" in plan.statement
+    assert "COALESCE ( CALCULATE ( 'adhoc'[__praeparo_explain_metric] ), 0 ) <> 0" in plan.statement
+    assert not any("__passes_variant" in warning for warning in plan.warnings)
 
 
 def test_metrics_cli_loads_plugins_before_listing_bindings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys) -> None:

@@ -46,6 +46,12 @@ class MetricExplainPlan:
     """Human-readable warnings (e.g. when __passes_variant could not be emitted)."""
 
 
+@dataclass(frozen=True)
+class _RowPredicateResult:
+    expression: str
+    is_exact: bool
+
+
 def resolve_metric_explain_spec(
     catalog: MetricCatalog,
     *,
@@ -207,15 +213,21 @@ def build_metric_explain_plan(
     passes_variant_expr: str | None = None
     if variant_path and variant_mode == "flag":
         variant_filters = _collect_variant_calculate_filters(metric, variant_path)
-        passes_variant_expr = _try_build_passes_variant(
+        passes_variant_result = _try_build_passes_variant(
             variant_filters,
-            driving_table=driving_table,
+            driving_table=primary_grain_table,
         )
-        if passes_variant_expr is None and variant_filters:
+        if passes_variant_result is None and variant_filters:
             warnings.append(
                 "Could not emit __passes_variant because one or more variant filters could not be converted "
                 "into a per-row boolean expression. Add an explicit boolean in explain.select if required."
             )
+        elif passes_variant_result is not None:
+            passes_variant_expr = passes_variant_result.expression
+            if not passes_variant_result.is_exact:
+                # Cross-table variant filters are converted to row-level metric contribution checks
+                # so the flag matches numerator inclusion instead of broad existence predicates.
+                passes_variant_expr = _build_metric_contribution_passes_expression()
 
     # Compile constant headline values once per query.
     metric_value_expr = normalize_dax_expression(metric_definition.expression)
@@ -420,15 +432,21 @@ def build_metric_binding_explain_plan(
     passes_variant_expr: str | None = None
     if variant_path and variant_mode == "flag":
         variant_filters = _collect_variant_calculate_filters(metric, variant_path)
-        passes_variant_expr = _try_build_passes_variant(
+        passes_variant_result = _try_build_passes_variant(
             variant_filters,
-            driving_table=driving_table,
+            driving_table=primary_grain_table,
         )
-        if passes_variant_expr is None and variant_filters:
+        if passes_variant_result is None and variant_filters:
             warnings.append(
                 "Could not emit __passes_variant because one or more variant filters could not be converted "
                 "into a per-row boolean expression. Add an explicit boolean in explain.select if required."
             )
+        elif passes_variant_result is not None:
+            passes_variant_expr = passes_variant_result.expression
+            if not passes_variant_result.is_exact:
+                # Cross-table variant filters are converted to row-level metric contribution checks
+                # so the flag matches numerator inclusion instead of broad existence predicates.
+                passes_variant_expr = _build_metric_contribution_passes_expression()
 
     # Compile constant headline values once per query.
     context_filters = _format_filter_block(_dedupe_preserve_order(_normalise_fragments(context_calculate_filters)))
@@ -903,28 +921,30 @@ def _collect_variant_calculate_filters(metric: MetricDefinition, variant_path: s
     return filters
 
 
-def _try_build_passes_variant(filters: Sequence[str], *, driving_table: str) -> str | None:
+def _try_build_passes_variant(filters: Sequence[str], *, driving_table: str) -> _RowPredicateResult | None:
     """Return a per-row boolean predicate representing the variant filters when possible."""
 
     predicates: list[str] = []
+    is_exact = True
     for raw in filters:
         candidate = _try_extract_row_predicate(raw, driving_table=driving_table)
         if candidate is None:
             return None
-        predicates.append(candidate)
+        predicates.append(candidate.expression)
+        is_exact = is_exact and candidate.is_exact
 
     if not predicates:
         return None
 
     joined = " && ".join(f"({normalize_dax_expression(item)})" for item in predicates)
-    return joined
+    return _RowPredicateResult(expression=joined, is_exact=is_exact)
 
 
 _KEEPFILTERS_PREFIX = re.compile(r"(?is)^KEEPFILTERS\s*\(")
 _FILTER_PREFIX = re.compile(r"(?is)^FILTER\s*\(")
 
 
-def _try_extract_row_predicate(filter_expr: str, *, driving_table: str) -> str | None:
+def _try_extract_row_predicate(filter_expr: str, *, driving_table: str) -> _RowPredicateResult | None:
     """Convert a CALCULATE-style filter argument into a row-context boolean when safe."""
 
     cleaned = str(filter_expr or "").strip()
@@ -949,9 +969,24 @@ def _try_extract_row_predicate(filter_expr: str, *, driving_table: str) -> str |
         # may change row context and are not safely reducible.
         normalized_driving = normalize_dax_expression(driving_table)
         if _canonical_table_ref(table_arg) != _canonical_table_ref(normalized_driving):
-            return None
+            if not _is_simple_table_reference(table_arg):
+                return None
+            return _RowPredicateResult(
+                expression=(
+                "CALCULATE (\n"
+                "    COUNTROWS (\n"
+                "        FILTER (\n"
+                f"            {table_arg},\n"
+                f"            {predicate_arg}\n"
+                "        )\n"
+                "    )\n"
+                ") > 0"
+                ),
+                is_exact=False,
+            )
 
-        return predicate_arg.strip() or None
+        predicate = predicate_arg.strip()
+        return _RowPredicateResult(expression=predicate, is_exact=True) if predicate else None
 
     # Treat anything else as a scalar predicate. We do not attempt to support
     # arbitrary table-returning filter expressions here.
@@ -959,7 +994,13 @@ def _try_extract_row_predicate(filter_expr: str, *, driving_table: str) -> str |
     for prefix in ("CALCULATETABLE", "SUMMARIZE", "SUMMARIZECOLUMNS", "TREATAS", "VALUES", "ALL", "ALLEXCEPT"):
         if upper.startswith(prefix + "(") or upper.startswith(prefix + " ("):
             return None
-    return cleaned
+    return _RowPredicateResult(expression=cleaned, is_exact=True)
+
+
+def _build_metric_contribution_passes_expression() -> str:
+    return (
+        f"COALESCE ( CALCULATE ( {DEFAULT_MEASURE_TABLE}[{_EXPLAIN_METRIC_MEASURE}] ), 0 ) <> 0"
+    )
 
 
 def _normalise_fragments(values: Iterable[str]) -> list[str]:
@@ -1042,6 +1083,15 @@ def _canonical_table_ref(value: str) -> str:
         if cleaned.endswith("'"):
             cleaned = cleaned[1:-1]
     return cleaned
+
+
+def _is_simple_table_reference(value: str) -> bool:
+    cleaned = str(value or "").strip()
+    if not cleaned:
+        return False
+    if cleaned.startswith("'") and cleaned.endswith("'") and len(cleaned) > 2:
+        return True
+    return re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", cleaned) is not None
 
 
 __all__ = [

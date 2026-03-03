@@ -146,7 +146,7 @@ To export only passing rows:
 poetry run praeparo-metrics explain documents_verified.within_1_day --variant-mode filter
 ```
 
-`__passes_variant` is best-effort. When variant filters cannot be converted into a per-row boolean predicate without regressing performance, Praeparo omits the column and emits a warning; authors can supply an explicit boolean column via `explain.select` when required.
+`__passes_variant` is best-effort. For common cross-table variant filters (for example, a matter-grain explain rowset with `FILTER(fact_events, ...)` predicates), Praeparo now falls back to a row-level metric-contribution check so the flag tracks whether each row contributes to the variant numerator. When filters still cannot be converted safely, Praeparo omits the column and emits a warning; authors can supply an explicit boolean column via `explain.select` when required.
 
 ### Execution (`--data-mode`)
 
