@@ -240,10 +240,14 @@ in this deterministic order:
 When enabled, evidence exports are written under the pack artefact directory:
 
 - `<artefact_dir>/<output_dir>/manifest.json`
-- `<artefact_dir>/<output_dir>/<slide_slug>/<placeholder_id_or_visual>/<binding_slug>/evidence.csv`
-- `<artefact_dir>/<output_dir>/<slide_slug>/<placeholder_id_or_visual>/<binding_slug>.csv`
-- `<artefact_dir>/<output_dir>/<slide_slug>/<placeholder_id_or_visual>/<binding_slug>/_artifacts/explain.dax`
-- `<artefact_dir>/<output_dir>/<slide_slug>/<placeholder_id_or_visual>/<binding_slug>/_artifacts/summary.json`
+- `<artefact_dir>/<output_dir>/<slide_slug>/<binding_slug>/evidence.csv`
+- `<artefact_dir>/<output_dir>/<slide_slug>/<binding_slug>.csv`
+- `<artefact_dir>/<output_dir>/<slide_slug>/<placeholder_id>/<binding_slug>/evidence.csv` (for placeholder-based slides)
+- `<artefact_dir>/<output_dir>/<slide_slug>/<placeholder_id>/<binding_slug>.csv` (for placeholder-based slides)
+- `<artefact_dir>/<output_dir>/<slide_slug>/<binding_slug>/_artifacts/explain.dax`
+- `<artefact_dir>/<output_dir>/<slide_slug>/<binding_slug>/_artifacts/summary.json`
+- `<artefact_dir>/<output_dir>/<slide_slug>/<placeholder_id>/<binding_slug>/_artifacts/explain.dax` (for placeholder-based slides)
+- `<artefact_dir>/<output_dir>/<slide_slug>/<placeholder_id>/<binding_slug>/_artifacts/summary.json` (for placeholder-based slides)
 
 Operational notes:
 

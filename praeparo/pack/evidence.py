@@ -106,8 +106,10 @@ def derive_evidence_outputs(
 ) -> MetricExplainOutputs:
     """Return per-binding output paths under the pack evidence directory."""
 
-    placeholder_token = placeholder_id or "visual"
-    binding_dir = artefact_dir / slide_slug / placeholder_token / slugify(binding.binding_id)
+    binding_slug = slugify(binding.binding_id)
+    binding_dir = artefact_dir / slide_slug / binding_slug
+    if placeholder_id:
+        binding_dir = artefact_dir / slide_slug / placeholder_id / binding_slug
 
     evidence_path = binding_dir / "evidence.csv"
     dax_path = binding_dir / "_artifacts" / "explain.dax"
@@ -129,9 +131,10 @@ def derive_flat_evidence_output_path(
 ) -> Path:
     """Return the root-level sibling CSV path for quick evidence access."""
 
-    placeholder_token = placeholder_id or "visual"
     binding_slug = slugify(binding.binding_id)
-    return artefact_dir / slide_slug / placeholder_token / f"{binding_slug}.csv"
+    if placeholder_id:
+        return artefact_dir / slide_slug / placeholder_id / f"{binding_slug}.csv"
+    return artefact_dir / slide_slug / f"{binding_slug}.csv"
 
 
 def migrate_legacy_evidence_filename(*, outputs: MetricExplainOutputs, metric_slug: str) -> None:
@@ -304,8 +307,10 @@ def build_pack_evidence_target(
         else None
     )
 
-    placeholder_token = placeholder_id or "visual"
-    target_key = f"{slide_slug}/{placeholder_token}/{slugify(binding.binding_id)}"
+    binding_slug = slugify(binding.binding_id)
+    target_key = f"{slide_slug}/{binding_slug}"
+    if placeholder_id:
+        target_key = f"{slide_slug}/{placeholder_id}/{binding_slug}"
     return PackEvidenceTarget(
         target_key=target_key,
         selector_identifier=selector_identifier,

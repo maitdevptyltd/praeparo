@@ -8,7 +8,7 @@ import pytest
 
 from praeparo.models import PackConfig, PackEvidenceConfig, PackEvidenceBindingsConfig, PackSlide, PackVisualRef
 from praeparo.pack import create_pack_jinja_env, run_pack
-from praeparo.pack.evidence import select_evidence_bindings, should_skip_existing
+from praeparo.pack.evidence import derive_evidence_outputs, derive_flat_evidence_output_path, select_evidence_bindings, should_skip_existing
 from praeparo.pipeline import OutputKind, PipelineDataOptions, PipelineOptions
 from praeparo.visuals.bindings import VisualMetricBinding, register_visual_bindings_adapter
 
@@ -102,6 +102,48 @@ def test_should_skip_existing_requires_fingerprint_and_files(tmp_path: Path) -> 
         )
         is False
     )
+
+
+def test_derive_evidence_outputs_omits_visual_segment_when_placeholder_is_absent(tmp_path: Path) -> None:
+    binding = VisualMetricBinding(binding_id="Row 0", selector_segments=("row_0",), metric_key="m")
+
+    outputs = derive_evidence_outputs(
+        artefact_dir=tmp_path,
+        slide_slug="performance_dashboard",
+        placeholder_id=None,
+        binding=binding,
+    )
+    flat_path = derive_flat_evidence_output_path(
+        artefact_dir=tmp_path,
+        slide_slug="performance_dashboard",
+        placeholder_id=None,
+        binding=binding,
+    )
+
+    assert outputs.evidence_path == tmp_path / "performance_dashboard" / "row_0" / "evidence.csv"
+    assert outputs.dax_path == tmp_path / "performance_dashboard" / "row_0" / "_artifacts" / "explain.dax"
+    assert flat_path == tmp_path / "performance_dashboard" / "row_0.csv"
+
+
+def test_derive_evidence_outputs_keeps_placeholder_segment_when_present(tmp_path: Path) -> None:
+    binding = VisualMetricBinding(binding_id="Row 0", selector_segments=("row_0",), metric_key="m")
+
+    outputs = derive_evidence_outputs(
+        artefact_dir=tmp_path,
+        slide_slug="performance_dashboard",
+        placeholder_id="left_chart",
+        binding=binding,
+    )
+    flat_path = derive_flat_evidence_output_path(
+        artefact_dir=tmp_path,
+        slide_slug="performance_dashboard",
+        placeholder_id="left_chart",
+        binding=binding,
+    )
+
+    assert outputs.evidence_path == tmp_path / "performance_dashboard" / "left_chart" / "row_0" / "evidence.csv"
+    assert outputs.dax_path == tmp_path / "performance_dashboard" / "left_chart" / "row_0" / "_artifacts" / "explain.dax"
+    assert flat_path == tmp_path / "performance_dashboard" / "left_chart" / "row_0.csv"
 
 
 class _StubPipeline:
@@ -218,10 +260,15 @@ def test_run_pack_exports_evidence_for_selected_bindings(tmp_path: Path) -> None
     for entry in bindings:
         paths = entry.get("paths")
         assert isinstance(paths, Mapping)
+        target_key = entry.get("target_key")
+        assert isinstance(target_key, str)
 
         evidence_path = Path(str(paths["evidence"]))
         evidence_flat_path = Path(str(paths["evidence_flat"]))
 
+        assert "/visual/" not in target_key
+        assert "/visual/" not in evidence_path.as_posix()
+        assert "/visual/" not in evidence_flat_path.as_posix()
         assert evidence_path.name == "evidence.csv"
         assert evidence_path.exists()
         assert evidence_flat_path.exists()
