@@ -56,6 +56,9 @@ def test_approve_pack_render_manifest_promotes_png_and_records_lineage(tmp_path:
     assert approval.approved_targets[0].source_png_path == "renders/slide-id-1.png"
     assert approval.baseline_manifest.targets == ["slide-id-1"]
     assert approval.baseline_manifest.target_details[0].note == "Accept baseline drift after legend tweak."
+    assert approval.baseline_manifest.approval_runs[0].source_manifest_path == "render.manifest.json"
+    assert approval.baseline_manifest.approval_runs[0].source_artefact_dir == "renders"
+    assert approval.baseline_manifest.approval_runs[0].approved_targets == ["slide-id-1"]
 
     payload = json.loads(baseline_manifest_path.read_text(encoding="utf-8"))
     assert payload["kind"] == "pack_slide_baselines"
@@ -63,6 +66,8 @@ def test_approve_pack_render_manifest_promotes_png_and_records_lineage(tmp_path:
     assert payload["source_manifest_path"] == "render.manifest.json"
     assert payload["source_artefact_dir"] == "renders"
     assert payload["targets"] == ["slide-id-1"]
+    assert payload["approval_runs"][0]["source_manifest_path"] == "render.manifest.json"
+    assert payload["approval_runs"][0]["approved_targets"] == ["slide-id-1"]
 
 
 def test_approve_pack_render_manifest_preserves_existing_metadata(tmp_path: Path) -> None:
@@ -93,6 +98,8 @@ def test_approve_pack_render_manifest_preserves_existing_metadata(tmp_path: Path
             {
                 "customer": "test_customer",
                 "reference_month": "2026-02-01",
+                "source_artefact_dir": ".tmp/vscode/month=2026-02-01/police_and_nurses_governance_pack",
+                "updated_at": "2026-02-01T12:00:00+10:00",
                 "notes": ["Existing metadata should survive approval."],
                 "targets": ["other-slide", "slide-id-1"],
                 "target_details": [
@@ -141,6 +148,12 @@ def test_approve_pack_render_manifest_preserves_existing_metadata(tmp_path: Path
     assert updated_detail["source_png_path"] == "renders/slide-id-1.png"
     assert updated_detail["approved_at"] == "2026-03-15T14:05:00+10:00"
     assert updated_detail["note"] is None
+    assert payload["approval_runs"][0]["source_artefact_dir"] == ".tmp/vscode/month=2026-02-01/police_and_nurses_governance_pack"
+    assert payload["approval_runs"][0]["approved_at"] == "2026-02-01T12:00:00+10:00"
+    assert payload["approval_runs"][0]["approved_targets"] == ["other-slide", "slide-id-1"]
+    assert payload["approval_runs"][1]["source_manifest_path"] == "render.manifest.json"
+    assert payload["approval_runs"][1]["source_artefact_dir"] == "renders"
+    assert payload["approval_runs"][1]["approved_targets"] == ["slide-id-1"]
 
 
 def test_approve_pack_render_manifest_rejects_ambiguous_selector(tmp_path: Path) -> None:

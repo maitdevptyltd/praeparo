@@ -616,8 +616,9 @@ Key flags:
   - copies the current PNG to `<baseline_dir>/<target_slug>.png`; and
   - writes or updates `<baseline_dir>/baseline.manifest.json`, preserving any
     project-specific top-level metadata already stored there while adding
-    Praeparo-managed approval lineage (`target_details`, source manifest path,
-    approval timestamp, and optional note).
+    Praeparo-managed approval lineage (`target_details`, latest source manifest
+    metadata, approval timestamp, optional note, and the accumulated
+    `approval_runs` ledger for focused approvals over time).
 
   Use it after compare and inspection confirm that the new render is the
   intended outcome and should become the approved reference.

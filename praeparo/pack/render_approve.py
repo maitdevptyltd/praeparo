@@ -42,8 +42,23 @@ class PackRenderBaselineEntry(BaseModel):
     note: str | None = None
 
 
+class PackRenderBaselineApprovalRun(BaseModel):
+    """Approval record for one command invocation against the baseline set."""
+
+    approved_at: str | None = None
+    source_manifest_path: str | None = None
+    source_artefact_dir: str | None = None
+    approval_note: str | None = None
+    approved_targets: list[str] = Field(default_factory=list)
+
+
 class PackRenderBaselineManifest(BaseModel):
-    """Portable summary of approved slide PNG baselines for one pack."""
+    """Portable summary of approved slide PNG baselines for one pack.
+
+    The top-level source fields keep the latest approval lineage for backwards
+    compatibility. `approval_runs` preserves the full focused-approval history
+    so one baseline directory can safely accumulate multiple targeted renders.
+    """
 
     kind: Literal["pack_slide_baselines"] = "pack_slide_baselines"
     pack_path: str
@@ -54,6 +69,7 @@ class PackRenderBaselineManifest(BaseModel):
     approval_note: str | None = None
     targets: list[str] = Field(default_factory=list)
     target_details: list[PackRenderBaselineEntry] = Field(default_factory=list)
+    approval_runs: list[PackRenderBaselineApprovalRun] = Field(default_factory=list)
 
 
 class PackRenderBaselineApproval(BaseModel):
@@ -159,6 +175,7 @@ def write_pack_render_baseline_manifest(
         "approval_note",
         "targets",
         "target_details",
+        "approval_runs",
     }:
         payload.pop(key, None)
 
@@ -253,9 +270,19 @@ def _merge_baseline_manifest(
 
     existing_targets = _parse_existing_targets(existing_payload.get("targets"))
     existing_details = _parse_existing_target_details(existing_payload.get("target_details"))
+    existing_runs = _parse_existing_approval_runs(existing_payload)
 
     target_slugs = _merge_target_slugs(existing_targets, [item.target_slug for item in approved_targets])
     target_details = _merge_target_details(existing_details, approved_targets)
+    approval_runs = _merge_approval_runs(
+        existing_runs,
+        approved_at=approved_at,
+        manifest_path=manifest_path,
+        artefact_root=render_manifest.artefact_root,
+        project_root=project_root,
+        note=note,
+        approved_targets=approved_targets,
+    )
 
     return PackRenderBaselineManifest(
         pack_path=render_manifest.pack_path,
@@ -266,6 +293,7 @@ def _merge_baseline_manifest(
         approval_note=note if note is not None else _coerce_optional_string(existing_payload.get("approval_note")),
         targets=target_slugs,
         target_details=target_details,
+        approval_runs=approval_runs,
     )
 
 
@@ -294,6 +322,55 @@ def _parse_existing_target_details(raw: Any) -> list[PackRenderBaselineEntry]:
         except ValidationError as exc:
             raise ValueError("Existing baseline.manifest.json contains an invalid target_details entry.") from exc
     return details
+
+
+def _parse_existing_approval_runs(raw_payload: dict[str, Any]) -> list[PackRenderBaselineApprovalRun]:
+    """Validate or synthesise the approval-run ledger for existing manifests.
+
+    Older baseline manifests only stored one top-level source manifest and one
+    source artefact dir. When we first encounter that shape, promote it into a
+    synthetic approval run so future focused approvals do not overwrite it.
+    """
+
+    raw = raw_payload.get("approval_runs")
+    if raw is not None:
+        if not isinstance(raw, list):
+            raise ValueError("Existing baseline.manifest.json field 'approval_runs' must be a list.")
+
+        runs: list[PackRenderBaselineApprovalRun] = []
+        for item in raw:
+            try:
+                runs.append(PackRenderBaselineApprovalRun.model_validate(item))
+            except ValidationError as exc:
+                raise ValueError("Existing baseline.manifest.json contains an invalid approval_runs entry.") from exc
+        return runs
+
+    legacy_source_manifest_path = _coerce_optional_string(raw_payload.get("source_manifest_path"))
+    legacy_source_artefact_dir = _coerce_optional_string(raw_payload.get("source_artefact_dir"))
+    legacy_updated_at = _coerce_optional_string(raw_payload.get("updated_at"))
+    legacy_approval_note = _coerce_optional_string(raw_payload.get("approval_note"))
+    legacy_targets = _parse_existing_targets(raw_payload.get("targets"))
+
+    if not any(
+        [
+            legacy_source_manifest_path,
+            legacy_source_artefact_dir,
+            legacy_updated_at,
+            legacy_approval_note,
+            legacy_targets,
+        ]
+    ):
+        return []
+
+    return [
+        PackRenderBaselineApprovalRun(
+            approved_at=legacy_updated_at,
+            source_manifest_path=legacy_source_manifest_path,
+            source_artefact_dir=legacy_source_artefact_dir,
+            approval_note=legacy_approval_note,
+            approved_targets=legacy_targets,
+        )
+    ]
 
 
 def _merge_target_slugs(existing: Sequence[str], approved: Sequence[str]) -> list[str]:
@@ -326,6 +403,31 @@ def _merge_target_details(
             continue
         merged[existing_index] = item
 
+    return merged
+
+
+def _merge_approval_runs(
+    existing: Sequence[PackRenderBaselineApprovalRun],
+    *,
+    approved_at: str,
+    manifest_path: Path,
+    artefact_root: str,
+    project_root: Path,
+    note: str | None,
+    approved_targets: Sequence[PackRenderBaselineEntry],
+) -> list[PackRenderBaselineApprovalRun]:
+    """Append the latest approval run to the existing provenance ledger."""
+
+    merged = list(existing)
+    merged.append(
+        PackRenderBaselineApprovalRun(
+            approved_at=approved_at,
+            source_manifest_path=_display_path(manifest_path, root=project_root),
+            source_artefact_dir=artefact_root,
+            approval_note=note,
+            approved_targets=[item.target_slug for item in approved_targets],
+        )
+    )
     return merged
 
 
@@ -392,6 +494,7 @@ def _display_path(path: Path, *, root: Path) -> str:
 __all__ = [
     "PackRenderBaselineApproval",
     "PackRenderBaselineEntry",
+    "PackRenderBaselineApprovalRun",
     "PackRenderBaselineManifest",
     "approve_pack_render_manifest",
     "write_pack_render_baseline_manifest",
