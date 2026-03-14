@@ -14,6 +14,7 @@ from typing import Literal, Mapping, Sequence
 from pydantic import BaseModel, Field
 
 from praeparo.pipeline import PipelineOptions, VisualExecutionResult
+from praeparo.visuals.dax.planner_core import slugify
 
 
 class VisualRenderArtifact(BaseModel):
@@ -28,6 +29,7 @@ class VisualRenderManifest(BaseModel):
 
     kind: Literal["visual_inspect"] = "visual_inspect"
     config_path: str
+    baseline_key: str
     visual_type: str
     project_root: str
     artefact_root: str
@@ -72,6 +74,7 @@ def build_visual_render_manifest(
 
     return VisualRenderManifest(
         config_path=_display_path(config_path, root=project_root),
+        baseline_key=slugify(config_path.stem),
         visual_type=result.config.type,
         project_root=_display_path(project_root, root=project_root),
         artefact_root=_display_path(artefact_root, root=project_root),

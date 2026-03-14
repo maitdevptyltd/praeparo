@@ -190,6 +190,11 @@ This command:
 - records the emitted HTML, PNG, schema, data, and DAX files in one portable
   manifest.
 
+The manifest also records a stable `baseline_key` derived from the visual file
+name. Baseline comparison and approval commands resolve
+`<baseline_dir>/<baseline_key>.png`, so the baseline file name stays stable even
+when you use a one-off `dest` path during local debugging.
+
 Default paths (when no `dest` or output overrides are supplied):
 
 - HTML: `build/<visual>.html`
@@ -199,6 +204,35 @@ Default paths (when no `dest` or output overrides are supplied):
 This makes `visual inspect` the preferred primitive for future baseline
 comparison, approval, and MCP inspection flows, while `visual run` remains the
 lighter-weight execution command.
+
+Once a visual inspection run has produced `render.manifest.json`, use:
+
+```bash
+praeparo visual compare .tmp/performance_dashboard/_artifacts \
+  --baseline-dir tests/baselines/performance_dashboard
+```
+
+This command:
+
+- accepts either an artefact directory or a direct `render.manifest.json`
+  path;
+- compares the primary PNG to `<baseline_dir>/<baseline_key>.png`;
+- writes `compare.manifest.json` plus any diff PNGs under
+  `<artefact_dir>/_comparisons` by default; and
+- exits non-zero when the visual mismatches, is missing a baseline, or is
+  missing its rendered PNG.
+
+When the new render is correct and should become the approved reference, use:
+
+```bash
+praeparo visual approve .tmp/performance_dashboard/_artifacts \
+  --baseline-dir tests/baselines/performance_dashboard \
+  --note "Accept legend sizing update."
+```
+
+This command copies the current PNG to `<baseline_dir>/<baseline_key>.png` and
+writes or updates `<baseline_dir>/baseline.manifest.json`, preserving any
+project-specific top-level metadata already recorded there.
 
 ## Python Metric Dataset Builder
 

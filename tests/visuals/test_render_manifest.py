@@ -62,6 +62,7 @@ def test_build_visual_render_manifest_collects_outputs_and_sidecars(tmp_path: Pa
     )
 
     assert manifest.kind == "visual_inspect"
+    assert manifest.baseline_key == "performance_dashboard"
     assert manifest.visual_type == "governance_matrix"
     assert manifest.artefact_root == "build/performance_dashboard/_artifacts"
     assert manifest.html_path == "build/performance_dashboard.html"

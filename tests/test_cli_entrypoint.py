@@ -929,6 +929,7 @@ def test_visual_inspect_writes_render_manifest(monkeypatch, tmp_path, capsys) ->
 
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     assert manifest["kind"] == "visual_inspect"
+    assert manifest["baseline_key"] == "visual"
     assert manifest["artefact_root"] == "build/visual/_artifacts"
     assert manifest["png_path"] == "build/visual.png"
     assert manifest["data_mode"] == "mock"

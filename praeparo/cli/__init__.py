@@ -67,6 +67,8 @@ from praeparo.visuals.context_layers import (
     load_context_layer_file,
     resolve_layered_context_payload,
 )
+from praeparo.visuals.render_approve import approve_visual_render_manifest
+from praeparo.visuals.render_compare import compare_visual_render_manifest, write_visual_render_comparison
 from praeparo.visuals.render_manifest import build_visual_render_manifest, write_visual_render_manifest
 from praeparo.visuals.registry import (
     VisualCLIArgument,
@@ -1184,6 +1186,71 @@ def _build_parser(
     _register_visual_type_parsers(run_parser, include_outputs=True, registrations=visual_registrations)
     run_parser.set_defaults(_handler=_handle_visual_run)
 
+    compare_parser = visual_subparsers.add_parser(
+        "compare",
+        help="Compare a visual inspection PNG to an approved baseline.",
+    )
+    compare_parser.add_argument(
+        "source",
+        type=Path,
+        help="Path to a visual artefact directory or a render.manifest.json file.",
+    )
+    compare_parser.add_argument(
+        "--baseline-dir",
+        dest="baseline_dir",
+        type=Path,
+        required=True,
+        help="Directory containing approved baseline PNGs named as <baseline_key>.png.",
+    )
+    compare_parser.add_argument(
+        "--output-dir",
+        dest="output_dir",
+        type=Path,
+        help="Directory for diff PNGs and compare.manifest.json (defaults to <artefact_dir>/_comparisons).",
+    )
+    compare_parser.add_argument(
+        "--project-root",
+        dest="project_root",
+        type=Path,
+        help=(
+            "Root used to resolve cwd-relative paths stored in render.manifest.json. "
+            "Defaults to the current working directory."
+        ),
+    )
+    compare_parser.set_defaults(_handler=_handle_visual_compare)
+
+    approve_parser = visual_subparsers.add_parser(
+        "approve",
+        help="Promote a visual inspection PNG into the approved baseline set.",
+    )
+    approve_parser.add_argument(
+        "source",
+        type=Path,
+        help="Path to a visual artefact directory or a render.manifest.json file.",
+    )
+    approve_parser.add_argument(
+        "--baseline-dir",
+        dest="baseline_dir",
+        type=Path,
+        required=True,
+        help="Directory where the approved baseline PNG and baseline.manifest.json will be written.",
+    )
+    approve_parser.add_argument(
+        "--note",
+        dest="note",
+        help="Optional approval note recorded in baseline.manifest.json.",
+    )
+    approve_parser.add_argument(
+        "--project-root",
+        dest="project_root",
+        type=Path,
+        help=(
+            "Root used to resolve cwd-relative paths stored in render.manifest.json. "
+            "Defaults to the current working directory."
+        ),
+    )
+    approve_parser.set_defaults(_handler=_handle_visual_approve)
+
     inspect_parser = visual_subparsers.add_parser(
         "inspect",
         help="Execute one visual and emit a structured inspection manifest.",
@@ -1665,20 +1732,25 @@ def _write_visual_render_manifest(
 def _resolve_render_manifest_source(source: Path) -> Path:
     """Resolve either an artefact directory or a direct render manifest path.
 
-    Focused compare workflows usually start from a pack artefact root. Allowing
-    either form keeps the CLI ergonomic while still funnelling all comparisons
-    through the canonical `render.manifest.json` contract.
+    Focused compare and approval workflows usually start from an artefact root
+    rather than the manifest file itself. Allowing either form keeps the CLI
+    ergonomic while still funnelling those commands through the canonical
+    `render.manifest.json` contract.
     """
 
     candidate = source.expanduser().resolve(strict=False)
     if candidate.is_dir():
-        manifest_path = candidate / "render.manifest.json"
-        if not manifest_path.exists():
+        direct_manifest_path = candidate / "render.manifest.json"
+        nested_manifest_path = candidate / "_artifacts" / "render.manifest.json"
+        if direct_manifest_path.exists():
+            return direct_manifest_path
+        if nested_manifest_path.exists():
+            return nested_manifest_path
+        if not direct_manifest_path.exists():
             raise ValueError(
                 "No render.manifest.json found under the supplied artefact directory. "
-                "Re-run the pack with a Praeparo version that emits render manifests."
+                "Re-run the relevant render command with a Praeparo version that emits render manifests."
             )
-        return manifest_path
 
     if not candidate.exists():
         raise ValueError(f"Render manifest source does not exist: {source}")
@@ -2180,6 +2252,73 @@ def _handle_visual_run(args: argparse.Namespace) -> int:
     if cli_options and cli_options.hooks.post_execute:
         cli_options.hooks.post_execute(result, args)
 
+    return 0
+
+
+def _handle_visual_compare(args: argparse.Namespace) -> int:
+    """Compare a visual inspection manifest against its approved baseline PNG.
+
+    Standalone visual work now follows the same falsifiable loop as focused pack
+    renders: inspect once, then compare the emitted PNG against a stable
+    baseline file without needing to recrawl the artefact directory by hand.
+    """
+
+    started = time.perf_counter()
+
+    manifest_path = _resolve_render_manifest_source(args.source)
+    output_dir = args.output_dir or manifest_path.parent / "_comparisons"
+
+    comparison = compare_visual_render_manifest(
+        manifest_path=manifest_path,
+        baseline_dir=args.baseline_dir,
+        output_dir=output_dir,
+        project_root=getattr(args, "project_root", None),
+    )
+
+    comparison_path = output_dir / "compare.manifest.json"
+    write_visual_render_comparison(comparison, comparison_path)
+
+    print(f"[ok] Wrote comparison manifest to {_display_cli_path(comparison_path)}")
+    print(
+        "[ok] Compared visual baseline "
+        f"{comparison.baseline_key}: status={comparison.status}"
+    )
+
+    elapsed = time.perf_counter() - started
+    print(f"[ok] Visual comparison completed in {_format_duration(elapsed)}")
+
+    if comparison.status != "match":
+        return 1
+
+    return 0
+
+
+def _handle_visual_approve(args: argparse.Namespace) -> int:
+    """Approve a visual inspection PNG into the baseline directory.
+
+    Once compare and inspection show the render is the intended outcome, this
+    handler promotes the current PNG into the baseline set and records the
+    render-manifest lineage in `baseline.manifest.json`.
+    """
+
+    started = time.perf_counter()
+
+    manifest_path = _resolve_render_manifest_source(args.source)
+    approval = approve_visual_render_manifest(
+        manifest_path=manifest_path,
+        baseline_dir=args.baseline_dir,
+        project_root=getattr(args, "project_root", None),
+        note=getattr(args, "note", None),
+    )
+
+    print(f"[ok] Wrote baseline manifest to {approval.baseline_manifest_path}")
+    print(
+        "[ok] Approved visual baseline "
+        f"{approval.baseline_manifest.baseline_key} into {approval.baseline_dir}"
+    )
+
+    elapsed = time.perf_counter() - started
+    print(f"[ok] Visual approval completed in {_format_duration(elapsed)}")
     return 0
 
 
