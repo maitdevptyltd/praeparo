@@ -67,6 +67,7 @@ from praeparo.visuals.context_layers import (
     load_context_layer_file,
     resolve_layered_context_payload,
 )
+from praeparo.visuals.render_manifest import build_visual_render_manifest, write_visual_render_manifest
 from praeparo.visuals.registry import (
     VisualCLIArgument,
     VisualCLIOptions,
@@ -493,6 +494,48 @@ def _derive_visual_dest_defaults(
     html_output = destination / f"{visual_slug}.html"
     png_output = destination / f"{visual_slug}.png"
     return artefact_dir, html_output, png_output
+
+
+def _default_visual_artefact_dir(config_path: Path, project_root: Path | None) -> Path:
+    """Choose a stable artefact directory for standalone visual inspection runs."""
+
+    base = project_root or config_path.parent
+    return base / "build" / config_path.stem / "_artifacts"
+
+
+def _apply_visual_dest_defaults(
+    args: argparse.Namespace,
+    *,
+    ensure_png_output: bool,
+    ensure_artefact_dir: bool,
+) -> None:
+    """Resolve shorthand visual destinations and inspection-specific defaults.
+
+    Visual run commands accept an optional positional `dest`, so start by
+    applying those shorthand rules. Inspection runs then tighten the contract by
+    ensuring a PNG target and artefact directory exist even when the caller did
+    not supply either explicitly.
+    """
+
+    artefact_default, html_default, png_default = _derive_visual_dest_defaults(
+        args.config,
+        getattr(args, "dest", None),
+    )
+
+    if artefact_default is not None and args.artefact_dir is None:
+        args.artefact_dir = artefact_default
+    if html_default is not None and getattr(args, "output_html", None) is None:
+        args.output_html = html_default
+    if png_default is not None and getattr(args, "output_png", None) is None:
+        args.output_png = png_default
+
+    project_root = _resolve_project_root(getattr(args, "project_root", None))
+
+    if ensure_artefact_dir and args.artefact_dir is None:
+        args.artefact_dir = _default_visual_artefact_dir(args.config, project_root)
+
+    if ensure_png_output and getattr(args, "output_png", None) is None:
+        args.output_png = _default_output_path(args.config, project_root, "png")
 
 
 def _register_pack_parsers(parent: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
@@ -1141,6 +1184,13 @@ def _build_parser(
     _register_visual_type_parsers(run_parser, include_outputs=True, registrations=visual_registrations)
     run_parser.set_defaults(_handler=_handle_visual_run)
 
+    inspect_parser = visual_subparsers.add_parser(
+        "inspect",
+        help="Execute one visual and emit a structured inspection manifest.",
+    )
+    _register_visual_type_parsers(inspect_parser, include_outputs=True, registrations=visual_registrations)
+    inspect_parser.set_defaults(_handler=_handle_visual_inspect)
+
     artifacts_parser = visual_subparsers.add_parser("artifacts", help="Generate visual schema/data artefacts without rendering.")
     _register_visual_type_parsers(artifacts_parser, include_outputs=False, registrations=visual_registrations)
     artifacts_parser.set_defaults(_handler=_handle_visual_artifacts)
@@ -1577,6 +1627,38 @@ def _write_pack_render_manifest(
     )
     manifest_path = output_root / "render.manifest.json"
     write_pack_render_manifest(manifest, manifest_path)
+    return manifest_path
+
+
+def _write_visual_render_manifest(
+    *,
+    config_path: Path,
+    project_root: Path,
+    result: VisualExecutionResult,
+    options: PipelineOptions,
+    warnings: Sequence[str] = (),
+) -> Path:
+    """Persist a structured render manifest beside standalone visual artefacts.
+
+    Focused visual inspection should not require callers to infer which HTML,
+    PNG, schema, data, or DAX files belong together. This helper consolidates
+    one visual run into the same `render.manifest.json` convention used by pack
+    workflows so downstream compare and approval steps can share the contract.
+    """
+
+    artefact_root = options.artefact_dir
+    if artefact_root is None:
+        raise ValueError("Visual inspection requires an artefact directory.")
+
+    manifest = build_visual_render_manifest(
+        config_path=config_path,
+        project_root=project_root,
+        result=result,
+        options=options,
+        warnings=warnings,
+    )
+    manifest_path = artefact_root / "render.manifest.json"
+    write_visual_render_manifest(manifest, manifest_path)
     return manifest_path
 
 
@@ -2076,16 +2158,7 @@ def _handle_pack_inspect_slide(args: argparse.Namespace) -> int:
 
 def _handle_visual_run(args: argparse.Namespace) -> int:
     cli_options: VisualCLIOptions | None = getattr(args, "_cli_options", None)
-    artefact_default, html_default, png_default = _derive_visual_dest_defaults(
-        args.config,
-        getattr(args, "dest", None),
-    )
-    if artefact_default is not None and args.artefact_dir is None:
-        args.artefact_dir = artefact_default
-    if html_default is not None and getattr(args, "output_html", None) is None:
-        args.output_html = html_default
-    if png_default is not None and getattr(args, "output_png", None) is None:
-        args.output_png = png_default
+    _apply_visual_dest_defaults(args, ensure_png_output=False, ensure_artefact_dir=False)
 
     visual = _load_visual(args.config)
 
@@ -2107,6 +2180,54 @@ def _handle_visual_run(args: argparse.Namespace) -> int:
     if cli_options and cli_options.hooks.post_execute:
         cli_options.hooks.post_execute(result, args)
 
+    return 0
+
+
+def _handle_visual_inspect(args: argparse.Namespace) -> int:
+    """Execute one visual and emit a structured render manifest.
+
+    Visual inspection tightens the standard run contract so the output is
+    always useful for verification: it guarantees a PNG target, guarantees a
+    sidecar directory for schema/data/DAX files, and writes a normalized
+    `render.manifest.json` that future compare and approval commands can reuse.
+    """
+
+    started = time.perf_counter()
+    cli_options: VisualCLIOptions | None = getattr(args, "_cli_options", None)
+    _apply_visual_dest_defaults(args, ensure_png_output=True, ensure_artefact_dir=True)
+
+    visual = _load_visual(args.config)
+
+    if args._visual_type == "auto":
+        args._visual_type = visual.type
+
+    registration = get_visual_registration(args._visual_type)
+    metadata = _prepare_metadata(args, cli_options)
+    options = _build_pipeline_options(args, metadata, include_outputs=True)
+    result = _execute_pipeline(visual, args, options, registration)
+
+    manifest_warnings: list[str] = []
+    if not any(artifact.kind.value == "png" for artifact in result.outputs):
+        manifest_warnings.append("Visual inspection did not emit a PNG output.")
+        print("[warn] No PNG outputs were produced.")
+
+    project_root = _resolve_project_root(getattr(args, "project_root", None))
+    manifest_path = _write_visual_render_manifest(
+        config_path=args.config,
+        project_root=project_root,
+        result=result,
+        options=options,
+        warnings=manifest_warnings,
+    )
+
+    message = _summarise_outputs(result)
+    if message:
+        print(message)
+
+    print(f"[ok] Wrote render manifest to {_display_cli_path(manifest_path)}")
+
+    elapsed = time.perf_counter() - started
+    print(f"[ok] Visual inspection completed in {_format_duration(elapsed)}")
     return 0
 
 
@@ -2250,7 +2371,7 @@ def _normalise_argv(
         if argv[0].endswith(".py"):
             return ["python-visual", "run", *argv]
         return ["visual", "run", "auto", *argv]
-    if len(argv) >= 3 and argv[0] == "visual" and argv[1] in {"run", "artifacts", "dax"}:
+    if len(argv) >= 3 and argv[0] == "visual" and argv[1] in {"run", "inspect", "artifacts", "dax"}:
         candidate = argv[2]
         if candidate.startswith("-"):
             return list(argv)

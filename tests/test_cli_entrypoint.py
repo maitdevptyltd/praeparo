@@ -856,6 +856,96 @@ def test_pack_cli_render_slide_targets_requested_slides(monkeypatch, tmp_path, c
     assert "[ok] Slide render completed in" in out
 
 
+def test_visual_inspect_writes_render_manifest(monkeypatch, tmp_path, capsys) -> None:
+    config_path = tmp_path / "visual.yaml"
+    config_path.write_text("type: cli_example\n", encoding="utf-8")
+
+    captured_options: list[PipelineOptions] = []
+
+    def fake_load_visual_config(path: Path) -> _DummyConfig:
+        assert path == config_path
+        return _DummyConfig()
+
+    class FakePipeline:
+        def __init__(self, *_, **__):
+            pass
+
+        def execute(self, visual, context):
+            captured_options.append(context.options)
+
+            artefact_dir = cast(Path, context.options.artefact_dir)
+            artefact_dir.mkdir(parents=True, exist_ok=True)
+
+            schema_path = artefact_dir / "schema.json"
+            schema_path.write_text("{}", encoding="utf-8")
+            dataset_path = artefact_dir / "data.json"
+            dataset_path.write_text("{}", encoding="utf-8")
+            dax_path = artefact_dir / "cli_example.dax"
+            dax_path.write_text("EVALUATE {}", encoding="utf-8")
+
+            html_target = next(target.path for target in context.options.outputs if target.kind is OutputKind.HTML)
+            html_target.parent.mkdir(parents=True, exist_ok=True)
+            html_target.write_text("<html />", encoding="utf-8")
+
+            png_target = next(target.path for target in context.options.outputs if target.kind is OutputKind.PNG)
+            png_target.parent.mkdir(parents=True, exist_ok=True)
+            png_target.write_text("png", encoding="utf-8")
+
+            return VisualExecutionResult(
+                config=visual,
+                schema_path=schema_path,
+                dataset_path=dataset_path,
+                outputs=[
+                    PipelineOutputArtifact(kind=OutputKind.SCHEMA, path=schema_path),
+                    PipelineOutputArtifact(kind=OutputKind.DATA, path=dataset_path),
+                    PipelineOutputArtifact(kind=OutputKind.DAX, path=dax_path),
+                    PipelineOutputArtifact(kind=OutputKind.HTML, path=html_target),
+                    PipelineOutputArtifact(kind=OutputKind.PNG, path=png_target),
+                ],
+            )
+
+    monkeypatch.setattr("praeparo.cli.load_visual_config", fake_load_visual_config)
+    monkeypatch.setattr("praeparo.cli.VisualPipeline", FakePipeline)
+    monkeypatch.setattr("praeparo.cli.build_default_query_planner_provider", lambda: None)
+
+    with pytest.raises(SystemExit) as exc:
+        cli_main(
+            [
+                "visual",
+                "inspect",
+                "cli_example",
+                str(config_path),
+                "--project-root",
+                str(tmp_path),
+            ]
+        )
+
+    assert exc.value.code == 0
+    assert captured_options
+
+    artefact_dir = tmp_path / "build" / "visual" / "_artifacts"
+    manifest_path = artefact_dir / "render.manifest.json"
+    assert manifest_path.exists()
+
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert manifest["kind"] == "visual_inspect"
+    assert manifest["artefact_root"] == "build/visual/_artifacts"
+    assert manifest["png_path"] == "build/visual.png"
+    assert manifest["data_mode"] == "mock"
+
+    output_paths = {item["path"] for item in manifest["outputs"]}
+    assert "build/visual/_artifacts/schema.json" in output_paths
+    assert "build/visual/_artifacts/data.json" in output_paths
+    assert "build/visual/_artifacts/cli_example.dax" in output_paths
+
+    requested_kinds = [item["kind"] for item in manifest["requested_outputs"]]
+    assert requested_kinds == ["html", "png"]
+
+    out = capsys.readouterr().out
+    assert "[ok] Wrote render manifest to" in out
+    assert "[ok] Visual inspection completed in" in out
+
+
 def test_pack_cli_run_accepts_context_file(monkeypatch, tmp_path, capsys) -> None:
     metrics_root = tmp_path / "registry" / "metrics"
     metrics_root.mkdir(parents=True)

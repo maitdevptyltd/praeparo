@@ -171,6 +171,35 @@ Python auto-detection:
 - `praeparo path/to/visual.py [dest]` and `praeparo visual run path/to/visual.py [dest]`
   are routed to `praeparo python-visual run ...` automatically.
 
+## Visual inspection workflow
+
+Use `praeparo visual inspect` when the goal is verification rather than a quick
+ad hoc render. It reuses the normal visual pipeline but tightens the output
+contract so downstream tooling can inspect one stable manifest.
+
+```bash
+praeparo visual inspect governance_matrix visuals/performance_dashboard.yaml
+```
+
+This command:
+
+- executes the visual once through the normal pipeline;
+- guarantees a PNG target even when `--output-png` was not supplied;
+- guarantees an artefact directory for schema, data, and DAX sidecars;
+- writes `render.manifest.json` under the artefact directory; and
+- records the emitted HTML, PNG, schema, data, and DAX files in one portable
+  manifest.
+
+Default paths (when no `dest` or output overrides are supplied):
+
+- HTML: `build/<visual>.html`
+- PNG: `build/<visual>.png`
+- Artefacts + manifest: `build/<visual>/_artifacts/`
+
+This makes `visual inspect` the preferred primitive for future baseline
+comparison, approval, and MCP inspection flows, while `visual run` remains the
+lighter-weight execution command.
+
 ## Python Metric Dataset Builder
 
 Prefer a notebook workflow over YAML when sketching visuals? Review the
