@@ -879,9 +879,16 @@ def run_pack(
     pipeline: VisualPipeline | None = None,
     env: Environment | None = None,
     only_slides: Iterable[str] | None = None,
+    include_evidence: bool = True,
     evidence_only: bool = False,
 ) -> list[PackSlideResult]:
-    """Execute a pack and export PNGs for each visual slide."""
+    """Execute a pack, optionally including evidence exports.
+
+    Full pack runs keep their existing behaviour and emit evidence when the pack
+    enables it. Focused slide workflows can disable evidence entirely so agents
+    and developers iterate on PNG outputs without paying for unrelated export
+    work or inheriting unrelated evidence failures.
+    """
 
     started = time.perf_counter()
 
@@ -926,8 +933,9 @@ def run_pack(
     )
     has_metric_bindings = bool(root_bindings) or slide_bindings_present
     evidence_config = pack.evidence
-    evidence_enabled = bool(evidence_config and evidence_config.enabled)
-    if evidence_only and not evidence_enabled:
+    evidence_requested = bool(evidence_config and evidence_config.enabled)
+    evidence_enabled = evidence_requested and (include_evidence or evidence_only)
+    if evidence_only and not evidence_requested:
         raise ValueError("Evidence-only pack runs require pack.evidence.enabled=true.")
 
     builder_context = None
@@ -1261,6 +1269,8 @@ def run_pack(
                 _render_filters(calculate),
             )
 
+            # Collect evidence targets only when the caller actually intends to run
+            # evidence exports. Focused slide rendering disables this path by default.
             if evidence_enabled and evidence_config is not None:
                 adapter = get_visual_bindings_adapter(visual.type)
                 if adapter is not None:
@@ -1782,6 +1792,11 @@ def run_pack(
                     "failed_powerbi_count": len(failed_powerbi),
                 },
             )
+    elif evidence_requested and not evidence_only:
+        logger.info(
+            "Skipping pack evidence exports (include_evidence disabled)",
+            extra={"pack_path": str(pack_path), "only_slides": sorted(slide_filter) if slide_filter else None},
+        )
 
     if failed_powerbi:
         failed_slides = [item.job.slide_slug for item in failed_powerbi]

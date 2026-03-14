@@ -843,6 +843,12 @@ def _register_pack_parsers(parent: argparse._SubParsersAction[argparse.ArgumentP
         metavar="ID_OR_TITLE",
         help="Render only matching slide titles, ids, or slugified equivalents (repeatable).",
     )
+    render_slide_parser.add_argument(
+        "--include-evidence",
+        dest="include_evidence",
+        action="store_true",
+        help="Also run pack evidence exports for the selected slides (disabled by default for focused debugging).",
+    )
     render_slide_parser.set_defaults(
         _handler=_handle_pack_render_slide,
         print_dax=False,
@@ -1780,6 +1786,11 @@ def _handle_pack_render_slide(args: argparse.Namespace) -> int:
     This command keeps the existing pack execution semantics, but narrows the
     output to the requested slides and always writes a structured render
     manifest for inspection-oriented workflows.
+
+    Unlike full pack runs, focused slide renders skip pack evidence exports by
+    default. That keeps the loop fast and avoids unrelated evidence failures
+    when the task is purely visual. Pass `--include-evidence` to restore the
+    broader pack sidecars when they are relevant to the task at hand.
     """
 
     started = time.perf_counter()
@@ -1824,6 +1835,7 @@ def _handle_pack_render_slide(args: argparse.Namespace) -> int:
             pipeline=pipeline,
             env=jinja_env,
             only_slides=slide_filter,
+            include_evidence=getattr(args, "include_evidence", False),
             evidence_only=False,
         )
     except ConfigLoadError as exc:

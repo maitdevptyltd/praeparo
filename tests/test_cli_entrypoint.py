@@ -13,7 +13,7 @@ import pytest
 import praeparo.cli as cli
 from praeparo.cli import main as cli_main
 from praeparo.dax import DaxQueryPlan
-from praeparo.models import BaseVisualConfig, PackConfig, PackSlide, PackVisualRef
+from praeparo.models import BaseVisualConfig, PackConfig, PackContext, PackSlide, PackVisualRef
 from praeparo.pack import PackPowerBIFailure, PackSlideResult
 from praeparo.visuals.dax_compilers import DaxCompileArtifact, register_dax_compiler
 from praeparo.visuals.dax import slugify
@@ -188,10 +188,10 @@ def test_yaml_visual_without_typed_context_defaults_metrics_root_to_cwd(monkeypa
         captured["metrics_root"] = context.dataset_context.metrics_root
         return SchemaArtifact(value={})
 
-    def dataset_builder(pipeline, config, schema_artifact, context):
+    def dataset_builder(pipeline, config, schema, context):
         return DatasetArtifact(value={}, filename="data.json")
 
-    def renderer(pipeline, config, schema_artifact, dataset_artifact, context, outputs):
+    def renderer(pipeline, config, schema, dataset, context, outputs):
         return RenderOutcome(outputs=[])
 
     register_visual_type("dummy_noctx", dummy_loader, overwrite=True, context_model=None)
@@ -557,6 +557,7 @@ def test_pack_cli_loads_plugin_module(monkeypatch, tmp_path) -> None:
         pipeline=None,
         env=None,
         only_slides=(),
+        include_evidence=True,
         evidence_only=False,
     ):
         slide = pack.slides[0]
@@ -629,6 +630,7 @@ def test_pack_cli_run_invokes_runner(monkeypatch, tmp_path, capsys) -> None:
         pipeline=None,
         env=None,
         only_slides=(),
+        include_evidence=True,
         evidence_only=False,
     ):
         captured["output_root"] = output_root
@@ -703,6 +705,7 @@ def test_pack_cli_run_writes_render_manifest(monkeypatch, tmp_path, capsys) -> N
         pipeline=None,
         env=None,
         only_slides=(),
+        include_evidence=True,
         evidence_only=False,
     ):
         slide = pack.slides[0]
@@ -790,6 +793,7 @@ def test_pack_cli_render_slide_targets_requested_slides(monkeypatch, tmp_path, c
         pipeline=None,
         env=None,
         only_slides=(),
+        include_evidence=True,
         evidence_only=False,
     ):
         captured["only_slides"] = only_slides
@@ -884,7 +888,7 @@ def test_pack_cli_run_accepts_context_file(monkeypatch, tmp_path, capsys) -> Non
         assert path == pack_path
         return PackConfig(
             schema="test-pack",
-            context={"lender_id": 166, "customer": "Standard Lender"},
+            context=PackContext.model_validate({"lender_id": 166, "customer": "Standard Lender"}),
             slides=[PackSlide(title="Slide One", id="slide-id-1", visual=PackVisualRef(ref="one.yaml"))],
         )
 
@@ -983,7 +987,7 @@ def test_pack_cli_dest_templates_render_with_context_override(monkeypatch, tmp_p
     def fake_load_pack_config(path: Path) -> PackConfig:
         return PackConfig(
             schema="test-pack",
-            context={"customer": "Standard Lender"},
+            context=PackContext.model_validate({"customer": "Standard Lender"}),
             slides=[PackSlide(title="Slide One", id="slide-id-1", visual=PackVisualRef(ref="one.yaml"))],
         )
 
@@ -1424,7 +1428,7 @@ def test_pack_cli_revision_updates_default_result(monkeypatch, tmp_path, capsys)
     def fake_load_pack_config(path: Path) -> PackConfig:
         return PackConfig(
             schema="test-pack",
-            context={"month": "2025-12-01"},
+            context=PackContext.model_validate({"month": "2025-12-01"}),
             slides=[PackSlide(title="Slide One", id="slide-id-1", visual=PackVisualRef(ref="one.yaml"))],
         )
 

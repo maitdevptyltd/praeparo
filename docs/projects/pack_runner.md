@@ -534,11 +534,13 @@ Key flags:
   - requires an explicit `--artefact-dir`;
   - limits execution to the requested `--slide` / `--slides` values;
   - skips PPTX assembly entirely; and
+  - skips pack evidence exports by default unless `--include-evidence` is supplied; and
   - always emits `render.manifest.json` for inspection-oriented workflows.
 
   It is the preferred way to debug one slide or a small set of slides when you
-  care about PNGs, DAX, schema/data sidecars, and evidence outputs more than a
-  restitched deck.
+  care about PNGs, DAX, and schema/data sidecars more than a restitched deck.
+  Add `--include-evidence` when the focused task also needs `_evidence/`
+  artefacts.
 - `pack compare-slide` – compare rendered targets recorded in `render.manifest.json`
   against approved baseline PNGs:
 

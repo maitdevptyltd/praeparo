@@ -184,6 +184,14 @@ class _DummyEvidenceBindingsAdapter:
         raise ValueError("Unknown binding selector.")
 
 
+class _FailingEvidenceBindingsAdapter:
+    def list_bindings(self, visual, *, source_path=None):  # noqa: ANN001
+        raise AssertionError("Evidence bindings should not be inspected when include_evidence is disabled.")
+
+    def resolve_binding(self, visual, selector_segments, *, source_path=None):  # noqa: ANN001
+        raise AssertionError("Evidence bindings should not be resolved when include_evidence is disabled.")
+
+
 def _write_test_metric(metrics_root: Path) -> None:
     metrics_root.mkdir(parents=True, exist_ok=True)
     (metrics_root / "documents_sent.yaml").write_text(
@@ -370,6 +378,56 @@ def test_run_pack_evidence_reruns_when_metric_definition_changes(tmp_path: Path)
     bindings = manifest.get("bindings")
     assert isinstance(bindings, list)
     assert {entry.get("status") for entry in bindings} == {"success"}
+
+
+def test_run_pack_skips_evidence_collection_when_include_evidence_is_false(tmp_path: Path) -> None:
+    metrics_root = tmp_path / "registry" / "metrics"
+    _write_test_metric(metrics_root)
+
+    pack_path = tmp_path / "registry" / "customers" / "foo" / "pack.yaml"
+    pack_path.parent.mkdir(parents=True, exist_ok=True)
+    pack_path.write_text("{}", encoding="utf-8")
+
+    visual_path = pack_path.parent / "visual.yaml"
+    visual_path.write_text("type: dummy_evidence_no_exports\n", encoding="utf-8")
+
+    register_visual_bindings_adapter(
+        "dummy_evidence_no_exports",
+        _FailingEvidenceBindingsAdapter(),
+        overwrite=True,
+    )
+
+    def stub_visual_loader(path: Path):
+        assert path == visual_path.resolve()
+        from praeparo.models import BaseVisualConfig
+
+        return BaseVisualConfig(type="dummy_evidence_no_exports")
+
+    pack = PackConfig(
+        schema="test-pack",
+        evidence=PackEvidenceConfig(enabled=True, bindings=PackEvidenceBindingsConfig(select=["sla"])),
+        slides=[PackSlide(id="performance_dashboard", title="Performance", visual=PackVisualRef(ref="visual.yaml"))],
+    )
+
+    options = PipelineOptions(data=PipelineDataOptions(provider_key="mock"))
+    output_root = tmp_path / "artefacts"
+    env = create_pack_jinja_env()
+
+    results = run_pack(
+        pack_path,
+        pack,
+        project_root=tmp_path,
+        output_root=output_root,
+        base_options=options,
+        pipeline=_StubPipeline(),  # type: ignore[arg-type]
+        visual_loader=stub_visual_loader,
+        env=env,
+        include_evidence=False,
+    )
+
+    assert len(results) == 1
+    assert results[0].png_path is not None
+    assert not (output_root / "_evidence" / "manifest.json").exists()
 
 
 def test_run_pack_evidence_migrates_legacy_filename_and_rehydrates_flat_copy(tmp_path: Path) -> None:
