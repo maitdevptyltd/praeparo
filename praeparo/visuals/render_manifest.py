@@ -14,6 +14,7 @@ from typing import Literal, Mapping, Sequence
 from pydantic import BaseModel, Field
 
 from praeparo.pipeline import PipelineOptions, VisualExecutionResult
+from praeparo.review_profiles import RenderProfile, build_render_profile
 from praeparo.visuals.dax.planner_core import slugify
 
 
@@ -33,6 +34,7 @@ class VisualRenderManifest(BaseModel):
     visual_type: str
     project_root: str
     artefact_root: str
+    render_profile: RenderProfile | None = None
     html_path: str | None = None
     png_path: str | None = None
     schema_path: str | None = None
@@ -78,6 +80,10 @@ def build_visual_render_manifest(
         visual_type=result.config.type,
         project_root=_display_path(project_root, root=project_root),
         artefact_root=_display_path(artefact_root, root=project_root),
+        render_profile=build_render_profile(
+            workflow_kind="visual_inspect",
+            data_mode=str(options.metadata.get("data_mode", "mock")),
+        ),
         html_path=_primary_output_path(outputs=outputs, requested_outputs=requested_outputs, kind="html"),
         png_path=_primary_output_path(outputs=outputs, requested_outputs=requested_outputs, kind="png"),
         schema_path=_display_optional_path(result.schema_path, root=project_root),

@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Literal, Sequence
 
 from pydantic import BaseModel, Field
 
+from praeparo.review_profiles import RenderProfile, build_render_profile
 from praeparo.visuals.dax.planner_core import slugify
 
 if TYPE_CHECKING:
@@ -50,6 +51,7 @@ class PackRenderManifest(BaseModel):
     kind: Literal["pack_run", "pack_render_slide"]
     pack_path: str
     artefact_root: str
+    render_profile: RenderProfile | None = None
     result_file: str | None = None
     requested_slides: list[str] = Field(default_factory=list)
     partial_failure: bool = False
@@ -66,6 +68,7 @@ def build_pack_render_manifest(
     results: Sequence["PackSlideResult"],
     requested_slides: Sequence[str] = (),
     result_file: Path | None = None,
+    data_mode: str | None = None,
     partial_failure: bool = False,
     warnings: Sequence[str] = (),
 ) -> PackRenderManifest:
@@ -103,6 +106,7 @@ def build_pack_render_manifest(
         kind=kind,
         pack_path=_display_path(pack_path),
         artefact_root=_display_path(artefact_root),
+        render_profile=build_render_profile(workflow_kind=kind, data_mode=data_mode),
         result_file=_display_path(result_file) if result_file else None,
         requested_slides=[str(item) for item in requested_slides],
         partial_failure=partial_failure,

@@ -22,6 +22,7 @@ from praeparo.pack.render_manifest import (
     load_pack_render_manifest,
     select_pack_render_targets,
 )
+from praeparo.review_profiles import RenderProfile
 
 
 class PackRenderBaselineEntry(BaseModel):
@@ -36,6 +37,7 @@ class PackRenderBaselineEntry(BaseModel):
     placeholder_id: str | None = None
     visual_path: str | None = None
     visual_type: str | None = None
+    render_profile: RenderProfile | None = None
     baseline_path: str
     source_png_path: str
     approved_at: str
@@ -49,7 +51,15 @@ class PackRenderBaselineApprovalRun(BaseModel):
     source_manifest_path: str | None = None
     source_artefact_dir: str | None = None
     approval_note: str | None = None
+    render_profile: RenderProfile | None = None
     approved_targets: list[str] = Field(default_factory=list)
+
+
+class PackRenderBaselineExemption(BaseModel):
+    """Explicit exemption for a rendered pack target that lacks a baseline PNG."""
+
+    target_slug: str
+    reason: str
 
 
 class PackRenderBaselineManifest(BaseModel):
@@ -67,9 +77,11 @@ class PackRenderBaselineManifest(BaseModel):
     source_artefact_dir: str
     updated_at: str
     approval_note: str | None = None
+    latest_render_profile: RenderProfile | None = None
     targets: list[str] = Field(default_factory=list)
     target_details: list[PackRenderBaselineEntry] = Field(default_factory=list)
     approval_runs: list[PackRenderBaselineApprovalRun] = Field(default_factory=list)
+    exemptions: list[PackRenderBaselineExemption] = Field(default_factory=list)
 
 
 class PackRenderBaselineApproval(BaseModel):
@@ -121,6 +133,7 @@ def approve_pack_render_manifest(
             entry=entry,
             baseline_dir=resolved_baseline_dir,
             project_root=resolution_root,
+            render_profile=render_manifest.render_profile,
             approved_at=approval_time,
             note=note,
         )
@@ -128,7 +141,7 @@ def approve_pack_render_manifest(
     ]
 
     baseline_manifest_path = resolved_baseline_dir / "baseline.manifest.json"
-    existing_payload = _load_existing_baseline_payload(baseline_manifest_path)
+    existing_payload = load_pack_render_baseline_payload(baseline_manifest_path)
     baseline_manifest = _merge_baseline_manifest(
         render_manifest=render_manifest,
         manifest_path=manifest_path,
@@ -173,9 +186,11 @@ def write_pack_render_baseline_manifest(
         "source_artefact_dir",
         "updated_at",
         "approval_note",
+        "latest_render_profile",
         "targets",
         "target_details",
         "approval_runs",
+        "exemptions",
     }:
         payload.pop(key, None)
 
@@ -217,6 +232,7 @@ def _approve_target(
     entry: PackRenderManifestEntry,
     baseline_dir: Path,
     project_root: Path,
+    render_profile: RenderProfile | None,
     approved_at: str,
     note: str | None,
 ) -> PackRenderBaselineEntry:
@@ -248,6 +264,7 @@ def _approve_target(
         placeholder_id=entry.placeholder_id,
         visual_path=entry.visual_path,
         visual_type=entry.visual_type,
+        render_profile=render_profile,
         baseline_path=_display_path(baseline_path, root=project_root),
         source_png_path=_display_path(source_png_path, root=project_root),
         approved_at=approved_at,
@@ -291,9 +308,11 @@ def _merge_baseline_manifest(
         source_artefact_dir=render_manifest.artefact_root,
         updated_at=approved_at,
         approval_note=note if note is not None else _coerce_optional_string(existing_payload.get("approval_note")),
+        latest_render_profile=render_manifest.render_profile,
         targets=target_slugs,
         target_details=target_details,
         approval_runs=approval_runs,
+        exemptions=_parse_existing_exemptions(existing_payload.get("exemptions")),
     )
 
 
@@ -373,6 +392,23 @@ def _parse_existing_approval_runs(raw_payload: dict[str, Any]) -> list[PackRende
     ]
 
 
+def _parse_existing_exemptions(raw: Any) -> list[PackRenderBaselineExemption]:
+    """Validate any explicit exemption records already stored with the baseline."""
+
+    if raw is None:
+        return []
+    if not isinstance(raw, list):
+        raise ValueError("Existing baseline.manifest.json field 'exemptions' must be a list.")
+
+    exemptions: list[PackRenderBaselineExemption] = []
+    for item in raw:
+        try:
+            exemptions.append(PackRenderBaselineExemption.model_validate(item))
+        except ValidationError as exc:
+            raise ValueError("Existing baseline.manifest.json contains an invalid exemptions entry.") from exc
+    return exemptions
+
+
 def _merge_target_slugs(existing: Sequence[str], approved: Sequence[str]) -> list[str]:
     """Preserve the existing target order and append newly approved slugs."""
 
@@ -425,13 +461,14 @@ def _merge_approval_runs(
             source_manifest_path=_display_path(manifest_path, root=project_root),
             source_artefact_dir=artefact_root,
             approval_note=note,
+            render_profile=approved_targets[0].render_profile if approved_targets else None,
             approved_targets=[item.target_slug for item in approved_targets],
         )
     )
     return merged
 
 
-def _load_existing_baseline_payload(path: Path) -> dict[str, Any]:
+def load_pack_render_baseline_payload(path: Path) -> dict[str, Any]:
     """Load the existing baseline manifest payload, if present."""
 
     if not path.exists():
@@ -493,9 +530,11 @@ def _display_path(path: Path, *, root: Path) -> str:
 
 __all__ = [
     "PackRenderBaselineApproval",
+    "PackRenderBaselineExemption",
     "PackRenderBaselineEntry",
     "PackRenderBaselineApprovalRun",
     "PackRenderBaselineManifest",
     "approve_pack_render_manifest",
+    "load_pack_render_baseline_payload",
     "write_pack_render_baseline_manifest",
 ]

@@ -50,7 +50,9 @@ from praeparo.pack.render_approve import approve_pack_render_manifest
 from praeparo.pack.render_compare import compare_pack_render_manifest, write_pack_render_comparison
 from praeparo.pack.render_inspect import inspect_pack_render_target, write_pack_render_inspection
 from praeparo.pack.render_manifest import build_pack_render_manifest, write_pack_render_manifest
+from praeparo.pack.render_review import review_pack_render_manifest, write_pack_render_review
 from praeparo.pack.metric_context import dump_context_payload
+from praeparo.mcp_server import run_mcp_server
 from praeparo.visuals.dax_compilers import (
     DaxCompilerRegistration,
     get_dax_compiler_registration,
@@ -71,6 +73,7 @@ from praeparo.visuals.context_layers import (
 from praeparo.visuals.render_approve import approve_visual_render_manifest
 from praeparo.visuals.render_compare import compare_visual_render_manifest, write_visual_render_comparison
 from praeparo.visuals.render_manifest import build_visual_render_manifest, write_visual_render_manifest
+from praeparo.visuals.render_review import review_visual_render_manifest, write_visual_render_review
 from praeparo.visuals.registry import (
     VisualCLIArgument,
     VisualCLIOptions,
@@ -1011,6 +1014,66 @@ def _register_pack_parsers(parent: argparse._SubParsersAction[argparse.ArgumentP
     )
     audit_slide_parser.set_defaults(_handler=_handle_pack_audit)
 
+    review_slide_parser = pack_subparsers.add_parser(
+        "review",
+        help="Build one human-reviewable bundle for focused pack verification.",
+    )
+    review_slide_parser.add_argument(
+        "source",
+        type=Path,
+        help="Path to a pack artefact directory or a render.manifest.json file.",
+    )
+    review_slide_parser.add_argument(
+        "--baseline-dir",
+        dest="baseline_dir",
+        type=Path,
+        required=True,
+        help="Directory containing approved baseline PNGs and optional exemption metadata.",
+    )
+    review_slide_parser.add_argument(
+        "--compare-output-dir",
+        dest="compare_output_dir",
+        type=Path,
+        help="Directory for compare.manifest.json and diff PNGs.",
+    )
+    review_slide_parser.add_argument(
+        "--inspection-dir",
+        dest="inspection_dir",
+        type=Path,
+        help="Directory for generated inspection manifests (defaults to <artefact_dir>/_inspections).",
+    )
+    review_slide_parser.add_argument(
+        "--output",
+        dest="output",
+        type=Path,
+        help="Path to write the review JSON (defaults to <artefact_dir>/_review/review.manifest.json).",
+    )
+    review_slide_parser.add_argument(
+        "--project-root",
+        dest="project_root",
+        type=Path,
+        help=(
+            "Root used to resolve cwd-relative paths stored in render.manifest.json. "
+            "Defaults to the current working directory."
+        ),
+    )
+    review_slide_parser.add_argument(
+        "--slide",
+        "--slides",
+        dest="slides",
+        action="append",
+        default=[],
+        metavar="ID_OR_TITLE",
+        help="Review only matching slide titles, ids, or target slugs (repeatable).",
+    )
+    review_slide_parser.add_argument(
+        "--skip-inspections",
+        dest="skip_inspections",
+        action="store_true",
+        help="Do not emit per-target inspection manifests for items needing attention.",
+    )
+    review_slide_parser.set_defaults(_handler=_handle_pack_review)
+
     approve_slide_parser = pack_subparsers.add_parser(
         "approve-slide",
         help="Promote rendered pack slide PNGs into the approved baseline set.",
@@ -1092,6 +1155,35 @@ def _register_pack_parsers(parent: argparse._SubParsersAction[argparse.ArgumentP
         ),
     )
     inspect_slide_parser.set_defaults(_handler=_handle_pack_inspect_slide)
+
+
+def _register_mcp_parsers(parent: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+    mcp_parser = parent.add_parser("mcp", help="Model Context Protocol server commands.")
+    mcp_subparsers = mcp_parser.add_subparsers(dest="mcp_command", metavar="SUBCOMMAND")
+    mcp_subparsers.required = True
+
+    serve_parser = mcp_subparsers.add_parser("serve", help="Start the Praeparo MCP server.")
+    serve_parser.add_argument(
+        "--transport",
+        dest="transport",
+        choices=["stdio", "sse", "streamable-http"],
+        default="stdio",
+        help="MCP transport to use (defaults to stdio).",
+    )
+    serve_parser.add_argument(
+        "--host",
+        dest="host",
+        default="127.0.0.1",
+        help="Host used for SSE or streamable-http transports.",
+    )
+    serve_parser.add_argument(
+        "--port",
+        dest="port",
+        type=int,
+        default=8000,
+        help="Port used for SSE or streamable-http transports.",
+    )
+    serve_parser.set_defaults(_handler=_handle_mcp_serve)
 
 
 def _update_config_argument_help(parser: argparse.ArgumentParser, help_text: str) -> None:
@@ -1317,6 +1409,45 @@ def _build_parser(
     )
     approve_parser.set_defaults(_handler=_handle_visual_approve)
 
+    review_parser = visual_subparsers.add_parser(
+        "review",
+        help="Build one human-reviewable bundle for standalone visual verification.",
+    )
+    review_parser.add_argument(
+        "source",
+        type=Path,
+        help="Path to a visual artefact directory or a render.manifest.json file.",
+    )
+    review_parser.add_argument(
+        "--baseline-dir",
+        dest="baseline_dir",
+        type=Path,
+        required=True,
+        help="Directory containing the approved baseline PNG and optional exemption metadata.",
+    )
+    review_parser.add_argument(
+        "--output-dir",
+        dest="output_dir",
+        type=Path,
+        help="Directory for diff PNGs and compare.manifest.json (defaults to <artefact_dir>/_comparisons).",
+    )
+    review_parser.add_argument(
+        "--output",
+        dest="output",
+        type=Path,
+        help="Path to write the review JSON (defaults to <artefact_dir>/_review/review.manifest.json).",
+    )
+    review_parser.add_argument(
+        "--project-root",
+        dest="project_root",
+        type=Path,
+        help=(
+            "Root used to resolve cwd-relative paths stored in render.manifest.json. "
+            "Defaults to the current working directory."
+        ),
+    )
+    review_parser.set_defaults(_handler=_handle_visual_review)
+
     inspect_parser = visual_subparsers.add_parser(
         "inspect",
         help="Execute one visual and emit a structured inspection manifest.",
@@ -1334,6 +1465,7 @@ def _build_parser(
 
     _register_python_visual_parsers(subparsers)
     _register_pack_parsers(subparsers)
+    _register_mcp_parsers(subparsers)
 
     return parser
 
@@ -1738,6 +1870,7 @@ def _write_pack_render_manifest(
     results: Sequence[PackSlideResult],
     requested_slides: Sequence[str],
     result_file: Path | None = None,
+    data_mode: str | None = None,
     partial_failure: bool = False,
     warnings: Sequence[str] = (),
 ) -> Path:
@@ -1755,6 +1888,7 @@ def _write_pack_render_manifest(
         results=results,
         requested_slides=requested_slides,
         result_file=result_file,
+        data_mode=data_mode,
         partial_failure=partial_failure,
         warnings=warnings,
     )
@@ -2049,6 +2183,7 @@ def _handle_pack_run(args: argparse.Namespace) -> int:
             results=results,
             requested_slides=slide_filter,
             result_file=args.result_file,
+            data_mode=args.data_mode,
             partial_failure=partial_failure,
             warnings=manifest_warnings,
         )
@@ -2166,6 +2301,7 @@ def _handle_pack_render_slide(args: argparse.Namespace) -> int:
         output_root=args.artefact_dir,
         results=results,
         requested_slides=slide_filter,
+        data_mode=args.data_mode,
         partial_failure=partial_failure,
         warnings=manifest_warnings,
     )
@@ -2214,6 +2350,8 @@ def _handle_pack_compare_slide(args: argparse.Namespace) -> int:
     mismatch_count = sum(1 for item in comparison.comparisons if item.status == "mismatch")
     missing_baseline_count = sum(1 for item in comparison.comparisons if item.status == "missing_baseline")
     missing_png_count = sum(1 for item in comparison.comparisons if item.status == "missing_png")
+    profile_mismatch_count = sum(1 for item in comparison.comparisons if item.status == "profile_mismatch")
+    missing_profile_count = sum(1 for item in comparison.comparisons if item.status == "missing_profile")
 
     print(f"[ok] Wrote comparison manifest to {_display_cli_path(comparison_path)}")
     print(
@@ -2222,7 +2360,9 @@ def _handle_pack_compare_slide(args: argparse.Namespace) -> int:
         f"{comparison.matched_targets} matched, "
         f"{mismatch_count} mismatched, "
         f"{missing_baseline_count} missing baseline, "
-        f"{missing_png_count} missing PNG."
+        f"{missing_png_count} missing PNG, "
+        f"{profile_mismatch_count} profile mismatch, "
+        f"{missing_profile_count} missing profile."
     )
 
     elapsed = time.perf_counter() - started
@@ -2269,6 +2409,13 @@ def _handle_pack_audit(args: argparse.Namespace) -> int:
         f"{audit.unchecked_targets} unchecked."
     )
 
+    if audit.profile_mismatch_targets or audit.missing_profile_targets:
+        print(
+            "[warn] Profile issues: "
+            f"{audit.profile_mismatch_targets} mismatch, "
+            f"{audit.missing_profile_targets} missing profile."
+        )
+
     if audit.warnings:
         print(f"[warn] Pack manifest recorded {len(audit.warnings)} warning(s).")
 
@@ -2279,6 +2426,49 @@ def _handle_pack_audit(args: argparse.Namespace) -> int:
     print(f"[ok] Pack audit completed in {_format_duration(elapsed)}")
 
     if audit.partial_failure or audit.attention_targets:
+        return 1
+
+    return 0
+
+
+def _handle_pack_review(args: argparse.Namespace) -> int:
+    """Build one human-reviewable bundle for focused pack verification.
+
+    Audit is still the lower-level triage primitive. This handler packages that
+    same compare/audit state together with approval history and exemptions so a
+    human can review the agent's decision path from one JSON file.
+    """
+
+    started = time.perf_counter()
+
+    manifest_path = _resolve_render_manifest_source(args.source)
+    review = review_pack_render_manifest(
+        manifest_path=manifest_path,
+        baseline_dir=args.baseline_dir,
+        selectors=tuple(args.slides or ()),
+        compare_output_dir=getattr(args, "compare_output_dir", None),
+        inspection_output_dir=getattr(args, "inspection_dir", None),
+        project_root=getattr(args, "project_root", None),
+        emit_inspections=not getattr(args, "skip_inspections", False),
+    )
+
+    output_path = args.output or (manifest_path.parent / "_review" / "review.manifest.json")
+    write_pack_render_review(review, output_path)
+
+    print(f"[ok] Wrote review manifest to {_display_cli_path(output_path)}")
+    print(
+        "[ok] Reviewed "
+        f"{review.reviewed_targets} target(s): "
+        f"{review.approved_targets} approved, "
+        f"{review.exempt_targets} exempt, "
+        f"{review.attention_targets} need attention, "
+        f"{review.unchecked_targets} unchecked."
+    )
+
+    elapsed = time.perf_counter() - started
+    print(f"[ok] Pack review completed in {_format_duration(elapsed)}")
+
+    if review.attention_targets or review.unchecked_targets:
         return 1
 
     return 0
@@ -2371,6 +2561,17 @@ def _handle_visual_run(args: argparse.Namespace) -> int:
     return 0
 
 
+def _handle_mcp_serve(args: argparse.Namespace) -> int:
+    """Start the Praeparo MCP server over the requested transport."""
+
+    run_mcp_server(
+        transport=getattr(args, "transport", "stdio"),
+        host=getattr(args, "host", "127.0.0.1"),
+        port=getattr(args, "port", 8000),
+    )
+    return 0
+
+
 def _handle_visual_compare(args: argparse.Namespace) -> int:
     """Compare a visual inspection manifest against its approved baseline PNG.
 
@@ -2399,6 +2600,9 @@ def _handle_visual_compare(args: argparse.Namespace) -> int:
         "[ok] Compared visual baseline "
         f"{comparison.baseline_key}: status={comparison.status}"
     )
+
+    if comparison.profile_check is not None and comparison.profile_check.status != "match":
+        print(f"[warn] {comparison.profile_check.message}")
 
     elapsed = time.perf_counter() - started
     print(f"[ok] Visual comparison completed in {_format_duration(elapsed)}")
@@ -2435,6 +2639,38 @@ def _handle_visual_approve(args: argparse.Namespace) -> int:
 
     elapsed = time.perf_counter() - started
     print(f"[ok] Visual approval completed in {_format_duration(elapsed)}")
+    return 0
+
+
+def _handle_visual_review(args: argparse.Namespace) -> int:
+    """Build one human-reviewable bundle for standalone visual verification."""
+
+    started = time.perf_counter()
+
+    manifest_path = _resolve_render_manifest_source(args.source)
+    output_dir = args.output_dir or manifest_path.parent / "_comparisons"
+    review = review_visual_render_manifest(
+        manifest_path=manifest_path,
+        baseline_dir=args.baseline_dir,
+        output_dir=output_dir,
+        project_root=getattr(args, "project_root", None),
+    )
+
+    output_path = args.output or (manifest_path.parent / "_review" / "review.manifest.json")
+    write_visual_render_review(review, output_path)
+
+    print(f"[ok] Wrote review manifest to {_display_cli_path(output_path)}")
+    print(
+        "[ok] Reviewed visual baseline "
+        f"{review.baseline_key}: status={review.review_status}"
+    )
+
+    elapsed = time.perf_counter() - started
+    print(f"[ok] Visual review completed in {_format_duration(elapsed)}")
+
+    if review.review_status not in {"approved", "exempt"}:
+        return 1
+
     return 0
 
 
@@ -2621,7 +2857,7 @@ def _normalise_argv(
 ) -> list[str]:
     if not argv:
         return list(argv)
-    commands = {"visual", "pack", "python-visual"}
+    commands = {"visual", "pack", "python-visual", "mcp"}
     if argv[0] not in commands and not argv[0].startswith("-"):
         if argv[0].endswith(".py"):
             return ["python-visual", "run", *argv]

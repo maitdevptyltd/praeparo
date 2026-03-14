@@ -2107,3 +2107,31 @@ def test_pack_cli_runs_python_visual(tmp_path: Path, monkeypatch) -> None:
     artefact_dir = dest / "_artifacts"
     expected_png = artefact_dir / "[01]_python_visual_slide.png"
     assert expected_png.exists()
+
+
+def test_mcp_serve_cli_entrypoint_calls_server(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_run_mcp_server(*, transport: str, host: str, port: int) -> None:
+        captured["transport"] = transport
+        captured["host"] = host
+        captured["port"] = port
+
+    monkeypatch.setattr("praeparo.cli.run_mcp_server", fake_run_mcp_server)
+
+    with pytest.raises(SystemExit) as exc:
+        cli_main(
+            [
+                "mcp",
+                "serve",
+                "--transport",
+                "stdio",
+                "--host",
+                "0.0.0.0",
+                "--port",
+                "9123",
+            ]
+        )
+
+    assert exc.value.code == 0
+    assert captured == {"transport": "stdio", "host": "0.0.0.0", "port": 9123}

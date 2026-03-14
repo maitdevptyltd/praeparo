@@ -219,8 +219,13 @@ This command:
 - compares the primary PNG to `<baseline_dir>/<baseline_key>.png`;
 - writes `compare.manifest.json` plus any diff PNGs under
   `<artefact_dir>/_comparisons` by default; and
-- exits non-zero when the visual mismatches, is missing a baseline, or is
-  missing its rendered PNG.
+- exits non-zero when the visual mismatches, is missing a baseline, is missing
+  its rendered PNG, or was rendered under a different profile from the approved
+  baseline.
+
+Profile mismatches are reported separately from PNG diffs so operators can
+distinguish provenance drift (`live` vs `mock`) from a genuine rendering
+regression.
 
 When the new render is correct and should become the approved reference, use:
 
@@ -232,7 +237,33 @@ praeparo visual approve .tmp/performance_dashboard/_artifacts \
 
 This command copies the current PNG to `<baseline_dir>/<baseline_key>.png` and
 writes or updates `<baseline_dir>/baseline.manifest.json`, preserving any
-project-specific top-level metadata already recorded there.
+project-specific top-level metadata already recorded there while adding
+render-profile provenance and an approval-history ledger.
+
+When a human reviewer needs one summary rather than separate compare and
+baseline files, use:
+
+```bash
+praeparo visual review .tmp/performance_dashboard/_artifacts \
+  --baseline-dir tests/baselines/performance_dashboard
+```
+
+This command reuses the compare flow, writes
+`<artefact_dir>/_review/review.manifest.json`, and reports whether the visual
+is approved, exempt, or still needs attention while keeping the render profile
+and approval history visible.
+
+## MCP server
+
+Praeparo also exposes these same visual workflows over MCP:
+
+```bash
+poetry run praeparo mcp serve --transport stdio
+```
+
+The server intentionally shells back into the canonical CLI so MCP clients,
+automation, and local engineers all consume the same manifests and review
+bundles.
 
 ## Python Metric Dataset Builder
 

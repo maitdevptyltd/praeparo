@@ -8,6 +8,7 @@ from PIL import Image
 
 from praeparo.pack.render_approve import approve_pack_render_manifest
 from praeparo.pack.render_manifest import PackRenderManifest, PackRenderManifestEntry
+from praeparo.review_profiles import build_render_profile
 
 
 def test_approve_pack_render_manifest_promotes_png_and_records_lineage(tmp_path: Path) -> None:
@@ -56,9 +57,13 @@ def test_approve_pack_render_manifest_promotes_png_and_records_lineage(tmp_path:
     assert approval.approved_targets[0].source_png_path == "renders/slide-id-1.png"
     assert approval.baseline_manifest.targets == ["slide-id-1"]
     assert approval.baseline_manifest.target_details[0].note == "Accept baseline drift after legend tweak."
+    assert approval.baseline_manifest.target_details[0].render_profile is not None
+    assert approval.baseline_manifest.target_details[0].render_profile.workflow_kind == "pack_render_slide"
     assert approval.baseline_manifest.approval_runs[0].source_manifest_path == "render.manifest.json"
     assert approval.baseline_manifest.approval_runs[0].source_artefact_dir == "renders"
     assert approval.baseline_manifest.approval_runs[0].approved_targets == ["slide-id-1"]
+    assert approval.baseline_manifest.approval_runs[0].render_profile is not None
+    assert approval.baseline_manifest.approval_runs[0].render_profile.data_mode == "mock"
 
     payload = json.loads(baseline_manifest_path.read_text(encoding="utf-8"))
     assert payload["kind"] == "pack_slide_baselines"
@@ -66,8 +71,10 @@ def test_approve_pack_render_manifest_promotes_png_and_records_lineage(tmp_path:
     assert payload["source_manifest_path"] == "render.manifest.json"
     assert payload["source_artefact_dir"] == "renders"
     assert payload["targets"] == ["slide-id-1"]
+    assert payload["latest_render_profile"]["workflow_kind"] == "pack_render_slide"
     assert payload["approval_runs"][0]["source_manifest_path"] == "render.manifest.json"
     assert payload["approval_runs"][0]["approved_targets"] == ["slide-id-1"]
+    assert payload["approval_runs"][0]["render_profile"]["data_mode"] == "mock"
 
 
 def test_approve_pack_render_manifest_preserves_existing_metadata(tmp_path: Path) -> None:
@@ -191,6 +198,7 @@ def _write_manifest(path: Path, *, rendered_targets: list[PackRenderManifestEntr
         kind="pack_render_slide",
         pack_path="registry/customers/test/pack.yaml",
         artefact_root="renders",
+        render_profile=build_render_profile(workflow_kind="pack_render_slide", data_mode="mock"),
         rendered_targets=rendered_targets,
     )
     path.write_text(manifest.model_dump_json(indent=2) + "\n", encoding="utf-8")

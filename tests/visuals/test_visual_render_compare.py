@@ -4,6 +4,7 @@ from pathlib import Path
 
 from PIL import Image
 
+from praeparo.review_profiles import build_render_profile
 from praeparo.visuals.render_compare import compare_visual_render_manifest
 from praeparo.visuals.render_manifest import VisualRenderManifest
 
@@ -85,6 +86,47 @@ def test_compare_visual_render_manifest_reports_missing_baseline(tmp_path: Path)
     assert comparison.baseline_path == "baselines/performance_dashboard.png"
 
 
+def test_compare_visual_render_manifest_reports_profile_mismatch(tmp_path: Path) -> None:
+    project_root = tmp_path
+    render_dir = project_root / "renders"
+    baseline_dir = project_root / "baselines"
+    output_dir = project_root / "comparisons"
+
+    png_path = render_dir / "performance_dashboard.png"
+    _write_png(png_path, colour=(10, 20, 30, 255))
+    _write_png(baseline_dir / "performance_dashboard.png", colour=(10, 20, 30, 255))
+    (baseline_dir / "baseline.manifest.json").write_text(
+        VisualRenderManifest(
+            config_path="registry/customers/test/visuals/performance_dashboard.yaml",
+            baseline_key="performance_dashboard",
+            visual_type="governance_matrix",
+            project_root=".",
+            artefact_root="renders/_artifacts",
+            render_profile=build_render_profile(workflow_kind="visual_inspect", data_mode="live"),
+            png_path="baselines/performance_dashboard.png",
+            data_mode="live",
+        )
+        .model_dump_json(indent=2)
+        .replace('"kind": "visual_inspect"', '"kind": "visual_baseline"')
+        + "\n",
+        encoding="utf-8",
+    )
+
+    manifest_path = project_root / "render.manifest.json"
+    _write_manifest(manifest_path, png_path="renders/performance_dashboard.png")
+
+    comparison = compare_visual_render_manifest(
+        manifest_path=manifest_path,
+        baseline_dir=baseline_dir,
+        output_dir=output_dir,
+        project_root=project_root,
+    )
+
+    assert comparison.status == "profile_mismatch"
+    assert comparison.profile_check is not None
+    assert comparison.profile_check.status == "mismatch"
+
+
 def _write_manifest(path: Path, *, png_path: str) -> None:
     manifest = VisualRenderManifest(
         config_path="registry/customers/test/visuals/performance_dashboard.yaml",
@@ -92,6 +134,7 @@ def _write_manifest(path: Path, *, png_path: str) -> None:
         visual_type="governance_matrix",
         project_root=".",
         artefact_root="renders/_artifacts",
+        render_profile=build_render_profile(workflow_kind="visual_inspect", data_mode="mock"),
         png_path=png_path,
         data_mode="mock",
     )

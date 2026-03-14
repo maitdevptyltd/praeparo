@@ -24,6 +24,7 @@ from praeparo.pack.render_inspect import (
     inspect_pack_render_target,
     write_pack_render_inspection,
 )
+from praeparo.review_profiles import RenderProfile
 from praeparo.pack.render_manifest import (
     PackRenderManifestEntry,
     load_pack_render_manifest,
@@ -36,7 +37,7 @@ class PackRenderAuditEntry(BaseModel):
 
     slide_slug: str
     target_slug: str
-    status: Literal["match", "mismatch", "missing_baseline", "missing_png", "unchecked"]
+    status: Literal["match", "mismatch", "missing_baseline", "missing_png", "profile_mismatch", "missing_profile", "unchecked"]
     needs_attention: bool = False
     slide_id: str | None = None
     slide_title: str | None = None
@@ -57,6 +58,7 @@ class PackRenderAudit(BaseModel):
     manifest_path: str
     compare_manifest_path: str | None = None
     baseline_dir: str | None = None
+    render_profile: RenderProfile | None = None
     pack_path: str
     artefact_root: str
     partial_failure: bool = False
@@ -69,6 +71,8 @@ class PackRenderAudit(BaseModel):
     mismatched_targets: int
     missing_baseline_targets: int
     missing_png_targets: int
+    profile_mismatch_targets: int
+    missing_profile_targets: int
     inspections_generated: int
     targets: list[PackRenderAuditEntry] = Field(default_factory=list)
 
@@ -137,13 +141,15 @@ def audit_pack_render_manifest(
     mismatched = 0
     missing_baseline = 0
     missing_png = 0
+    profile_mismatch = 0
+    missing_profile = 0
     inspections_generated = 0
     audit_entries: list[PackRenderAuditEntry] = []
 
     for entry in entries:
         comparison_entry = comparison_by_target.get(entry.target_slug)
         status = comparison_entry.status if comparison_entry is not None else "unchecked"
-        needs_attention = status in {"mismatch", "missing_baseline", "missing_png"}
+        needs_attention = status in {"mismatch", "missing_baseline", "missing_png", "profile_mismatch", "missing_profile"}
 
         if status == "match":
             matched += 1
@@ -157,6 +163,10 @@ def audit_pack_render_manifest(
                 missing_baseline += 1
             elif status == "missing_png":
                 missing_png += 1
+            elif status == "profile_mismatch":
+                profile_mismatch += 1
+            elif status == "missing_profile":
+                missing_profile += 1
 
         inspection_path: str | None = None
 
@@ -206,6 +216,7 @@ def audit_pack_render_manifest(
             if resolved_baseline_dir is not None
             else None
         ),
+        render_profile=comparison.render_profile if comparison is not None else render_manifest.render_profile,
         pack_path=render_manifest.pack_path,
         artefact_root=render_manifest.artefact_root,
         partial_failure=render_manifest.partial_failure,
@@ -218,6 +229,8 @@ def audit_pack_render_manifest(
         mismatched_targets=mismatched,
         missing_baseline_targets=missing_baseline,
         missing_png_targets=missing_png,
+        profile_mismatch_targets=profile_mismatch,
+        missing_profile_targets=missing_profile,
         inspections_generated=inspections_generated,
         targets=audit_entries,
     )

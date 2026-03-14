@@ -7,6 +7,7 @@ from PIL import Image
 
 from praeparo.pack.render_compare import compare_pack_render_manifest
 from praeparo.pack.render_manifest import PackRenderManifest, PackRenderManifestEntry
+from praeparo.review_profiles import build_render_profile
 
 
 def test_compare_pack_render_manifest_matches_baseline(tmp_path: Path) -> None:
@@ -120,11 +121,61 @@ def test_compare_pack_render_manifest_rejects_unknown_selector(tmp_path: Path) -
         )
 
 
+def test_compare_pack_render_manifest_reports_profile_mismatch(tmp_path: Path) -> None:
+    project_root = tmp_path
+    render_dir = project_root / "renders"
+    baseline_dir = project_root / "baselines"
+    output_dir = project_root / "comparisons"
+
+    _write_png(render_dir / "slide-id-1.png", colour=(10, 20, 30, 255))
+    _write_png(baseline_dir / "slide-id-1.png", colour=(10, 20, 30, 255))
+    (baseline_dir / "baseline.manifest.json").write_text(
+        (
+            PackRenderManifest(
+                kind="pack_run",
+                pack_path="registry/customers/test/pack.yaml",
+                artefact_root="renders",
+                render_profile=build_render_profile(workflow_kind="pack_run", data_mode="live"),
+                rendered_targets=[],
+            ).model_dump_json(indent=2)
+        ).replace('"kind": "pack_run"', '"kind": "pack_slide_baselines"')
+        .replace('"render_profile"', '"latest_render_profile"')
+        + "\n",
+        encoding="utf-8",
+    )
+
+    manifest_path = project_root / "render.manifest.json"
+    _write_manifest(
+        manifest_path,
+        rendered_targets=[
+            PackRenderManifestEntry(
+                slide_slug="slide-id-1",
+                target_slug="slide-id-1",
+                artifact_label="slide-id-1",
+                png_path="renders/slide-id-1.png",
+            )
+        ],
+    )
+
+    comparison = compare_pack_render_manifest(
+        manifest_path=manifest_path,
+        baseline_dir=baseline_dir,
+        output_dir=output_dir,
+        project_root=project_root,
+    )
+
+    assert comparison.failed_targets == 1
+    assert comparison.comparisons[0].status == "profile_mismatch"
+    assert comparison.comparisons[0].profile_check is not None
+    assert comparison.comparisons[0].profile_check.status == "mismatch"
+
+
 def _write_manifest(path: Path, *, rendered_targets: list[PackRenderManifestEntry]) -> None:
     manifest = PackRenderManifest(
         kind="pack_render_slide",
         pack_path="registry/customers/test/pack.yaml",
         artefact_root="renders",
+        render_profile=build_render_profile(workflow_kind="pack_render_slide", data_mode="mock"),
         rendered_targets=rendered_targets,
     )
     path.write_text(manifest.model_dump_json(indent=2) + "\n", encoding="utf-8")

@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
+from praeparo.review_profiles import build_render_profile
 from praeparo.visuals.render_approve import approve_visual_render_manifest
 from praeparo.visuals.render_manifest import VisualRenderManifest
 
@@ -37,12 +38,17 @@ def test_approve_visual_render_manifest_promotes_png_and_records_lineage(tmp_pat
     assert approval.baseline_manifest_path == "baselines/baseline.manifest.json"
     assert approval.baseline_manifest.baseline_path == "baselines/performance_dashboard.png"
     assert approval.baseline_manifest.source_png_path == "renders/performance_dashboard.png"
+    assert approval.baseline_manifest.render_profile is not None
+    assert approval.baseline_manifest.render_profile.data_mode == "mock"
+    assert approval.baseline_manifest.approval_runs[0].render_profile is not None
 
     payload = json.loads(baseline_manifest_path.read_text(encoding="utf-8"))
     assert payload["kind"] == "visual_baseline"
     assert payload["baseline_key"] == "performance_dashboard"
     assert payload["source_manifest_path"] == "render.manifest.json"
     assert payload["approval_note"] == "Approve current customer preview."
+    assert payload["render_profile"]["workflow_kind"] == "visual_inspect"
+    assert payload["approval_runs"][0]["render_profile"]["data_mode"] == "mock"
 
 
 def test_approve_visual_render_manifest_preserves_existing_metadata(tmp_path: Path) -> None:
@@ -103,6 +109,7 @@ def _write_manifest(path: Path, *, png_path: str) -> None:
         visual_type="governance_matrix",
         project_root=".",
         artefact_root="renders/_artifacts",
+        render_profile=build_render_profile(workflow_kind="visual_inspect", data_mode="mock"),
         png_path=png_path,
         data_mode="mock",
     )

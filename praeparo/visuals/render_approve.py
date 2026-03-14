@@ -14,9 +14,21 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
+from praeparo.review_profiles import RenderProfile
 from praeparo.visuals.render_manifest import VisualRenderManifest, load_visual_render_manifest
+
+
+class VisualRenderBaselineApprovalRun(BaseModel):
+    """Approval record for one update to the visual baseline."""
+
+    approved_at: str | None = None
+    source_manifest_path: str | None = None
+    source_artefact_dir: str | None = None
+    source_png_path: str | None = None
+    approval_note: str | None = None
+    render_profile: RenderProfile | None = None
 
 
 class VisualRenderBaselineManifest(BaseModel):
@@ -33,6 +45,9 @@ class VisualRenderBaselineManifest(BaseModel):
     source_png_path: str
     updated_at: str
     approval_note: str | None = None
+    render_profile: RenderProfile | None = None
+    approval_runs: list[VisualRenderBaselineApprovalRun] = Field(default_factory=list)
+    exemption_reason: str | None = None
 
 
 class VisualRenderBaselineApproval(BaseModel):
@@ -60,12 +75,13 @@ def approve_visual_render_manifest(
     resolved_baseline_dir.mkdir(parents=True, exist_ok=True)
     approval_time = approved_at or _default_approved_at()
     baseline_manifest_path = resolved_baseline_dir / "baseline.manifest.json"
-    existing_payload = _load_existing_baseline_payload(baseline_manifest_path)
+    existing_payload = load_visual_render_baseline_payload(baseline_manifest_path)
 
     baseline_manifest = _approve_manifest(
         manifest=manifest,
         manifest_path=manifest_path,
         baseline_dir=resolved_baseline_dir,
+        existing_payload=existing_payload,
         project_root=resolution_root,
         approved_at=approval_time,
         note=note if note is not None else _coerce_optional_string(existing_payload.get("approval_note")),
@@ -105,6 +121,9 @@ def write_visual_render_baseline_manifest(
         "source_png_path",
         "updated_at",
         "approval_note",
+        "render_profile",
+        "approval_runs",
+        "exemption_reason",
     }:
         payload.pop(key, None)
 
@@ -119,6 +138,7 @@ def _approve_manifest(
     manifest: VisualRenderManifest,
     manifest_path: Path,
     baseline_dir: Path,
+    existing_payload: dict[str, Any],
     project_root: Path,
     approved_at: str,
     note: str | None,
@@ -150,10 +170,63 @@ def _approve_manifest(
         source_png_path=_display_path(source_png_path, root=project_root),
         updated_at=approved_at,
         approval_note=note,
+        render_profile=manifest.render_profile,
+        approval_runs=_merge_approval_runs(
+            existing_payload=existing_payload,
+            approved_at=approved_at,
+            manifest_path=manifest_path,
+            artefact_root=manifest.artefact_root,
+            source_png_path=_display_path(source_png_path, root=project_root),
+            note=note,
+            render_profile=manifest.render_profile,
+            project_root=project_root,
+        ),
+        exemption_reason=_coerce_optional_string(existing_payload.get("exemption_reason")),
     )
 
 
-def _load_existing_baseline_payload(path: Path) -> dict[str, Any]:
+def _merge_approval_runs(
+    *,
+    existing_payload: dict[str, Any],
+    approved_at: str,
+    manifest_path: Path,
+    artefact_root: str,
+    source_png_path: str,
+    note: str | None,
+    render_profile: RenderProfile | None,
+    project_root: Path,
+) -> list[VisualRenderBaselineApprovalRun]:
+    """Append the latest approval while preserving any earlier review history."""
+
+    merged = _parse_existing_approval_runs(existing_payload.get("approval_runs"))
+    merged.append(
+        VisualRenderBaselineApprovalRun(
+            approved_at=approved_at,
+            source_manifest_path=_display_path(manifest_path, root=project_root),
+            source_artefact_dir=artefact_root,
+            source_png_path=source_png_path,
+            approval_note=note,
+            render_profile=render_profile,
+        )
+    )
+    return merged
+
+
+def _parse_existing_approval_runs(raw: Any) -> list[VisualRenderBaselineApprovalRun]:
+    """Validate any pre-existing approval ledger entries."""
+
+    if raw is None:
+        return []
+    if not isinstance(raw, list):
+        raise ValueError("Existing baseline.manifest.json field 'approval_runs' must be a list.")
+
+    runs: list[VisualRenderBaselineApprovalRun] = []
+    for item in raw:
+        runs.append(VisualRenderBaselineApprovalRun.model_validate(item))
+    return runs
+
+
+def load_visual_render_baseline_payload(path: Path) -> dict[str, Any]:
     """Load the existing baseline manifest payload, if present."""
 
     if not path.exists():
@@ -218,7 +291,9 @@ def _display_path(path: Path, *, root: Path) -> str:
 
 __all__ = [
     "VisualRenderBaselineApproval",
+    "VisualRenderBaselineApprovalRun",
     "VisualRenderBaselineManifest",
     "approve_visual_render_manifest",
+    "load_visual_render_baseline_payload",
     "write_visual_render_baseline_manifest",
 ]

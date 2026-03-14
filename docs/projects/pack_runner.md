@@ -556,11 +556,15 @@ Key flags:
   - resolves baseline PNGs as `<baseline_dir>/<target_slug>.png`;
   - writes `compare.manifest.json` plus any diff PNGs under
     `<artefact_dir>/_comparisons` by default; and
-  - exits non-zero when a target mismatches, is missing a baseline, or is
-    missing its rendered PNG.
+  - exits non-zero when a target mismatches, is missing a baseline, is missing
+    its rendered PNG, or was rendered under a different profile from the
+    approved baseline.
 
   Use it when you need a falsifiable answer to "did this visual actually stay
-  the same?" rather than a manual PNG eyeball pass.
+  the same?" rather than a manual PNG eyeball pass. Profile mismatches are
+  reported separately from PNG diffs so operators can distinguish provenance
+  drift (`pack_run` vs `pack_render_slide`, `live` vs `mock`) from a genuine
+  rendering regression.
 - `pack audit` – summarize which rendered targets are clean or need attention:
 
   ```bash
@@ -575,7 +579,8 @@ Key flags:
     supplied;
   - writes `<artefact_dir>/_audit/audit.manifest.json` by default;
   - summarizes matched, unchecked, mismatched, missing-baseline, and
-    missing-PNG targets; and
+    missing-PNG targets plus any profile mismatches or missing profile metadata;
+    and
   - emits inspection manifests for targets needing attention unless
     `--skip-inspections` is supplied.
 
@@ -622,6 +627,25 @@ Key flags:
 
   Use it after compare and inspection confirm that the new render is the
   intended outcome and should become the approved reference.
+- `pack review` – emit one human-reviewable bundle for the same verification
+  pass:
+
+  ```bash
+  poetry run praeparo pack review .tmp/example/pack_focus \
+    --baseline-dir tests/baselines/example_pack
+  ```
+
+  This command:
+  - reuses the compare + audit flows;
+  - writes `<artefact_dir>/_review/review.manifest.json` by default;
+  - folds in approval history from `baseline.manifest.json`;
+  - reports whether each target is approved, exempt, or still needs attention;
+    and
+  - keeps the render profile visible so a human reviewer can confirm the same
+    decision path the agent relied on.
+
+  Use it when an engineer or analyst needs one review surface rather than a
+  collection of raw compare and inspection files.
 - `--evidence-only` – run evidence exports only (skips visual execution, Power BI exports, and PPTX assembly).
   Useful when you want to refresh `_evidence/` outputs without re-rendering slide PNGs.
 - `--max-pbi-concurrency` – maximum number of Power BI exports in flight at
@@ -643,6 +667,26 @@ Key flags:
   ```
 
   The same flag can be supplied at the top level if preferred:
+
+## MCP server
+
+Praeparo now exposes a thin MCP wrapper over the same focused verification
+commands described above:
+
+```bash
+poetry run praeparo mcp serve --transport stdio
+```
+
+The MCP server shells back into the canonical CLI for:
+
+- focused pack slide renders;
+- pack compare / inspect / approve / review;
+- standalone visual inspect / compare / approve / review; and
+- raw manifest reads for downstream tooling.
+
+That design keeps MCP aligned with the same manifests, exit behaviour, and
+review bundles that humans use locally instead of creating a second execution
+path.
 
   ```bash
   poetry run praeparo --plugin your_project pack run projects/example/pack.yaml --artefact-dir .tmp/example/pack_png
