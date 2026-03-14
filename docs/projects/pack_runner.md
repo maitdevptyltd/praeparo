@@ -539,6 +539,26 @@ Key flags:
   It is the preferred way to debug one slide or a small set of slides when you
   care about PNGs, DAX, schema/data sidecars, and evidence outputs more than a
   restitched deck.
+- `pack compare-slide` – compare rendered targets recorded in `render.manifest.json`
+  against approved baseline PNGs:
+
+  ```bash
+  poetry run praeparo pack compare-slide .tmp/example/pack_focus \
+    --baseline-dir tests/baselines/example_pack \
+    --slide overview
+  ```
+
+  This command:
+  - accepts either an artefact directory or a direct `render.manifest.json`
+    path;
+  - resolves baseline PNGs as `<baseline_dir>/<target_slug>.png`;
+  - writes `compare.manifest.json` plus any diff PNGs under
+    `<artefact_dir>/_comparisons` by default; and
+  - exits non-zero when a target mismatches, is missing a baseline, or is
+    missing its rendered PNG.
+
+  Use it when you need a falsifiable answer to "did this visual actually stay
+  the same?" rather than a manual PNG eyeball pass.
 - `--evidence-only` – run evidence exports only (skips visual execution, Power BI exports, and PPTX assembly).
   Useful when you want to refresh `_evidence/` outputs without re-rendering slide PNGs.
 - `--max-pbi-concurrency` – maximum number of Power BI exports in flight at

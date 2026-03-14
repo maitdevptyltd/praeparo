@@ -45,6 +45,7 @@ from praeparo.pack import (
     restitch_pack_pptx,
     run_pack,
 )
+from praeparo.pack.render_compare import compare_pack_render_manifest, write_pack_render_comparison
 from praeparo.pack.render_manifest import build_pack_render_manifest, write_pack_render_manifest
 from praeparo.pack.metric_context import dump_context_payload
 from praeparo.visuals.dax_compilers import (
@@ -849,6 +850,48 @@ def _register_pack_parsers(parent: argparse._SubParsersAction[argparse.ArgumentP
         sort_rows=False,
     )
 
+    compare_slide_parser = pack_subparsers.add_parser(
+        "compare-slide",
+        help="Compare rendered pack slide PNGs to approved baselines.",
+    )
+    compare_slide_parser.add_argument(
+        "source",
+        type=Path,
+        help="Path to a pack artefact directory or a render.manifest.json file.",
+    )
+    compare_slide_parser.add_argument(
+        "--baseline-dir",
+        dest="baseline_dir",
+        type=Path,
+        required=True,
+        help="Directory containing approved baseline PNGs named as <target_slug>.png.",
+    )
+    compare_slide_parser.add_argument(
+        "--output-dir",
+        dest="output_dir",
+        type=Path,
+        help="Directory for diff PNGs and compare.manifest.json (defaults to <artefact_dir>/_comparisons).",
+    )
+    compare_slide_parser.add_argument(
+        "--project-root",
+        dest="project_root",
+        type=Path,
+        help=(
+            "Root used to resolve cwd-relative paths stored in render.manifest.json. "
+            "Defaults to the current working directory."
+        ),
+    )
+    compare_slide_parser.add_argument(
+        "--slide",
+        "--slides",
+        dest="slides",
+        action="append",
+        default=[],
+        metavar="ID_OR_TITLE",
+        help="Compare only matching slide titles, ids, or target slugs (repeatable).",
+    )
+    compare_slide_parser.set_defaults(_handler=_handle_pack_compare_slide)
+
 
 def _update_config_argument_help(parser: argparse.ArgumentParser, help_text: str) -> None:
     """Override the help text for the shared 'config' positional argument."""
@@ -1403,6 +1446,17 @@ def _format_duration(seconds: float) -> str:
     return f"{int(hours)}h{int(minutes_remainder):02d}m{remainder:05.2f}s"
 
 
+def _display_cli_path(path: Path) -> str:
+    """Prefer cwd-relative CLI output so local debugging stays readable."""
+
+    resolved = path.expanduser().resolve(strict=False)
+    cwd = Path.cwd().resolve()
+    try:
+        return resolved.relative_to(cwd).as_posix()
+    except ValueError:
+        return resolved.as_posix()
+
+
 def _write_pack_render_manifest(
     *,
     kind: Literal["pack_run", "pack_render_slide"],
@@ -1434,6 +1488,33 @@ def _write_pack_render_manifest(
     manifest_path = output_root / "render.manifest.json"
     write_pack_render_manifest(manifest, manifest_path)
     return manifest_path
+
+
+def _resolve_render_manifest_source(source: Path) -> Path:
+    """Resolve either an artefact directory or a direct render manifest path.
+
+    Focused compare workflows usually start from a pack artefact root. Allowing
+    either form keeps the CLI ergonomic while still funnelling all comparisons
+    through the canonical `render.manifest.json` contract.
+    """
+
+    candidate = source.expanduser().resolve(strict=False)
+    if candidate.is_dir():
+        manifest_path = candidate / "render.manifest.json"
+        if not manifest_path.exists():
+            raise ValueError(
+                "No render.manifest.json found under the supplied artefact directory. "
+                "Re-run the pack with a Praeparo version that emits render manifests."
+            )
+        return manifest_path
+
+    if not candidate.exists():
+        raise ValueError(f"Render manifest source does not exist: {source}")
+
+    if candidate.name != "render.manifest.json":
+        raise ValueError("Expected a render.manifest.json file or an artefact directory containing one.")
+
+    return candidate
 
 
 # ---------------------------------------------------------------------------
@@ -1785,6 +1866,53 @@ def _handle_pack_render_slide(args: argparse.Namespace) -> int:
     print(f"[ok] Slide render completed in {_format_duration(elapsed)}")
 
     if partial_failure:
+        return 1
+
+    return 0
+
+
+def _handle_pack_compare_slide(args: argparse.Namespace) -> int:
+    """Compare rendered pack targets against approved baseline PNGs.
+
+    Start from the canonical render manifest emitted by `pack run` or
+    `pack render-slide`, then compare only the selected targets so focused pack
+    debugging can accept or reject a visual change with one command.
+    """
+
+    started = time.perf_counter()
+
+    manifest_path = _resolve_render_manifest_source(args.source)
+    output_dir = args.output_dir or manifest_path.parent / "_comparisons"
+
+    comparison = compare_pack_render_manifest(
+        manifest_path=manifest_path,
+        baseline_dir=args.baseline_dir,
+        output_dir=output_dir,
+        selectors=tuple(args.slides or ()),
+        project_root=getattr(args, "project_root", None),
+    )
+
+    comparison_path = output_dir / "compare.manifest.json"
+    write_pack_render_comparison(comparison, comparison_path)
+
+    mismatch_count = sum(1 for item in comparison.comparisons if item.status == "mismatch")
+    missing_baseline_count = sum(1 for item in comparison.comparisons if item.status == "missing_baseline")
+    missing_png_count = sum(1 for item in comparison.comparisons if item.status == "missing_png")
+
+    print(f"[ok] Wrote comparison manifest to {_display_cli_path(comparison_path)}")
+    print(
+        "[ok] Compared "
+        f"{comparison.compared_targets} target(s): "
+        f"{comparison.matched_targets} matched, "
+        f"{mismatch_count} mismatched, "
+        f"{missing_baseline_count} missing baseline, "
+        f"{missing_png_count} missing PNG."
+    )
+
+    elapsed = time.perf_counter() - started
+    print(f"[ok] Slide comparison completed in {_format_duration(elapsed)}")
+
+    if comparison.failed_targets:
         return 1
 
     return 0
