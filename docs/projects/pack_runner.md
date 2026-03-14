@@ -561,6 +561,26 @@ Key flags:
 
   Use it when you need a falsifiable answer to "did this visual actually stay
   the same?" rather than a manual PNG eyeball pass.
+- `pack audit` – summarize which rendered targets are clean or need attention:
+
+  ```bash
+  poetry run praeparo pack audit .tmp/example/pack_focus \
+    --baseline-dir tests/baselines/example_pack
+  ```
+
+  This command:
+  - accepts either an artefact directory or a direct `render.manifest.json`
+    path;
+  - optionally refreshes `compare.manifest.json` first when `--baseline-dir` is
+    supplied;
+  - writes `<artefact_dir>/_audit/audit.manifest.json` by default;
+  - summarizes matched, unchecked, mismatched, missing-baseline, and
+    missing-PNG targets; and
+  - emits inspection manifests for targets needing attention unless
+    `--skip-inspections` is supplied.
+
+  Use it when you want the pack-level answer to "what is broken or suspicious
+  here?" before choosing a specific target to fix.
 - `pack inspect-slide` – inspect one rendered target and its related sidecars:
 
   ```bash

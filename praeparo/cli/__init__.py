@@ -45,6 +45,7 @@ from praeparo.pack import (
     restitch_pack_pptx,
     run_pack,
 )
+from praeparo.pack.render_audit import audit_pack_render_manifest, write_pack_render_audit
 from praeparo.pack.render_approve import approve_pack_render_manifest
 from praeparo.pack.render_compare import compare_pack_render_manifest, write_pack_render_comparison
 from praeparo.pack.render_inspect import inspect_pack_render_target, write_pack_render_inspection
@@ -944,6 +945,71 @@ def _register_pack_parsers(parent: argparse._SubParsersAction[argparse.ArgumentP
         help="Compare only matching slide titles, ids, or target slugs (repeatable).",
     )
     compare_slide_parser.set_defaults(_handler=_handle_pack_compare_slide)
+
+    audit_slide_parser = pack_subparsers.add_parser(
+        "audit",
+        help="Summarize which rendered pack targets are clean or need attention.",
+    )
+    audit_slide_parser.add_argument(
+        "source",
+        type=Path,
+        help="Path to a pack artefact directory or a render.manifest.json file.",
+    )
+    audit_slide_parser.add_argument(
+        "--baseline-dir",
+        dest="baseline_dir",
+        type=Path,
+        help="Optional baseline directory used to refresh compare.manifest.json before auditing.",
+    )
+    audit_slide_parser.add_argument(
+        "--compare-manifest",
+        dest="compare_manifest",
+        type=Path,
+        help="Optional existing compare.manifest.json path to reuse when --baseline-dir is not supplied.",
+    )
+    audit_slide_parser.add_argument(
+        "--compare-output-dir",
+        dest="compare_output_dir",
+        type=Path,
+        help="Directory for compare.manifest.json and diff PNGs when --baseline-dir is supplied.",
+    )
+    audit_slide_parser.add_argument(
+        "--inspection-dir",
+        dest="inspection_dir",
+        type=Path,
+        help="Directory for generated inspection manifests (defaults to <artefact_dir>/_inspections).",
+    )
+    audit_slide_parser.add_argument(
+        "--output",
+        dest="output",
+        type=Path,
+        help="Path to write the audit JSON (defaults to <artefact_dir>/_audit/audit.manifest.json).",
+    )
+    audit_slide_parser.add_argument(
+        "--project-root",
+        dest="project_root",
+        type=Path,
+        help=(
+            "Root used to resolve cwd-relative paths stored in render.manifest.json. "
+            "Defaults to the current working directory."
+        ),
+    )
+    audit_slide_parser.add_argument(
+        "--slide",
+        "--slides",
+        dest="slides",
+        action="append",
+        default=[],
+        metavar="ID_OR_TITLE",
+        help="Audit only matching slide titles, ids, slide slugs, or target slugs (repeatable).",
+    )
+    audit_slide_parser.add_argument(
+        "--skip-inspections",
+        dest="skip_inspections",
+        action="store_true",
+        help="Do not emit per-target inspection manifests for items needing attention.",
+    )
+    audit_slide_parser.set_defaults(_handler=_handle_pack_audit)
 
     approve_slide_parser = pack_subparsers.add_parser(
         "approve-slide",
@@ -2163,6 +2229,56 @@ def _handle_pack_compare_slide(args: argparse.Namespace) -> int:
     print(f"[ok] Slide comparison completed in {_format_duration(elapsed)}")
 
     if comparison.failed_targets:
+        return 1
+
+    return 0
+
+
+def _handle_pack_audit(args: argparse.Namespace) -> int:
+    """Audit a rendered pack and summarize which targets need attention.
+
+    Compare and inspect are great once you know the target slug you care about.
+    This handler adds the triage step by walking the rendered targets, folding
+    in compare results, and emitting focused inspections for the failures so
+    the next fix can start from one audit manifest instead of a filesystem walk.
+    """
+
+    started = time.perf_counter()
+
+    manifest_path = _resolve_render_manifest_source(args.source)
+    audit = audit_pack_render_manifest(
+        manifest_path=manifest_path,
+        selectors=tuple(args.slides or ()),
+        baseline_dir=getattr(args, "baseline_dir", None),
+        compare_manifest_path=getattr(args, "compare_manifest", None),
+        compare_output_dir=getattr(args, "compare_output_dir", None),
+        inspection_output_dir=getattr(args, "inspection_dir", None),
+        project_root=getattr(args, "project_root", None),
+        emit_inspections=not getattr(args, "skip_inspections", False),
+    )
+
+    output_path = args.output or (manifest_path.parent / "_audit" / "audit.manifest.json")
+    write_pack_render_audit(audit, output_path)
+
+    print(f"[ok] Wrote audit manifest to {_display_cli_path(output_path)}")
+    print(
+        "[ok] Audited "
+        f"{audit.audited_targets} target(s): "
+        f"{audit.matched_targets} matched, "
+        f"{audit.attention_targets} need attention, "
+        f"{audit.unchecked_targets} unchecked."
+    )
+
+    if audit.warnings:
+        print(f"[warn] Pack manifest recorded {len(audit.warnings)} warning(s).")
+
+    if audit.inspections_generated:
+        print(f"[ok] Wrote {audit.inspections_generated} inspection manifest(s).")
+
+    elapsed = time.perf_counter() - started
+    print(f"[ok] Pack audit completed in {_format_duration(elapsed)}")
+
+    if audit.partial_failure or audit.attention_targets:
         return 1
 
     return 0
