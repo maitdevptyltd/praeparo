@@ -45,6 +45,7 @@ from praeparo.pack import (
     restitch_pack_pptx,
     run_pack,
 )
+from praeparo.pack.render_approve import approve_pack_render_manifest
 from praeparo.pack.render_compare import compare_pack_render_manifest, write_pack_render_comparison
 from praeparo.pack.render_inspect import inspect_pack_render_target, write_pack_render_inspection
 from praeparo.pack.render_manifest import build_pack_render_manifest, write_pack_render_manifest
@@ -898,6 +899,47 @@ def _register_pack_parsers(parent: argparse._SubParsersAction[argparse.ArgumentP
         help="Compare only matching slide titles, ids, or target slugs (repeatable).",
     )
     compare_slide_parser.set_defaults(_handler=_handle_pack_compare_slide)
+
+    approve_slide_parser = pack_subparsers.add_parser(
+        "approve-slide",
+        help="Promote rendered pack slide PNGs into the approved baseline set.",
+    )
+    approve_slide_parser.add_argument(
+        "source",
+        type=Path,
+        help="Path to a pack artefact directory or a render.manifest.json file.",
+    )
+    approve_slide_parser.add_argument(
+        "--baseline-dir",
+        dest="baseline_dir",
+        type=Path,
+        required=True,
+        help="Directory where approved baseline PNGs and baseline.manifest.json will be written.",
+    )
+    approve_slide_parser.add_argument(
+        "--slide",
+        "--slides",
+        dest="slides",
+        action="append",
+        default=[],
+        metavar="ID_OR_TITLE",
+        help="Approve only matching slide titles, ids, slide slugs, or target slugs (repeatable).",
+    )
+    approve_slide_parser.add_argument(
+        "--note",
+        dest="note",
+        help="Optional approval note recorded in baseline.manifest.json and target details.",
+    )
+    approve_slide_parser.add_argument(
+        "--project-root",
+        dest="project_root",
+        type=Path,
+        help=(
+            "Root used to resolve cwd-relative paths stored in render.manifest.json. "
+            "Defaults to the current working directory."
+        ),
+    )
+    approve_slide_parser.set_defaults(_handler=_handle_pack_approve_slide)
 
     inspect_slide_parser = pack_subparsers.add_parser(
         "inspect-slide",
@@ -1969,6 +2011,42 @@ def _handle_pack_compare_slide(args: argparse.Namespace) -> int:
     if comparison.failed_targets:
         return 1
 
+    return 0
+
+
+def _handle_pack_approve_slide(args: argparse.Namespace) -> int:
+    """Approve selected rendered targets into the baseline directory.
+
+    Render and compare establish whether a target changed; this handler records
+    the human or agent decision that the new PNG is acceptable. It keeps the
+    CLI thin by delegating selector resolution, file promotion, and manifest
+    merging to the reusable approval module.
+    """
+
+    started = time.perf_counter()
+
+    if not args.slides:
+        raise ValueError("Provide at least one --slide when using `praeparo pack approve-slide`.")
+
+    manifest_path = _resolve_render_manifest_source(args.source)
+    approval = approve_pack_render_manifest(
+        manifest_path=manifest_path,
+        baseline_dir=args.baseline_dir,
+        selectors=tuple(args.slides or ()),
+        project_root=getattr(args, "project_root", None),
+        note=getattr(args, "note", None),
+    )
+
+    print(f"[ok] Wrote baseline manifest to {approval.baseline_manifest_path}")
+    approved_labels = ", ".join(item.target_slug for item in approval.approved_targets)
+    print(
+        "[ok] Approved "
+        f"{len(approval.approved_targets)} target(s) into {approval.baseline_dir}: "
+        f"{approved_labels}"
+    )
+
+    elapsed = time.perf_counter() - started
+    print(f"[ok] Slide approval completed in {_format_duration(elapsed)}")
     return 0
 
 

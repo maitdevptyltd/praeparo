@@ -579,6 +579,28 @@ Key flags:
 
   Use it when a compare mismatch needs diagnosis rather than another manual
   filesystem walk.
+- `pack approve-slide` – promote selected rendered PNGs into the approved
+  baseline set:
+
+  ```bash
+  poetry run praeparo pack approve-slide .tmp/example/pack_focus \
+    --baseline-dir tests/baselines/example_pack \
+    --slide overview \
+    --note "Accept legend sizing update."
+  ```
+
+  This command:
+  - requires at least one explicit `--slide` selector;
+  - resolves each selector to exactly one rendered target so broad slide slugs
+    cannot silently approve multiple placeholders;
+  - copies the current PNG to `<baseline_dir>/<target_slug>.png`; and
+  - writes or updates `<baseline_dir>/baseline.manifest.json`, preserving any
+    project-specific top-level metadata already stored there while adding
+    Praeparo-managed approval lineage (`target_details`, source manifest path,
+    approval timestamp, and optional note).
+
+  Use it after compare and inspection confirm that the new render is the
+  intended outcome and should become the approved reference.
 - `--evidence-only` – run evidence exports only (skips visual execution, Power BI exports, and PPTX assembly).
   Useful when you want to refresh `_evidence/` outputs without re-rendering slide PNGs.
 - `--max-pbi-concurrency` – maximum number of Power BI exports in flight at
