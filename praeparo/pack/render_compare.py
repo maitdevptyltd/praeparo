@@ -14,8 +14,11 @@ from typing import Literal, Sequence
 from PIL import Image, ImageChops
 from pydantic import BaseModel, Field
 
-from praeparo.pack.render_manifest import PackRenderManifest, PackRenderManifestEntry
-from praeparo.visuals.dax.planner_core import slugify
+from praeparo.pack.render_manifest import (
+    PackRenderManifestEntry,
+    load_pack_render_manifest,
+    select_pack_render_targets,
+)
 
 
 class RenderComparisonMetrics(BaseModel):
@@ -54,13 +57,6 @@ class PackRenderComparison(BaseModel):
     failed_targets: int
     comparisons: list[PackRenderComparisonEntry] = Field(default_factory=list)
 
-
-def load_pack_render_manifest(path: Path) -> PackRenderManifest:
-    """Load a previously emitted pack render manifest from disk."""
-
-    return PackRenderManifest.model_validate_json(path.read_text(encoding="utf-8"))
-
-
 def compare_pack_render_manifest(
     *,
     manifest_path: Path,
@@ -79,7 +75,7 @@ def compare_pack_render_manifest(
     manifest = load_pack_render_manifest(manifest_path)
     resolution_root = _resolve_project_root(project_root)
     requested = tuple(str(item) for item in selectors)
-    entries = _select_manifest_entries(manifest.rendered_targets, selectors=requested)
+    entries = select_pack_render_targets(manifest.rendered_targets, selectors=requested)
     if requested and not entries:
         joined = ", ".join(requested)
         raise ValueError(f"No rendered targets matched selectors: {joined}")
@@ -222,37 +218,6 @@ def _compare_pngs(*, png_path: Path, baseline_path: Path) -> tuple[RenderCompari
         ),
         diff,
     )
-
-
-def _select_manifest_entries(
-    entries: Sequence[PackRenderManifestEntry],
-    *,
-    selectors: Sequence[str],
-) -> list[PackRenderManifestEntry]:
-    """Filter manifest targets using slide ids, titles, slugs, or target slugs."""
-
-    if not selectors:
-        return list(entries)
-
-    normalized = {slugify(item) for item in selectors}
-    selected: list[PackRenderManifestEntry] = []
-    for entry in entries:
-        title_slug = slugify(entry.slide_title) if entry.slide_title else None
-        candidates = {
-            slugify(entry.slide_slug),
-            slugify(entry.target_slug),
-            slugify(entry.artifact_label),
-        }
-        if entry.slide_id:
-            candidates.add(slugify(entry.slide_id))
-        if title_slug:
-            candidates.add(title_slug)
-
-        if candidates & normalized:
-            selected.append(entry)
-
-    return selected
-
 
 def _resolve_project_root(project_root: Path | None) -> Path:
     """Resolve the root used for cwd-relative render manifest paths."""

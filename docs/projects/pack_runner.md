@@ -561,6 +561,24 @@ Key flags:
 
   Use it when you need a falsifiable answer to "did this visual actually stay
   the same?" rather than a manual PNG eyeball pass.
+- `pack inspect-slide` – inspect one rendered target and its related sidecars:
+
+  ```bash
+  poetry run praeparo pack inspect-slide .tmp/example/pack_focus \
+    --slide overview
+  ```
+
+  This command:
+  - resolves exactly one rendered target from `render.manifest.json`;
+  - writes `<artefact_dir>/_inspections/<target>.inspect.json` by default;
+  - includes the slide/template metadata, source visual path, PNG path, target
+    artefacts, slide-scoped metric-context artefacts, and any matching evidence
+    sidecars; and
+  - folds in comparison status automatically when
+    `<artefact_dir>/_comparisons/compare.manifest.json` already exists.
+
+  Use it when a compare mismatch needs diagnosis rather than another manual
+  filesystem walk.
 - `--evidence-only` – run evidence exports only (skips visual execution, Power BI exports, and PPTX assembly).
   Useful when you want to refresh `_evidence/` outputs without re-rendering slide PNGs.
 - `--max-pbi-concurrency` – maximum number of Power BI exports in flight at

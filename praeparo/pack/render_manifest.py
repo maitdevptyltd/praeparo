@@ -32,6 +32,7 @@ class PackRenderManifestEntry(BaseModel):
     slide_index: int | None = None
     slide_id: str | None = None
     slide_title: str | None = None
+    slide_template: str | None = None
     slide_slug: str
     target_slug: str
     artifact_label: str
@@ -85,6 +86,7 @@ def build_pack_render_manifest(
                 slide_index=item.slide_index or fallback_index,
                 slide_id=slide.id,
                 slide_title=slide.title,
+                slide_template=slide.template,
                 slide_slug=slide_slug,
                 target_slug=target_slug,
                 artifact_label=artifact_label,
@@ -115,6 +117,42 @@ def write_pack_render_manifest(manifest: PackRenderManifest, path: Path) -> None
 
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(manifest.model_dump_json(indent=2) + "\n", encoding="utf-8")
+
+
+def load_pack_render_manifest(path: Path) -> PackRenderManifest:
+    """Load a previously emitted pack render manifest from disk."""
+
+    return PackRenderManifest.model_validate_json(path.read_text(encoding="utf-8"))
+
+
+def select_pack_render_targets(
+    entries: Sequence[PackRenderManifestEntry],
+    *,
+    selectors: Sequence[str],
+) -> list[PackRenderManifestEntry]:
+    """Filter manifest targets using slide ids, titles, slugs, or target slugs."""
+
+    if not selectors:
+        return list(entries)
+
+    normalized = {slugify(item) for item in selectors}
+    selected: list[PackRenderManifestEntry] = []
+    for entry in entries:
+        title_slug = slugify(entry.slide_title) if entry.slide_title else None
+        candidates = {
+            slugify(entry.slide_slug),
+            slugify(entry.target_slug),
+            slugify(entry.artifact_label),
+        }
+        if entry.slide_id:
+            candidates.add(slugify(entry.slide_id))
+        if title_slug:
+            candidates.add(title_slug)
+
+        if candidates & normalized:
+            selected.append(entry)
+
+    return selected
 
 
 def _collect_result_artefacts(result: "PackSlideResult") -> list[RenderManifestArtifact]:
@@ -224,5 +262,7 @@ __all__ = [
     "PackRenderManifestEntry",
     "RenderManifestArtifact",
     "build_pack_render_manifest",
+    "load_pack_render_manifest",
+    "select_pack_render_targets",
     "write_pack_render_manifest",
 ]

@@ -46,6 +46,7 @@ from praeparo.pack import (
     run_pack,
 )
 from praeparo.pack.render_compare import compare_pack_render_manifest, write_pack_render_comparison
+from praeparo.pack.render_inspect import inspect_pack_render_target, write_pack_render_inspection
 from praeparo.pack.render_manifest import build_pack_render_manifest, write_pack_render_manifest
 from praeparo.pack.metric_context import dump_context_payload
 from praeparo.visuals.dax_compilers import (
@@ -897,6 +898,47 @@ def _register_pack_parsers(parent: argparse._SubParsersAction[argparse.ArgumentP
         help="Compare only matching slide titles, ids, or target slugs (repeatable).",
     )
     compare_slide_parser.set_defaults(_handler=_handle_pack_compare_slide)
+
+    inspect_slide_parser = pack_subparsers.add_parser(
+        "inspect-slide",
+        help="Inspect one rendered pack slide target and its related sidecars.",
+    )
+    inspect_slide_parser.add_argument(
+        "source",
+        type=Path,
+        help="Path to a pack artefact directory or a render.manifest.json file.",
+    )
+    inspect_slide_parser.add_argument(
+        "--slide",
+        "--slides",
+        dest="slides",
+        action="append",
+        default=[],
+        metavar="ID_OR_TITLE",
+        help="Inspect one matching slide title, id, slide slug, or target slug.",
+    )
+    inspect_slide_parser.add_argument(
+        "--compare-manifest",
+        dest="compare_manifest",
+        type=Path,
+        help="Optional compare.manifest.json path to fold baseline status into the inspection payload.",
+    )
+    inspect_slide_parser.add_argument(
+        "--output",
+        dest="output",
+        type=Path,
+        help="Path to write the inspection JSON (defaults to <artefact_dir>/_inspections/<target>.inspect.json).",
+    )
+    inspect_slide_parser.add_argument(
+        "--project-root",
+        dest="project_root",
+        type=Path,
+        help=(
+            "Root used to resolve cwd-relative paths stored in render.manifest.json. "
+            "Defaults to the current working directory."
+        ),
+    )
+    inspect_slide_parser.set_defaults(_handler=_handle_pack_inspect_slide)
 
 
 def _update_config_argument_help(parser: argparse.ArgumentParser, help_text: str) -> None:
@@ -1927,6 +1969,30 @@ def _handle_pack_compare_slide(args: argparse.Namespace) -> int:
     if comparison.failed_targets:
         return 1
 
+    return 0
+
+
+def _handle_pack_inspect_slide(args: argparse.Namespace) -> int:
+    """Inspect one rendered target and write a structured diagnosis payload.
+
+    Focused debugging already has render and compare commands. This handler adds
+    the missing diagnosis step by resolving one rendered target and gathering
+    its own artefacts plus slide-scoped metric-context, evidence, and compare
+    sidecars into one JSON document.
+    """
+
+    manifest_path = _resolve_render_manifest_source(args.source)
+    inspection = inspect_pack_render_target(
+        manifest_path=manifest_path,
+        selectors=tuple(args.slides or ()),
+        compare_manifest_path=getattr(args, "compare_manifest", None),
+        project_root=getattr(args, "project_root", None),
+    )
+
+    output_path = args.output or (manifest_path.parent / "_inspections" / f"{inspection.target_slug}.inspect.json")
+    write_pack_render_inspection(inspection, output_path)
+
+    print(f"[ok] Wrote inspection manifest to {_display_cli_path(output_path)}")
     return 0
 
 
