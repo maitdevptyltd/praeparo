@@ -52,7 +52,6 @@ from praeparo.pack.render_inspect import inspect_pack_render_target, write_pack_
 from praeparo.pack.render_manifest import build_pack_render_manifest, write_pack_render_manifest
 from praeparo.pack.render_review import review_pack_render_manifest, write_pack_render_review
 from praeparo.pack.metric_context import dump_context_payload
-from praeparo.mcp_server import run_mcp_server
 from praeparo.visuals.dax_compilers import (
     DaxCompilerRegistration,
     get_dax_compiler_registration,
@@ -2563,6 +2562,8 @@ def _handle_visual_run(args: argparse.Namespace) -> int:
 
 def _handle_mcp_serve(args: argparse.Namespace) -> int:
     """Start the Praeparo MCP server over the requested transport."""
+
+    from praeparo.mcp_server import run_mcp_server
 
     run_mcp_server(
         transport=getattr(args, "transport", "stdio"),

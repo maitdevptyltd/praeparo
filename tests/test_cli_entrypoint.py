@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import builtins
 import argparse
+import importlib
 import json
 from pathlib import Path
 import sys
@@ -2117,7 +2118,7 @@ def test_mcp_serve_cli_entrypoint_calls_server(monkeypatch) -> None:
         captured["host"] = host
         captured["port"] = port
 
-    monkeypatch.setattr("praeparo.cli.run_mcp_server", fake_run_mcp_server)
+    monkeypatch.setattr("praeparo.mcp_server.run_mcp_server", fake_run_mcp_server)
 
     with pytest.raises(SystemExit) as exc:
         cli_main(
@@ -2135,3 +2136,25 @@ def test_mcp_serve_cli_entrypoint_calls_server(monkeypatch) -> None:
 
     assert exc.value.code == 0
     assert captured == {"transport": "stdio", "host": "0.0.0.0", "port": 9123}
+
+
+def test_cli_reload_does_not_eagerly_import_mcp_server(monkeypatch) -> None:
+    """Reloading the CLI should not require the optional MCP dependency path.
+
+    Review and pack commands run in environments that may not install the MCP
+    extras. This regression check blocks any future top-level
+    `praeparo.mcp_server` import from sneaking back into `praeparo.cli`.
+    """
+
+    original_import = builtins.__import__
+
+    def guarded_import(name, globals=None, locals=None, fromlist=(), level=0):  # noqa: ANN001
+        if name == "praeparo.mcp_server":
+            raise ModuleNotFoundError("No module named 'mcp'")
+        return original_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr(builtins, "__import__", guarded_import)
+
+    reloaded = importlib.reload(cli)
+
+    assert reloaded is cli
