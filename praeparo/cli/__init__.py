@@ -8,7 +8,7 @@ import os
 import sys
 import time
 from pathlib import Path
-from typing import Any, Dict, Iterable, Mapping, MutableMapping, Sequence, cast
+from typing import Any, Dict, Iterable, Literal, Mapping, MutableMapping, Sequence, cast
 
 from jinja2 import Environment
 from pydantic import ValidationError
@@ -45,6 +45,7 @@ from praeparo.pack import (
     restitch_pack_pptx,
     run_pack,
 )
+from praeparo.pack.render_manifest import build_pack_render_manifest, write_pack_render_manifest
 from praeparo.pack.metric_context import dump_context_payload
 from praeparo.visuals.dax_compilers import (
     DaxCompilerRegistration,
@@ -409,8 +410,8 @@ def _resolve_pack_path_templates(
 
     # With context ready, render any CLI-supplied output paths in-place before defaults are derived.
     args.dest = _render_pack_path_template(getattr(args, "dest", None), env=jinja_env, context=pack_payload)
-    args.artefact_dir = _render_pack_path_template(args.artefact_dir, env=jinja_env, context=pack_payload)
-    args.result_file = _render_pack_path_template(args.result_file, env=jinja_env, context=pack_payload)
+    args.artefact_dir = _render_pack_path_template(getattr(args, "artefact_dir", None), env=jinja_env, context=pack_payload)
+    args.result_file = _render_pack_path_template(getattr(args, "result_file", None), env=jinja_env, context=pack_payload)
     args.build_artifacts_dir = _render_pack_path_template(
         getattr(args, "build_artifacts_dir", None),
         env=jinja_env,
@@ -691,6 +692,162 @@ def _register_pack_parsers(parent: argparse._SubParsersAction[argparse.ArgumentP
         help="Run post-pack evidence exports only (skips slide execution and PPTX assembly).",
     )
     run_parser.set_defaults(_handler=_handle_pack_run, print_dax=False, validate_define=False, sort_rows=False)
+
+    render_slide_parser = pack_subparsers.add_parser(
+        "render-slide",
+        help="Render one or more pack slides without assembling a PPTX.",
+    )
+    render_slide_parser.add_argument("pack", type=Path, help="Path to the pack YAML file.")
+    _add_plugin_argument(render_slide_parser)
+    render_slide_parser.add_argument(
+        "--artefact-dir",
+        type=Path,
+        dest="artefact_dir",
+        required=True,
+        help="Root directory for rendered slide artefacts and the emitted render.manifest.json.",
+    )
+    render_slide_parser.add_argument(
+        "--meta",
+        dest="meta",
+        action="append",
+        default=[],
+        metavar="KEY=VALUE",
+        help="Additional metadata key/value pairs forwarded to pipelines.",
+    )
+    render_slide_parser.add_argument(
+        "--context",
+        dest="context_paths",
+        action="append",
+        default=[],
+        type=Path,
+        help="Optional YAML/JSON file containing top-level context overrides (repeatable).",
+    )
+    render_slide_parser.add_argument(
+        "--data-mode",
+        dest="data_mode",
+        default=None,
+        help="Datasource mode (e.g. mock, live). Defaults to live when omitted.",
+    )
+    render_slide_parser.add_argument(
+        "--max-pbi-concurrency",
+        dest="max_pbi_concurrency",
+        type=int,
+        help=(
+            "Maximum concurrent Power BI exports "
+            f"(default {DEFAULT_POWERBI_CONCURRENCY}; env {PBI_CONCURRENCY_ENV_VAR})."
+        ),
+    )
+    render_slide_parser.add_argument(
+        "--allow-partial",
+        dest="allow_partial",
+        action="store_true",
+        help=(
+            "Allow slide rendering to keep successful outputs while still reporting failures at the end. "
+            "Exit code remains non-zero when failures occur."
+        ),
+    )
+    render_slide_parser.add_argument(
+        "--datasource",
+        "--data-source",
+        dest="datasource",
+        help="Datasource override key.",
+    )
+    render_slide_parser.add_argument(
+        "--dataset-id",
+        dest="dataset_id",
+        help="Power BI dataset identifier for live execution.",
+    )
+    render_slide_parser.add_argument(
+        "--workspace-id",
+        dest="workspace_id",
+        help="Optional Power BI workspace identifier.",
+    )
+    render_slide_parser.add_argument(
+        "--seed",
+        dest="seed",
+        type=int,
+        help="Seed used by mock data providers.",
+    )
+    render_slide_parser.add_argument(
+        "--scenario",
+        dest="scenario",
+        help="Mock scenario key defined in the visual configuration.",
+    )
+    render_slide_parser.add_argument(
+        "--project-root",
+        dest="project_root",
+        type=Path,
+        help=(
+            "Override the project root used for metrics/datasources discovery and default build paths. "
+            "Defaults to the current working directory."
+        ),
+    )
+    render_slide_parser.add_argument(
+        "--metrics-root",
+        dest="metrics_root",
+        type=Path,
+        help="Optional metrics directory to resolve relative paths.",
+    )
+    render_slide_parser.add_argument(
+        "--measure-table",
+        dest="measure_table",
+        default="'adhoc'",
+        help="Measure table used when emitting DEFINE statements (defaults to 'adhoc').",
+    )
+    render_slide_parser.add_argument(
+        "--ignore-placeholders",
+        dest="ignore_placeholders",
+        action="store_true",
+        help="Skip metrics marked as placeholders during execution.",
+    )
+    render_slide_parser.add_argument(
+        "--build-artifacts-dir",
+        dest="build_artifacts_dir",
+        type=Path,
+        help="Directory for build artifacts emitted by visuals (e.g. exported PPTX/PNG).",
+    )
+    render_slide_parser.add_argument(
+        "--png-scale",
+        dest="png_scale",
+        type=float,
+        default=None,
+        help="Scale factor applied to PNG outputs (defaults to pipeline configuration).",
+    )
+    render_slide_parser.add_argument(
+        "--width",
+        dest="width",
+        type=int,
+        help="Optional viewport width override supplied to renderers.",
+    )
+    render_slide_parser.add_argument(
+        "--height",
+        dest="height",
+        type=int,
+        help="Optional viewport height override supplied to renderers.",
+    )
+    render_slide_parser.add_argument(
+        "--grain",
+        dest="grain",
+        action="append",
+        default=[],
+        metavar="COLUMN",
+        help="Optional SUMMARIZECOLUMNS grain override (repeatable).",
+    )
+    render_slide_parser.add_argument(
+        "--slide",
+        "--slides",
+        dest="slides",
+        action="append",
+        default=[],
+        metavar="ID_OR_TITLE",
+        help="Render only matching slide titles, ids, or slugified equivalents (repeatable).",
+    )
+    render_slide_parser.set_defaults(
+        _handler=_handle_pack_render_slide,
+        print_dax=False,
+        validate_define=False,
+        sort_rows=False,
+    )
 
 
 def _update_config_argument_help(parser: argparse.ArgumentParser, help_text: str) -> None:
@@ -1229,6 +1386,56 @@ def _execute_pipeline(
         raise RuntimeError(str(exc)) from exc
 
 
+def _format_duration(seconds: float) -> str:
+    """Render a compact human-friendly duration for CLI summaries."""
+
+    if seconds < 1:
+        return f"{seconds * 1000:.0f}ms"
+
+    if seconds < 60:
+        return f"{seconds:.2f}s"
+
+    minutes, remainder = divmod(seconds, 60.0)
+    if minutes < 60:
+        return f"{int(minutes)}m{remainder:05.2f}s"
+
+    hours, minutes_remainder = divmod(minutes, 60.0)
+    return f"{int(hours)}h{int(minutes_remainder):02d}m{remainder:05.2f}s"
+
+
+def _write_pack_render_manifest(
+    *,
+    kind: Literal["pack_run", "pack_render_slide"],
+    pack_path: Path,
+    output_root: Path,
+    results: Sequence[PackSlideResult],
+    requested_slides: Sequence[str],
+    result_file: Path | None = None,
+    partial_failure: bool = False,
+    warnings: Sequence[str] = (),
+) -> Path:
+    """Persist a structured render manifest beside the pack artefacts.
+
+    The pack runner already writes PNGs plus sidecars into `--artefact-dir`.
+    This helper consolidates those per-slide files into one machine-readable
+    manifest so focused debugging flows do not need to crawl the filesystem.
+    """
+
+    manifest = build_pack_render_manifest(
+        kind=kind,
+        pack_path=pack_path,
+        artefact_root=output_root,
+        results=results,
+        requested_slides=requested_slides,
+        result_file=result_file,
+        partial_failure=partial_failure,
+        warnings=warnings,
+    )
+    manifest_path = output_root / "render.manifest.json"
+    write_pack_render_manifest(manifest, manifest_path)
+    return manifest_path
+
+
 # ---------------------------------------------------------------------------
 # Command handlers
 # ---------------------------------------------------------------------------
@@ -1287,20 +1494,6 @@ def _handle_python_visual_run(args: argparse.Namespace) -> int:
 
 def _handle_pack_run(args: argparse.Namespace) -> int:
     """Run a pack end-to-end and summarise outputs for CLI users."""
-
-    def format_duration(seconds: float) -> str:
-        if seconds < 1:
-            return f"{seconds * 1000:.0f}ms"
-
-        if seconds < 60:
-            return f"{seconds:.2f}s"
-
-        minutes, remainder = divmod(seconds, 60.0)
-        if minutes < 60:
-            return f"{int(minutes)}m{remainder:05.2f}s"
-
-        hours, minutes_remainder = divmod(minutes, 60.0)
-        return f"{int(hours)}h{int(minutes_remainder):02d}m{remainder:05.2f}s"
 
     started = time.perf_counter()
 
@@ -1407,7 +1600,7 @@ def _handle_pack_run(args: argparse.Namespace) -> int:
         )
         print(f"[ok] Restitched PPTX to {args.result_file}")
         elapsed = time.perf_counter() - started
-        print(f"[ok] Pack run completed in {format_duration(elapsed)}")
+        print(f"[ok] Pack run completed in {_format_duration(elapsed)}")
         return 0
 
     metadata = _prepare_pack_metadata(args, pack_path=pack_path, pack=pack)
@@ -1424,6 +1617,7 @@ def _handle_pack_run(args: argparse.Namespace) -> int:
     project_root = _resolve_project_root(getattr(args, "project_root", None))
 
     partial_failure = False
+    manifest_warnings: list[str] = []
     try:
         results = run_pack(
             args.pack,
@@ -1447,12 +1641,27 @@ def _handle_pack_run(args: argparse.Namespace) -> int:
             print(str(exc))
             results = exc.successful_results
             partial_failure = True
+            manifest_warnings.append(str(exc))
         else:
             raise
     except PackEvidenceFailure as exc:
         print(str(exc))
         results = cast(list[PackSlideResult], exc.successful_results)
         partial_failure = True
+        manifest_warnings.append(str(exc))
+
+    if not getattr(args, "evidence_only", False):
+        manifest_path = _write_pack_render_manifest(
+            kind="pack_run",
+            pack_path=pack_path,
+            output_root=args.artefact_dir,
+            results=results,
+            requested_slides=slide_filter,
+            result_file=args.result_file,
+            partial_failure=partial_failure,
+            warnings=manifest_warnings,
+        )
+        print(f"[ok] Wrote render manifest to {manifest_path}")
 
     if not getattr(args, "evidence_only", False):
         pptx_target: Path | None = args.result_file
@@ -1475,9 +1684,106 @@ def _handle_pack_run(args: argparse.Namespace) -> int:
             print("[warn] No PNG outputs were produced.")
 
     elapsed = time.perf_counter() - started
-    print(f"[ok] Pack run completed in {format_duration(elapsed)}")
+    print(f"[ok] Pack run completed in {_format_duration(elapsed)}")
 
     # Even in partial mode, propagate a non-zero exit so automation can detect failures.
+    if partial_failure:
+        return 1
+
+    return 0
+
+
+def _handle_pack_render_slide(args: argparse.Namespace) -> int:
+    """Render focused pack slides without assembling a PPTX.
+
+    This command keeps the existing pack execution semantics, but narrows the
+    output to the requested slides and always writes a structured render
+    manifest for inspection-oriented workflows.
+    """
+
+    started = time.perf_counter()
+    pack_path: Path = args.pack
+
+    if getattr(args, "data_mode", None) is None:
+        args.data_mode = "live"
+
+    if not args.slides:
+        raise ValueError("Provide at least one --slide when using `praeparo pack render-slide`.")
+
+    try:
+        pack = load_pack_config(pack_path)
+    except PackConfigError as exc:
+        raise ValueError(str(exc)) from exc
+
+    _resolve_pack_path_templates(pack_path=pack_path, pack=pack, args=args)
+
+    metadata = _prepare_pack_metadata(args, pack_path=pack_path, pack=pack)
+    metadata.pop("result_file", None)
+
+    options = _build_pipeline_options(args, metadata, include_outputs=False)
+    if args.png_scale is not None:
+        options.png_scale = args.png_scale
+
+    max_pbi_concurrency = _resolve_max_pbi_concurrency(args)
+    pipeline = VisualPipeline(planner_provider=build_default_query_planner_provider())
+    slide_filter = tuple(args.slides or [])
+    project_root = _resolve_project_root(getattr(args, "project_root", None))
+    jinja_env = create_pack_jinja_env()
+
+    partial_failure = False
+    manifest_warnings: list[str] = []
+    try:
+        results = run_pack(
+            pack_path,
+            pack,
+            project_root=project_root,
+            output_root=args.artefact_dir,
+            max_powerbi_concurrency=max_pbi_concurrency,
+            base_options=options,
+            pipeline=pipeline,
+            env=jinja_env,
+            only_slides=slide_filter,
+            evidence_only=False,
+        )
+    except ConfigLoadError as exc:
+        raise ValueError(str(exc)) from exc
+    except PackExecutionError:
+        raise
+    except PackPowerBIFailure as exc:
+        if args.allow_partial:
+            print(str(exc))
+            results = exc.successful_results
+            partial_failure = True
+            manifest_warnings.append(str(exc))
+        else:
+            raise
+    except PackEvidenceFailure as exc:
+        print(str(exc))
+        results = cast(list[PackSlideResult], exc.successful_results)
+        partial_failure = True
+        manifest_warnings.append(str(exc))
+
+    manifest_path = _write_pack_render_manifest(
+        kind="pack_render_slide",
+        pack_path=pack_path,
+        output_root=args.artefact_dir,
+        results=results,
+        requested_slides=slide_filter,
+        partial_failure=partial_failure,
+        warnings=manifest_warnings,
+    )
+
+    png_count = sum(1 for item in results if item.png_path)
+    if png_count:
+        print(f"[ok] Wrote {png_count} PNG(s) to {args.artefact_dir}")
+    else:
+        print("[warn] No PNG outputs were produced.")
+
+    print(f"[ok] Wrote render manifest to {manifest_path}")
+
+    elapsed = time.perf_counter() - started
+    print(f"[ok] Slide render completed in {_format_duration(elapsed)}")
+
     if partial_failure:
         return 1
 

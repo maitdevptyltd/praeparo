@@ -496,6 +496,9 @@ Key flags:
     - Power BI dataset manifests (`data.json`) include `export_payload`, the
       ExportTo request body used for the primary export, so failed exports can be
       reproduced without needing access to live logs.
+  - Praeparo also writes `<artefact-dir>/render.manifest.json`, a structured
+    summary of rendered slide targets plus their discovered sidecars. This is
+    intended for focused debugging, automation, and agent inspection workflows.
   - Omit this flag only when using the positional `dest` shorthand; the derived
     `artefact_dir` will be `dest/_artifacts` (or `<dest-stem>/_artifacts` when
     `dest` ends with `.pptx`).
@@ -519,6 +522,23 @@ Key flags:
   existing PNGs for skipped slides are reused; otherwise Praeparo logs a warning
   and leaves the template placeholders unchanged/blank. Full runs and
   `--pptx-only` restitches remain strict about missing PNGs.
+- `pack render-slide` – focused slide rendering without PPTX assembly:
+
+  ```bash
+  poetry run praeparo pack render-slide projects/example/pack.yaml \
+    --artefact-dir .tmp/example/pack_focus \
+    --slide overview
+  ```
+
+  This command reuses the pack execution path but:
+  - requires an explicit `--artefact-dir`;
+  - limits execution to the requested `--slide` / `--slides` values;
+  - skips PPTX assembly entirely; and
+  - always emits `render.manifest.json` for inspection-oriented workflows.
+
+  It is the preferred way to debug one slide or a small set of slides when you
+  care about PNGs, DAX, schema/data sidecars, and evidence outputs more than a
+  restitched deck.
 - `--evidence-only` – run evidence exports only (skips visual execution, Power BI exports, and PPTX assembly).
   Useful when you want to refresh `_evidence/` outputs without re-rendering slide PNGs.
 - `--max-pbi-concurrency` – maximum number of Power BI exports in flight at

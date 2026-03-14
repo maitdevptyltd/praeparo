@@ -334,6 +334,13 @@ class PackSlideResult:
     visual_path: Path
     result: VisualExecutionResult
     png_path: Path | None
+    slide_index: int | None = None
+    slide_slug: str | None = None
+    target_slug: str | None = None
+    artifact_label: str | None = None
+    artefact_dir: Path | None = None
+    placeholder_id: str | None = None
+    visual_type: str | None = None
 
 
 DEFAULT_POWERBI_CONCURRENCY = 5
@@ -1518,6 +1525,13 @@ def run_pack(
                         visual_path=visual_path,
                         result=result,
                         png_path=png_path,
+                        slide_index=index,
+                        slide_slug=slide_slug,
+                        target_slug=slide_label,
+                        artifact_label=artifact_label,
+                        artefact_dir=slide_dir,
+                        placeholder_id=placeholder_id,
+                        visual_type=getattr(visual, "type", None),
                     ),
                 )
             )
@@ -1680,6 +1694,12 @@ def run_pack(
                     visual_path=item.job.visual_path,
                     result=item.result,
                     png_path=png_path,
+                    slide_index=item.job.slide_index,
+                    slide_slug=_slug_for_slide(item.job.slide, item.job.slide_index),
+                    target_slug=item.job.slide_slug,
+                    artifact_label=f"[{item.job.slide_index:02d}]_{item.job.slide_slug}",
+                    artefact_dir=item.job.execution_context.options.artefact_dir,
+                    visual_type=getattr(item.job.visual, "type", None),
                 ),
             )
         )

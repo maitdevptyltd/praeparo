@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import builtins
 import argparse
+import json
 from pathlib import Path
 import sys
 from typing import Any, Dict, Mapping, cast
@@ -677,6 +678,178 @@ def test_pack_cli_run_invokes_runner(monkeypatch, tmp_path, capsys) -> None:
     assert captured["path"] == pack_path
     assert captured["output_root"] == artefacts_dir
     assert captured["only_slides"] == ("slide-id-1",)
+
+
+def test_pack_cli_run_writes_render_manifest(monkeypatch, tmp_path, capsys) -> None:
+    pack_path = tmp_path / "pack.yaml"
+    pack_path.write_text("contents", encoding="utf-8")
+
+    def fake_load_pack_config(path: Path) -> PackConfig:
+        assert path == pack_path
+        return PackConfig(
+            schema="test-pack",
+            slides=[PackSlide(title="Slide One", id="slide-id-1", visual=PackVisualRef(ref="one.yaml"))],
+        )
+
+    def fake_run_pack(
+        pack_path_arg,
+        pack,
+        *,
+        project_root=None,
+        output_root,
+        max_powerbi_concurrency=None,
+        base_options,
+        visual_loader=None,
+        pipeline=None,
+        env=None,
+        only_slides=(),
+        evidence_only=False,
+    ):
+        slide = pack.slides[0]
+        slide_dir = output_root / "[01]_slide-id-1"
+        slide_dir.mkdir(parents=True, exist_ok=True)
+        schema_path = slide_dir / "schema.json"
+        schema_path.write_text("{}", encoding="utf-8")
+        extra_path = slide_dir / "extra.data.json"
+        extra_path.write_text("{}", encoding="utf-8")
+
+        png_path = output_root / "slide-id-1.png"
+        png_path.parent.mkdir(parents=True, exist_ok=True)
+        png_path.write_text("png", encoding="utf-8")
+
+        result = VisualExecutionResult(
+            config=BaseVisualConfig(type="powerbi"),
+            outputs=[PipelineOutputArtifact(kind=OutputKind.SCHEMA, path=schema_path)],
+        )
+        return [
+            PackSlideResult(
+                slide=slide,
+                visual_path=pack_path_arg,
+                result=result,
+                png_path=png_path,
+                slide_index=1,
+                slide_slug="slide-id-1",
+                target_slug="slide-id-1",
+                artifact_label="[01]_slide-id-1",
+                artefact_dir=slide_dir,
+                visual_type="powerbi",
+            )
+        ]
+
+    class FakePipeline:
+        def __init__(self, *_, **__):
+            pass
+
+    monkeypatch.setattr("praeparo.cli.load_pack_config", fake_load_pack_config)
+    monkeypatch.setattr("praeparo.cli.run_pack", fake_run_pack)
+    monkeypatch.setattr("praeparo.cli.VisualPipeline", FakePipeline)
+    monkeypatch.setattr("praeparo.cli.build_default_query_planner_provider", lambda: None)
+
+    artefacts_dir = tmp_path / "artefacts"
+    with pytest.raises(SystemExit) as exc:
+        cli_main(["pack", "run", str(pack_path), "--artefact-dir", str(artefacts_dir)])
+
+    assert exc.value.code == 0
+    manifest_path = artefacts_dir / "render.manifest.json"
+    assert manifest_path.exists()
+
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert manifest["kind"] == "pack_run"
+    assert manifest["requested_slides"] == []
+    assert manifest["rendered_targets"][0]["artifact_label"] == "[01]_slide-id-1"
+    artefact_paths = {item["path"] for item in manifest["rendered_targets"][0]["artefacts"]}
+    assert str(artefacts_dir / "[01]_slide-id-1" / "schema.json") in artefact_paths
+    assert str(artefacts_dir / "[01]_slide-id-1" / "extra.data.json") in artefact_paths
+
+    out = capsys.readouterr().out
+    assert "[ok] Wrote render manifest to" in out
+
+
+def test_pack_cli_render_slide_targets_requested_slides(monkeypatch, tmp_path, capsys) -> None:
+    pack_path = tmp_path / "pack.yaml"
+    pack_path.write_text("contents", encoding="utf-8")
+
+    captured: Dict[str, object] = {}
+
+    def fake_load_pack_config(path: Path) -> PackConfig:
+        assert path == pack_path
+        return PackConfig(
+            schema="test-pack",
+            slides=[PackSlide(title="Slide One", id="slide-id-1", visual=PackVisualRef(ref="one.yaml"))],
+        )
+
+    def fake_run_pack(
+        pack_path_arg,
+        pack,
+        *,
+        project_root=None,
+        output_root,
+        max_powerbi_concurrency=None,
+        base_options,
+        visual_loader=None,
+        pipeline=None,
+        env=None,
+        only_slides=(),
+        evidence_only=False,
+    ):
+        captured["only_slides"] = only_slides
+        captured["metadata"] = dict(base_options.metadata)
+
+        slide = pack.slides[0]
+        slide_dir = output_root / "[01]_slide-id-1"
+        slide_dir.mkdir(parents=True, exist_ok=True)
+        png_path = output_root / "slide-id-1.png"
+        png_path.write_text("png", encoding="utf-8")
+        result = VisualExecutionResult(config=BaseVisualConfig(type="powerbi"), outputs=[])
+        return [
+            PackSlideResult(
+                slide=slide,
+                visual_path=pack_path_arg,
+                result=result,
+                png_path=png_path,
+                slide_index=1,
+                slide_slug="slide-id-1",
+                target_slug="slide-id-1",
+                artifact_label="[01]_slide-id-1",
+                artefact_dir=slide_dir,
+                visual_type="powerbi",
+            )
+        ]
+
+    class FakePipeline:
+        def __init__(self, *_, **__):
+            pass
+
+    monkeypatch.setattr("praeparo.cli.load_pack_config", fake_load_pack_config)
+    monkeypatch.setattr("praeparo.cli.run_pack", fake_run_pack)
+    monkeypatch.setattr("praeparo.cli.VisualPipeline", FakePipeline)
+    monkeypatch.setattr("praeparo.cli.build_default_query_planner_provider", lambda: None)
+
+    artefacts_dir = tmp_path / "artefacts"
+    with pytest.raises(SystemExit) as exc:
+        cli_main(
+            [
+                "pack",
+                "render-slide",
+                str(pack_path),
+                "--artefact-dir",
+                str(artefacts_dir),
+                "--slide",
+                "slide-id-1",
+            ]
+        )
+
+    assert exc.value.code == 0
+    assert captured["only_slides"] == ("slide-id-1",)
+    assert "result_file" not in cast(dict[str, object], captured["metadata"])
+
+    manifest = json.loads((artefacts_dir / "render.manifest.json").read_text(encoding="utf-8"))
+    assert manifest["kind"] == "pack_render_slide"
+    assert manifest["requested_slides"] == ["slide-id-1"]
+
+    out = capsys.readouterr().out
+    assert "[ok] Wrote render manifest to" in out
+    assert "[ok] Slide render completed in" in out
 
 
 def test_pack_cli_run_accepts_context_file(monkeypatch, tmp_path, capsys) -> None:
