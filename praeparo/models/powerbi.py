@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from typing import ClassVar, Literal
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from ..powerbi import PowerBIExportDefaults
 from .visual_base import BaseVisualConfig
 
 
@@ -13,6 +14,16 @@ PowerBIVisualMode = Literal["report", "visual", "paginated"]
 PowerBIFilterMergeStrategy = Literal["merge", "replace"]
 PowerBIExportFormat = Literal["png", "pptx", "pdf"]
 PowerBIPaginatedArtifact = Literal["pptx", "pdf", "xlsx", "csv"]
+
+
+def _default_powerbi_export_format() -> PowerBIExportFormat:
+    defaults = PowerBIExportDefaults.from_env()
+    return defaults.format
+
+
+def _default_powerbi_stitch_slides() -> bool:
+    defaults = PowerBIExportDefaults.from_env()
+    return defaults.stitch_slides
 
 
 class PowerBISource(BaseModel):
@@ -41,12 +52,12 @@ class PowerBIRenderOptions(BaseModel):
     """Controls how the exported asset is materialised on disk."""
 
     format: PowerBIExportFormat = Field(
-        default="png",
+        default_factory=_default_powerbi_export_format,
         description="Primary export format requested from Power BI.",
     )
     stitch_slides: bool = Field(
-        default=True,
-        description="Placeholder for future slide stitching (no-op for PNG).",
+        default_factory=_default_powerbi_stitch_slides,
+        description="Whether PPTX slide segments should be stitched into one PNG sidecar.",
     )
     max_concurrency: int | None = Field(
         default=None,

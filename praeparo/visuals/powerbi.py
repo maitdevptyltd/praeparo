@@ -11,7 +11,12 @@ from typing import Mapping, Sequence, Tuple, cast
 import logging
 
 from praeparo.models import BaseVisualConfig, PowerBIVisualConfig
-from praeparo.powerbi import PowerBIClient, PowerBISettings
+from praeparo.powerbi import (
+    PowerBIClient,
+    PowerBIExportDefaults,
+    PowerBISettings,
+    extract_png_from_pptx_export,
+)
 from praeparo.pipeline import ExecutionContext, VisualPipeline
 from praeparo.pipeline.outputs import OutputKind, OutputTarget, PipelineOutputArtifact
 from praeparo.pipeline.registry import (
@@ -127,6 +132,7 @@ class PowerBIExportDataset:
     mode: str
     format: str
     export_path: str
+    pptx_path: str | None
     image_path: str | None
     export_payload: dict[str, object]
     artifacts: dict[str, str]
@@ -151,10 +157,15 @@ def _powerbi_dataset_builder(
 ) -> DatasetArtifact[PowerBIExportDataset]:
     if not isinstance(config, PowerBIVisualConfig):
         raise TypeError("Power BI pipeline expects a PowerBIVisualConfig instance.")
+
     # Start by merging any pack-level filters with the visual's own filters.
     raw_filters = context.options.metadata.get("powerbi_filters") if isinstance(context.options.metadata, dict) else None
     inherited_filters = cast(Mapping[str, str] | Sequence[str] | None, raw_filters)
     merged_filters = _merge_filters(inherited_filters, config.filters, config.filters_merge_strategy)
+
+    # Resolve output defaults once so the export request, polling cadence, and
+    # post-processing all honour the same `.env`-driven runtime knobs.
+    export_defaults = PowerBIExportDefaults.from_env()
 
     # Decide where the primary export and its JSON manifest will land.
     main_path, data_path = _default_export_paths(config, context)
@@ -176,16 +187,19 @@ def _powerbi_dataset_builder(
     settings = PowerBISettings.from_env()
     export_payload = _build_export_payload(config, merged_filters, format=config.render.format)
 
-    async def _run_exports() -> tuple[str, dict[str, str]]:
+    async def _run_exports() -> tuple[str, str | None, dict[str, str]]:
         artifacts: dict[str, str] = {}
         async with PowerBIClient(settings) as client:
-            # Kick off the primary export (PNG or PPTX depending on render.format).
+            # Kick off the primary export first so every downstream sidecar uses the
+            # exact same payload, timeout budget, and artifact naming convention.
             main_export = await client.export_to_file(
                 group_id=config.source.group_id,
                 report_id=config.source.report_id,
                 payload=export_payload,
                 dest_path=main_path,
                 mode=config.mode,
+                poll_interval=export_defaults.poll_interval,
+                timeout=export_defaults.timeout,
             )
 
             if config.mode == "paginated":
@@ -202,11 +216,20 @@ def _powerbi_dataset_builder(
                         payload=alt_payload,
                         dest_path=alt_path,
                         mode=config.mode,
+                        poll_interval=export_defaults.poll_interval,
+                        timeout=export_defaults.timeout,
                     )
-        return str(main_export), artifacts
+
+        # When the primary export is PPTX, extract the visual image so pack runs
+        # can keep consuming PNG slide assets while still retaining the source deck.
+        image_path = _maybe_extract_pptx_image(
+            export_path=Path(main_export),
+            stitch_slides=config.render.stitch_slides,
+        )
+        return str(main_export), image_path, artifacts
 
     try:
-        export_path, artifacts = asyncio.run(_run_exports())
+        export_path, image_path, artifacts = asyncio.run(_run_exports())
     except Exception:
         logger.exception(
             "Power BI export failed",
@@ -223,16 +246,19 @@ def _powerbi_dataset_builder(
         "Power BI export completed",
         extra={
             "export_path": export_path,
+            "image_path": image_path,
             "artifact_count": len(artifacts),
             "artifact_keys": sorted(artifacts.keys()),
         },
     )
 
+    export_file = Path(export_path)
     dataset = PowerBIExportDataset(
         mode=config.mode,
         format=config.render.format,
         export_path=export_path,
-        image_path=export_path if config.render.format == "png" else None,
+        pptx_path=export_path if export_file.suffix.lower() == ".pptx" else None,
+        image_path=image_path if image_path is not None else export_path if export_file.suffix.lower() == ".png" else None,
         export_payload=export_payload,
         artifacts=artifacts,
         filters=merged_filters,
@@ -274,6 +300,23 @@ def _powerbi_renderer(
         )
 
     return outcome
+
+
+def _maybe_extract_pptx_image(*, export_path: Path, stitch_slides: bool) -> str | None:
+    """Create a PNG sidecar when the primary export is a PPTX deck."""
+
+    if export_path.suffix.lower() != ".pptx":
+        return None
+
+    # Keep the PNG beside the source deck so pack runs and manual inspection
+    # can reuse the exact same Power BI export artefacts.
+    png_path = export_path.with_suffix(".png")
+    extracted = extract_png_from_pptx_export(
+        export_path,
+        dest_path=png_path,
+        stitch_slides=stitch_slides,
+    )
+    return str(extracted)
 
 
 register_visual_type("powerbi", _load_powerbi_visual, overwrite=True)
