@@ -7,6 +7,8 @@ from typing import Mapping
 from PIL import Image
 from pptx import Presentation
 from pptx.util import Inches
+import pytest
+from pydantic import ValidationError
 
 from praeparo.models import PowerBIRenderOptions, PowerBISource, PowerBIVisualConfig
 from praeparo.pipeline import ExecutionContext, OutputTarget, PipelineOptions, VisualPipeline
@@ -197,3 +199,51 @@ def test_powerbi_pipeline_extracts_png_sidecar_from_pptx_and_honours_env_default
     assert export_payload.get("format") == "PPTX"
     assert captured.get("poll_interval") == 0.25
     assert captured.get("timeout") == 12.5
+
+
+def test_powerbi_visual_uses_default_report_id_from_env(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("PRAEPARO_PBI_DEFAULT_REPORT_ID", "env-report")
+
+    config = PowerBIVisualConfig(
+        title="Env-backed report",
+        mode="report",
+        source=PowerBISource(group_id="group", page="Page 1"),
+        render=PowerBIRenderOptions(format="png"),
+    )
+
+    assert config.source.report_id == "env-report"
+
+
+def test_powerbi_visual_uses_default_group_and_report_ids_from_env(monkeypatch) -> None:
+    monkeypatch.setenv("PRAEPARO_PBI_WORKSPACE_ID", "env-workspace")
+    monkeypatch.setenv("PRAEPARO_PBI_DEFAULT_REPORT_ID", "env-report")
+
+    config = PowerBIVisualConfig(
+        title="Env-backed ids",
+        mode="report",
+        source=PowerBISource(page="Page 1"),
+        render=PowerBIRenderOptions(format="png"),
+    )
+
+    assert config.source.group_id == "env-workspace"
+    assert config.source.report_id == "env-report"
+
+
+def test_powerbi_visual_rejects_blank_group_id() -> None:
+    with pytest.raises(ValidationError):
+        PowerBIVisualConfig(
+            title="Blank group id",
+            mode="report",
+            source=PowerBISource(group_id="", page="Page 1", report_id="report"),
+            render=PowerBIRenderOptions(format="png"),
+        )
+
+
+def test_powerbi_visual_rejects_blank_report_id() -> None:
+    with pytest.raises(ValidationError):
+        PowerBIVisualConfig(
+            title="Blank report id",
+            mode="report",
+            source=PowerBISource(group_id="group", page="Page 1", report_id=""),
+            render=PowerBIRenderOptions(format="png"),
+        )

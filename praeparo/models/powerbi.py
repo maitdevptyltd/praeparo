@@ -6,7 +6,11 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from ..powerbi import PowerBIExportDefaults
+from ..powerbi import (
+    PowerBIExportDefaults,
+    get_default_powerbi_group_id,
+    get_default_powerbi_report_id,
+)
 from .visual_base import BaseVisualConfig
 
 
@@ -26,11 +30,25 @@ def _default_powerbi_stitch_slides() -> bool:
     return defaults.stitch_slides
 
 
+def _default_powerbi_report_id() -> str:
+    return get_default_powerbi_report_id() or ""
+
+
+def _default_powerbi_group_id() -> str:
+    return get_default_powerbi_group_id() or ""
+
+
 class PowerBISource(BaseModel):
     """Identifiers that locate the Power BI asset."""
 
-    group_id: str = Field(..., description="Power BI workspace (group) identifier.")
-    report_id: str = Field(..., description="Power BI report or paginated report identifier.")
+    group_id: str = Field(
+        default_factory=_default_powerbi_group_id,
+        description="Power BI workspace (group) identifier. Falls back to PRAEPARO_PBI_WORKSPACE_ID when omitted.",
+    )
+    report_id: str = Field(
+        default_factory=_default_powerbi_report_id,
+        description="Power BI report or paginated report identifier. Falls back to PRAEPARO_PBI_DEFAULT_REPORT_ID when omitted.",
+    )
     page: str | None = Field(
         default=None,
         description="Power BI page name (required for report/visual modes).",
@@ -39,6 +57,24 @@ class PowerBISource(BaseModel):
         default=None,
         description="Optional target visual id (only when mode=visual).",
     )
+
+    @field_validator("report_id")
+    @classmethod
+    def _validate_report_id(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError(
+                "source.report_id is required unless PRAEPARO_PBI_DEFAULT_REPORT_ID is set."
+            )
+        return value
+
+    @field_validator("group_id")
+    @classmethod
+    def _validate_group_id(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError(
+                "source.group_id is required unless PRAEPARO_PBI_WORKSPACE_ID is set."
+            )
+        return value
 
 
 class PowerBIParameter(BaseModel):

@@ -32,8 +32,8 @@ type: powerbi
 title: Performance dashboard (ING)
 mode: report          # one of: report (default), visual, paginated
 source:
-  group_id: "42db434f-7c50-4396-9db5-96a9558c3823"
-  report_id: "657ff06c-2149-4e25-9476-05ef1e2ebe5e"
+  group_id: "42db434f-7c50-4396-9db5-96a9558c3823"   # optional when PRAEPARO_PBI_WORKSPACE_ID is set
+  report_id: "657ff06c-2149-4e25-9476-05ef1e2ebe5e"   # optional when PRAEPARO_PBI_DEFAULT_REPORT_ID is set
   page: "f562abbe88c0759b4f20"   # omit for paginated
   visual_id: null                 # optional when mode=visual
 
@@ -59,8 +59,10 @@ render:
 - `mode`: selects the export flavour. `report` targets a whole page;
   `visual` targets a specific `visual_id`; `paginated` uses the paginated
   endpoint and honours `parameters`/`export_formats`.
-- `source.group_id` / `source.report_id`: required identifiers for the Power BI
-  workspace and report.
+- `source.group_id`: workspace identifier. If omitted, Praeparo falls back to
+  `PRAEPARO_PBI_WORKSPACE_ID`.
+- `source.report_id`: report identifier. If omitted, Praeparo falls back to
+  `PRAEPARO_PBI_DEFAULT_REPORT_ID`.
 - `source.page`: required when `mode=report`; ignored for paginated.
 - `source.visual_id`: optional; only used when `mode=visual` is supported by the
   export API.
@@ -103,6 +105,8 @@ render:
   variables resolved by `praeparo.powerbi.PowerBISettings`. No extra auth
   dependencies are required beyond the built-in HTTPX-based client.
 - Export defaults can be supplied via `.env`:
+  - `PRAEPARO_PBI_WORKSPACE_ID=<workspace-guid>`
+  - `PRAEPARO_PBI_DEFAULT_REPORT_ID=<report-guid>`
   - `PRAEPARO_PBI_DEFAULT_EXPORT_FORMAT=png|pptx|pdf`
   - `PRAEPARO_PBI_DEFAULT_STITCH_SLIDES=true|false`
   - `PRAEPARO_PBI_EXPORT_POLL_INTERVAL=<seconds>`

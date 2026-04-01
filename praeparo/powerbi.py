@@ -17,6 +17,8 @@ from .env import ensure_env_loaded
 
 PowerBIExportFormatName = Literal["png", "pptx", "pdf"]
 PBI_DEFAULT_EXPORT_FORMAT_ENV_VAR = "PRAEPARO_PBI_DEFAULT_EXPORT_FORMAT"
+PBI_DEFAULT_GROUP_ID_ENV_VAR = "PRAEPARO_PBI_WORKSPACE_ID"
+PBI_DEFAULT_REPORT_ID_ENV_VAR = "PRAEPARO_PBI_DEFAULT_REPORT_ID"
 PBI_DEFAULT_STITCH_SLIDES_ENV_VAR = "PRAEPARO_PBI_DEFAULT_STITCH_SLIDES"
 PBI_EXPORT_POLL_INTERVAL_ENV_VAR = "PRAEPARO_PBI_EXPORT_POLL_INTERVAL"
 PBI_EXPORT_TIMEOUT_ENV_VAR = "PRAEPARO_PBI_EXPORT_TIMEOUT"
@@ -306,6 +308,36 @@ def extract_png_from_pptx_export(
     return target
 
 
+def get_default_powerbi_report_id(env: Mapping[str, str] | None = None) -> str | None:
+    """Return the optional default report id configured for Power BI visuals."""
+
+    if env is None:
+        ensure_env_loaded()
+    env = env or os.environ
+
+    raw = env.get(PBI_DEFAULT_REPORT_ID_ENV_VAR)
+    if raw is None:
+        return None
+
+    value = raw.strip()
+    return value or None
+
+
+def get_default_powerbi_group_id(env: Mapping[str, str] | None = None) -> str | None:
+    """Return the optional default workspace id configured for Power BI visuals."""
+
+    if env is None:
+        ensure_env_loaded()
+    env = env or os.environ
+
+    raw = env.get(PBI_DEFAULT_GROUP_ID_ENV_VAR)
+    if raw is None:
+        return None
+
+    value = raw.strip()
+    return value or None
+
+
 __all__ = [
     "PowerBIExportDefaults",
     "PowerBIExportFormatName",
@@ -316,6 +348,8 @@ __all__ = [
     "PowerBIQueryError",
     "PowerBIExportError",
     "extract_png_from_pptx_export",
+    "get_default_powerbi_group_id",
+    "get_default_powerbi_report_id",
 ]
 
 
