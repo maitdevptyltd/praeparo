@@ -1,0 +1,48 @@
+﻿type: matrix
+title: "Team Activity"
+datasource: default
+parameters:
+  ReportingWindowStart: "EOMONTH(TODAY(), -12) + 1"
+  ReportingWindowEnd: "EOMONTH(TODAY(), 0)"
+
+define: |
+  COLUMN dim_delivery_mode[Mode] =
+    VAR mode_id = [DeliveryModeId]
+    RETURN IF(mode_id = 2, "Self Service", "Specialist")
+
+  MEASURE dim_team[_Tasks completed %] =
+    DIVIDE(
+      [Tasks completed],
+      CALCULATE(
+        [Tasks completed],
+        REMOVEFILTERS(dim_team[IsAutomated])
+      )
+    )
+
+calculate: |
+  dim_calendar[Date] >= {{ReportingWindowStart}} &&
+  dim_calendar[Date] <= {{ReportingWindowEnd}}
+
+rows:
+  - template: "{{dim_team.IsAutomated}}"
+    hidden: true
+  - template: "{{dim_queue.QueueName}} ({{dim_delivery_mode.Mode}})"
+    label: "Team Activity"
+
+values:
+  - id: "_Tasks completed %"
+    label: "% completed"
+    format: "percent:0"
+
+  - id: "Average Hours to Complete Task"
+    label: "hh:mm:ss"
+    format: "duration:hms"
+
+filters:
+  - field: dim_queue.QueueName
+    include:
+      - "Operations"
+      - "Support"
+  - expression: "dim_team[IsAutomated] = TRUE()"
+
+totals: "off"

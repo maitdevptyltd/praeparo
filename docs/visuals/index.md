@@ -147,7 +147,7 @@ Examples:
 - Directory or extension-less `dest`:
 
   ```bash
-  praeparo visual run governance_matrix visuals/performance_dashboard.yaml ./exports/
+  praeparo visual run matrix visuals/performance_dashboard.yaml ./exports/
   ```
 
   Defaults to:
@@ -158,7 +158,7 @@ Examples:
 - `.png` `dest`:
 
   ```bash
-  praeparo visual run governance_matrix visuals/performance_dashboard.yaml ./exports/report.png
+  praeparo visual run matrix visuals/performance_dashboard.yaml ./exports/report.png
   ```
 
   Defaults to:

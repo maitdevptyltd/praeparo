@@ -216,10 +216,10 @@ def test_load_context_layer_file_adapts_pack_shaped_payload(tmp_path: Path) -> N
     context_path.write_text(
         "\n".join(
             [
-                "schema: orde-pack",
+                "schema: override-pack",
                 "context:",
                 "  lender_id: 178",
-                "  customer: ORDE",
+                "  customer: override_customer",
                 "calculate:",
                 "  lender: \"'dim_lender'[LenderId] = {{ lender_id }}\"",
                 "slides: []",
@@ -232,5 +232,5 @@ def test_load_context_layer_file_adapts_pack_shaped_payload(tmp_path: Path) -> N
     payload = load_context_layer_file(context_path)
 
     assert payload["lender_id"] == 178
-    assert payload["customer"] == "ORDE"
+    assert payload["customer"] == "override_customer"
     assert payload["calculate"] == {"lender": "'dim_lender'[LenderId] = {{ lender_id }}"}

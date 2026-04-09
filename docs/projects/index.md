@@ -25,7 +25,7 @@ projects/
 2. Run `poetry run praeparo projects/<project>/visuals/<visual>.yaml`.
 3. Inspect the generated files in `build/` or wire the command into CI.
 
-Planned project-aware features include `praeparo dev <project>` for live reloads, project-level defaults for shared styling, and optional deployment metadata. For a concrete example, see [Automatic Documents](../examples/automatic_documents.md).
+Planned project-aware features include `praeparo dev <project>` for live reloads, project-level defaults for shared styling, and optional deployment metadata. For a concrete example, see [Team Activity](../examples/team_activity.md).
 
 ## Pack Runner (Pack → PNG)
 

@@ -229,11 +229,11 @@ def test_cli_run_accepts_pack_context(monkeypatch, tmp_path) -> None:
     pack_path.write_text(
         "\n".join(
             [
-                "schema: ing-pack",
+                "schema: example-pack",
                 "context:",
                 "  lender_id: 201",
                 "  month: 2025-10-01",
-                "  customer: ING",
+                "  customer: example_customer",
                 "calculate:",
                 "  lender: \"'dim_lender'[LenderId] = {{ lender_id }}\"",
                 "slides: []",
@@ -288,7 +288,7 @@ def test_cli_run_accepts_pack_context(monkeypatch, tmp_path) -> None:
     context_payload = cast(Mapping[str, Any], captured_metadata.get("context"))
     assert context_payload["lender_id"] == 201
     assert str(context_payload["month"]) == "2025-10-01"
-    assert context_payload["customer"] == "ING"
+    assert context_payload["customer"] == "example_customer"
     assert context_payload["calculate"] == [{"lender": "'dim_lender'[LenderId] = 201"}]
     assert all("{{" not in item for item in ctx.dax.calculate)
 
@@ -687,15 +687,15 @@ def test_pack_cli_run_accepts_context_file(monkeypatch, tmp_path, capsys) -> Non
     pack_path.parent.mkdir(parents=True, exist_ok=True)
     pack_path.write_text("contents", encoding="utf-8")
 
-    override_path = tmp_path / "overrides" / "orde.yaml"
+    override_path = tmp_path / "overrides" / "context_override.yaml"
     override_path.parent.mkdir(parents=True, exist_ok=True)
     override_path.write_text(
         "\n".join(
             [
-                "schema: orde-pack",
+                "schema: override-pack",
                 "context:",
                 "  lender_id: 178",
-                "  customer: ORDE",
+                "  customer: override_customer",
                 "calculate:",
                 "  lender: \"'dim_lender'[LenderId] = {{ lender_id }}\"",
                 "slides: []",
@@ -711,7 +711,7 @@ def test_pack_cli_run_accepts_context_file(monkeypatch, tmp_path, capsys) -> Non
         assert path == pack_path
         return PackConfig(
             schema="test-pack",
-            context={"lender_id": 166, "customer": "Standard Lender"},
+            context={"lender_id": 166, "customer": "default_customer"},
             slides=[PackSlide(title="Slide One", id="slide-id-1", visual=PackVisualRef(ref="one.yaml"))],
         )
 
@@ -774,7 +774,7 @@ def test_pack_cli_run_accepts_context_file(monkeypatch, tmp_path, capsys) -> Non
     base_options = cast(PipelineOptions, captured["base_options"])
     metadata = cast(Mapping[str, object], base_options.metadata)
     context_payload = cast(Mapping[str, Any], metadata["context"])
-    assert context_payload["customer"] == "ORDE"
+    assert context_payload["customer"] == "override_customer"
     assert context_payload["lender_id"] == 178
     assert context_payload["calculate"] == [{"lender": "'dim_lender'[LenderId] = 178"}]
     out = capsys.readouterr().out
@@ -790,14 +790,14 @@ def test_pack_cli_dest_templates_render_with_context_override(monkeypatch, tmp_p
     pack_path.write_text("contents", encoding="utf-8")
     dest = tmp_path / "out" / "customer={{ customer }}" / "governance"
 
-    override_path = tmp_path / "overrides" / "orde.yaml"
+    override_path = tmp_path / "overrides" / "context_override.yaml"
     override_path.parent.mkdir(parents=True, exist_ok=True)
     override_path.write_text(
         "\n".join(
             [
-                "schema: orde-pack",
+                "schema: override-pack",
                 "context:",
-                "  customer: ORDE",
+                "  customer: override_customer",
                 "slides: []",
             ]
         )
@@ -877,7 +877,7 @@ def test_pack_cli_dest_templates_render_with_context_override(monkeypatch, tmp_p
         )
 
     assert exc.value.code == 0
-    expected_dest = tmp_path / "out" / "customer=ORDE" / "governance"
+    expected_dest = tmp_path / "out" / "customer=override_customer" / "governance"
     expected_artefacts = expected_dest / "_artifacts"
     assert captured["output_root"] == expected_artefacts
     base_options = cast(PipelineOptions, captured["base_options"])
@@ -888,9 +888,9 @@ def test_pack_cli_dest_templates_render_with_context_override(monkeypatch, tmp_p
 
 
 def test_pack_cli_dest_directory_sets_defaults(monkeypatch, tmp_path, capsys) -> None:
-    pack_path = tmp_path / "ing governance pack.yaml"
+    pack_path = tmp_path / "customer pack.yaml"
     pack_path.write_text("contents", encoding="utf-8")
-    dest = tmp_path / "out" / "ing"
+    dest = tmp_path / "out" / "customer_pack"
 
     captured: Dict[str, object] = {}
 
@@ -973,9 +973,9 @@ def test_pack_cli_dest_directory_sets_defaults(monkeypatch, tmp_path, capsys) ->
 
 
 def test_pack_cli_dest_pptx_sets_result_and_artifacts(monkeypatch, tmp_path, capsys) -> None:
-    pack_path = tmp_path / "ing pack.yaml"
+    pack_path = tmp_path / "customer pack.yaml"
     pack_path.write_text("contents", encoding="utf-8")
-    dest = tmp_path / "out" / "ing_governance_2025-12.pptx"
+    dest = tmp_path / "out" / "customer_pack_2025-12.pptx"
 
     captured: Dict[str, object] = {}
 
@@ -1058,11 +1058,11 @@ def test_pack_cli_dest_pptx_sets_result_and_artifacts(monkeypatch, tmp_path, cap
 
 
 def test_pack_cli_dest_allows_flag_overrides(monkeypatch, tmp_path, capsys) -> None:
-    pack_path = tmp_path / "ing pack.yaml"
+    pack_path = tmp_path / "customer pack.yaml"
     pack_path.write_text("contents", encoding="utf-8")
-    dest = tmp_path / "out" / "ing_governance_2025-12.pptx"
+    dest = tmp_path / "out" / "customer_pack_2025-12.pptx"
     explicit_artefact_dir = tmp_path / "custom" / "artefacts"
-    explicit_result = tmp_path / "custom" / "ing.pptx"
+    explicit_result = tmp_path / "custom" / "customer_pack.pptx"
 
     captured: Dict[str, object] = {}
 
@@ -1159,7 +1159,7 @@ def test_pack_cli_dest_templates_render_with_registry_context(monkeypatch, tmp_p
     pack_path = tmp_path / "registry" / "customers" / "pack.yaml"
     pack_path.parent.mkdir(parents=True)
     pack_path.write_text("contents", encoding="utf-8")
-    dest = tmp_path / "out" / "month={{ month }}" / "ing"
+    dest = tmp_path / "out" / "month={{ month }}" / "customer_pack"
 
     captured: Dict[str, object] = {}
 
@@ -1228,7 +1228,7 @@ def test_pack_cli_dest_templates_render_with_registry_context(monkeypatch, tmp_p
         )
 
     assert exc.value.code == 0
-    rendered_dest = tmp_path / "out" / "month=2025-11-01" / "ing"
+    rendered_dest = tmp_path / "out" / "month=2025-11-01" / "customer_pack"
     artefact_dir = rendered_dest / "_artifacts"
     assert captured["output_root"] == artefact_dir
     base_options = cast(PipelineOptions, captured["base_options"])
@@ -1242,9 +1242,9 @@ def test_pack_cli_dest_templates_render_with_registry_context(monkeypatch, tmp_p
 
 
 def test_pack_cli_revision_updates_default_result(monkeypatch, tmp_path, capsys) -> None:
-    pack_path = tmp_path / "ing governance pack.yaml"
+    pack_path = tmp_path / "customer pack.yaml"
     pack_path.write_text("contents", encoding="utf-8")
-    dest = tmp_path / "out" / "ing_governance_pack"
+    dest = tmp_path / "out" / "customer_pack"
 
     captured: Dict[str, object] = {}
 
@@ -1332,7 +1332,7 @@ def test_pack_cli_revision_updates_default_result(monkeypatch, tmp_path, capsys)
 def test_pack_cli_result_file_infers_artefact_dir(monkeypatch, tmp_path, capsys) -> None:
     pack_path = tmp_path / "pack.yaml"
     pack_path.write_text("contents", encoding="utf-8")
-    result_path = tmp_path / "out" / "ing_governance.pptx"
+    result_path = tmp_path / "out" / "customer_pack.pptx"
 
     captured: Dict[str, object] = {}
 

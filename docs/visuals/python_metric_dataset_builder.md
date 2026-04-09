@@ -20,9 +20,9 @@ The Metric Dataset Builder is a code-first companion to Praeparo’s YAML visual
 from praeparo.datasets import MetricDatasetBuilder, MetricDatasetBuilderContext
 
 context = MetricDatasetBuilderContext.discover(
-    project_root="projects/ing",
+    project_root="projects/example_client",
     metrics_root="registry/metrics",
-    datasources_root="projects/ing/datasources",
+    datasources_root="projects/example_client/datasources",
 )
 
 dataset = (
@@ -182,5 +182,5 @@ Because the builder returns standard tabular data, any analytics library that un
 ## Roadmap
 
 - Finalise API naming (builder class/module path) and land implementation upstream.
-- Add an `examples/notebooks/metric_dataset_builder.ipynb` showing ING automation visuals rebuilt in Plotly.
+- Add an `examples/notebooks/metric_dataset_builder.ipynb` showing a sample automation dashboard rebuilt in Plotly.
 - Update CLI docs once the planner refactor ships.

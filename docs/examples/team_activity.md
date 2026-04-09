@@ -1,4 +1,4 @@
-# Automatic Documents Example
+# Team Activity Example
 
 Praeparo ships with an end-to-end example project that mirrors the former `tests/integration/matrix_auto.yaml` integration case. The example treats Praeparo as an installed dependency so teams can copy the folder outside of this repository when bootstrapping a deliverable.
 
@@ -8,11 +8,11 @@ See also: [Praeparo Projects](../projects/index.md).
 
 ```text
 examples/
-  automatic_documents/
+  team_activity/
     datasources/
       default.yaml
     visuals/
-      automatic_documents.yaml
+      team_activity.yaml
     build/
       (generated html/png assets)
 ```
@@ -28,7 +28,7 @@ See also: [Datasource Definitions](../datasources/index.md).
 The default descriptor targets Power BI:
 
 ```yaml
-# examples/automatic_documents/datasources/default.yaml
+# examples/team_activity/datasources/default.yaml
 type: powerbi
 datasetId: "${env:PRAEPARO_PBI_DATASET_ID}"
 workspaceId: "${env:PRAEPARO_PBI_WORKSPACE_ID}"
@@ -41,9 +41,9 @@ workspaceId: "${env:PRAEPARO_PBI_WORKSPACE_ID}"
 ### Visual configuration
 
 ```yaml
-# examples/automatic_documents/visuals/automatic_documents.yaml
+# examples/team_activity/visuals/team_activity.yaml
 type: matrix
-title: "Automatic Documents"
+title: "Team Activity"
 datasource: default
 calculate: |
   dim_calendar[Date] >= {{ReportingWindowStart}} &&
@@ -61,10 +61,11 @@ Override the datasource per visual, or omit the field to render against the mock
 ### Running the example
 
 ```bash
-poetry run praeparo examples/automatic_documents/visuals/automatic_documents.yaml       --png-out examples/automatic_documents/build/automatic_documents.png
+poetry run praeparo examples/team_activity/visuals/team_activity.yaml \
+  --png-out examples/team_activity/build/team_activity.png
 ```
 
-- HTML output defaults to `examples/automatic_documents/build/automatic_documents.html`.
+- HTML output defaults to `examples/team_activity/build/team_activity.html`.
 - PNG output is optional; the VS Code launch profile passes `--png-out` automatically.
 - Ensure the Power BI environment variables listed above are set so the CLI can resolve credentials.
 - Use `--data-source mock` when you want to force deterministic sample data.
@@ -80,7 +81,7 @@ poetry run praeparo examples/automatic_documents/visuals/automatic_documents.yam
 ## Progress
 
 - Loader + resolver now handle standalone Power BI datasource YAML files.
-- Converted the former integration visual into an example project with a single `default` Power BI descriptor.
+- Converted the former integration visual into a neutral example project with a single `default` Power BI descriptor.
 - CLI defaults project roots to the current working directory (override with `--project-root`), defaults HTML output paths, and honours per-visual datasource references.
 - VS Code launch profile wires the CLI into the example workflow.
 - Example visual demonstrates the `calculate:` block with a default trailing 12-month reporting window.

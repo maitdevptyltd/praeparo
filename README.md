@@ -36,17 +36,17 @@ Praeparo bridges this gap. It lets you keep using Power BI as the **data engine*
 Define a matrix once:
 
 ```yaml
-title: "Automatic Documents"
+title: "Team Activity"
 type: matrix
 rows:
-  - template: "{{MortMgrName}} ({{FundingChannelTypeName}})"
-    label: "Automatic Documents"
+  - template: "{{QueueName}} ({{DeliveryMode}})"
+    label: "Team Activity"
 values:
-  - id: "percent_sent"
+  - id: "tasks_completed_pct"
     show_as: "Percent of column total"
-    label: "% sent"
+    label: "% completed"
     format: "percent:0"
-  - id: "avg_time_sec"
+  - id: "avg_completion_seconds"
     label: "hh:mm:ss"
     format: "duration:hms"
 totals: row
@@ -56,16 +56,16 @@ Compose it with another matrix in a slide:
 
 ```yaml
 type: group
-title: "Average time to prepare documents"
+title: "Average time to complete work"
 layout: vertical
 children:
-  - ref: "./matrix_auto.yaml"
-  - ref: "./matrix_manual.yaml"
+  - ref: "./team_activity_auto.yaml"
+  - ref: "./team_activity_manual.yaml"
 ```
 
 Run the build, and you’ll get a finished PowerPoint deck — no copy-pasting, no manual formatting.
 
-Matrix configs also support top-level `define:` and `calculate:` blocks. Use `define:` to stage DAX tables or measures before `EVALUATE`, and `calculate:` to inject slicer-style predicates into the generated `CALCULATETABLE` call. Those definitions can be referenced from row templates and filters (see `examples/automatic_documents/visuals/automatic_documents.yaml`). Filters accept either `field`/`include` pairs or direct `expression` strings for complex predicates. Rows can also be marked `hidden: true` to remain in queries while disappearing from rendered tables. Compose lists and top-level `parameters` let base YAML power variants like digital vs manual document runs.
+Matrix configs also support top-level `define:` and `calculate:` blocks. Use `define:` to stage DAX tables or measures before `EVALUATE`, and `calculate:` to inject slicer-style predicates into the generated `CALCULATETABLE` call. Those definitions can be referenced from row templates and filters (see `examples/team_activity/visuals/team_activity.yaml`). Filters accept either `field`/`include` pairs or direct `expression` strings for complex predicates. Rows can also be marked `hidden: true` to remain in queries while disappearing from rendered tables. Compose lists and top-level `parameters` let base YAML power variants like self-service vs specialist workflow runs.
 
 Auto-sized visuals: matrix and frame YAMLs expose an `autoHeight` flag (defaulting to `true`) so Plotly figures match their tabular content when exported to PNG, removing the dead space beneath stacked tables.
 
@@ -86,9 +86,9 @@ Auto-sized visuals: matrix and frame YAMLs expose an `autoHeight` flag (defaulti
 
 ## Proof-of-Concept Workflow
 
-1. Define a matrix visual in YAML (see `examples/automatic_documents/visuals/automatic_documents.yaml`).
+1. Define a matrix visual in YAML (see `examples/team_activity/visuals/team_activity.yaml`).
 2. Validate and render it with the CLI (HTML defaults to `<project>/build/<name>.html`):
-   - `poetry run praeparo examples/automatic_documents/visuals/automatic_documents.yaml --png-out examples/automatic_documents/build/automatic_documents.png --print-dax`
+   - `poetry run praeparo examples/team_activity/visuals/team_activity.yaml --png-out examples/team_activity/build/team_activity.png --print-dax`
    - Add `--data-source powerbi` to reuse the example Power BI descriptor when live credentials are available.
 3. Regenerate visual snapshots with `poetry run pytest --snapshot-update`; inspect the HTML/PNG artifacts under `tests/__snapshots__/test_pipeline/`.
 
@@ -117,7 +117,7 @@ The CLI automatically calls `load_dotenv()` before inspecting the environment, s
 Render a YAML visual against a real dataset:
 
 ```
-poetry run praeparo examples/automatic_documents/visuals/automatic_documents.yaml --data-source powerbi --png-out examples/automatic_documents/build/automatic_documents.png --print-dax
+poetry run praeparo examples/team_activity/visuals/team_activity.yaml --data-source powerbi --png-out examples/team_activity/build/team_activity.png --print-dax
 ```
 
 The CLI exchanges the refresh token for an access token, issues the DAX statement via the Power BI `executeQueries` API, and snapshots the response for regression tests.

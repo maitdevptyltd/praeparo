@@ -37,21 +37,21 @@ Example:
 schema: example-pack-draft-1
 
 context:
-  customer: "Example Bank"
-  lender_id: 201
+  team_name: "Operations"
+  team_id: 201
   month: "2025-10-01"
   metrics:
-    instructions_received: total_instructions
-    documents_sent: total_documents
+    tasks_opened: total_tasks_opened
+    tasks_completed: total_tasks_completed
 
 define: |
-  DEFINE VAR LenderId = {{ lender_id }}
+  DEFINE VAR TeamId = {{ team_id }}
 
 calculate:
-  lender: "'dim_lender'[LenderId] = {{ lender_id }}"
+  team: "'dim_team'[TeamId] = {{ team_id }}"
 
 filters:
-  lender: "dim_lender/LenderId eq {{ lender_id }}"
+  team: "dim_team/TeamId eq {{ team_id }}"
   dates: "{{ odata_months_back_range('dim_calendar/month', month, 3) }}"
 
 evidence:
@@ -61,17 +61,17 @@ evidence:
 
 slides:
   - id: overview
-    title: "Performance Overview"
+    title: "Operations Overview"
     visual:
-      ref: visuals/performance_matrix.yaml   # type: matrix
+      ref: visuals/team_activity_matrix.yaml   # type: matrix
 
-  - id: digital_broker
-    title: "Digital Documents – Broker"
+  - id: self_service
+    title: "Self-Service Share"
     visual:
-      ref: visuals/digital_docs_adoption.yaml   # type: powerbi
+      ref: visuals/self_service_adoption.yaml   # type: powerbi
       filters:
         dates: "{{ odata_months_back_range('dim_calendar/month', month, 6) }}"
-        funding_channel_type: "dim_funding_channel_type/FundingChannelTypeName eq 'Broker'"
+        channel: "dim_channel/ChannelName eq 'Self Service'"
 ```
 
 ### Fields
@@ -93,7 +93,7 @@ slides:
   - Registry-anchored paths (`@/...`) resolve from `registry/`.
   - CLI metadata `pptx_template` still overrides this field for one-off runs.
 - `context` – key/value pairs exposed to Jinja templates (for example,
-  `lender_id`, `month`, `customer`). May also include a `metrics` block that
+  `team_id`, `month`, `team_name`). May also include a `metrics` block that
   declaratively fetches catalogue KPIs into Jinja variables.
 - `define` – optional DAX DEFINE block (single string). Rendered via Jinja using
   `context` and forwarded to DAX-backed pipelines through
@@ -196,22 +196,22 @@ Series operation example (cartesian visual):
 
 ```yaml
 visual:
-  ref: "./visuals/dashboard/digital_documents_timeframes_for_return.yaml"
+  ref: "./visuals/dashboard/task_completion_trends.yaml"
   series_remove:
-    - legacy_other_lender
+    - legacy_queue
   series_update:
-    - id: customer_lender
+    - id: primary_queue
       patch:
-        label: "ORDE"
+        label: "Selected Queue"
   series_add:
-    - id: other_lender
-      label: "Other Lender"
+    - id: comparison_queue
+      label: "Comparison Queue"
       type: line
       metric:
-        key: docusign_completions_cumulative_pct
+        key: tasks_completed_cumulative_pct
         calculate:
-          - REMOVEFILTERS('dim_lender')
-          - "'dim_lender'[LenderId] = 166"
+          - REMOVEFILTERS('dim_queue')
+          - "'dim_queue'[QueueId] = 166"
 ```
 
 Manual replacement watermark example:
@@ -277,7 +277,7 @@ Templating note:
 
 - Slide context values (excluding `context.metrics`) are rendered **once** after
   metric bindings are injected, so nested templates inside slide strings (for
-  example `governance_highlights: "MoM is {{ count_instructions_mom }}"`) can
+  example `summary_note: "MoM is {{ count_tasks_mom }}"`) can
   reference binding aliases. This render pass is not affected by
   `--ignore-placeholders`.
 
@@ -307,13 +307,13 @@ Examples:
 context:
   metrics:
     bindings:
-      - key: instructions_received
-        alias: count_instructions
+      - key: tasks_opened
+        alias: count_tasks
         format: number:0
 ```
 
 ```jinja2
-We received {{ count_instructions }} instructions. (Raw: {{ count_instructions.value }})
+We completed {{ count_tasks }} tasks. (Raw: {{ count_tasks.value }})
 ```
 
 Percent formatting treats inputs as 0–1 and multiplies by 100 for display:
@@ -333,8 +333,8 @@ context:
       period:
         evaluate: "'Time Intelligence'[Period] = \"Current Month\""
     bindings:
-      instructions_received: total_instructions
-      documents_sent: total_documents
+      tasks_opened: total_tasks_opened
+      tasks_completed: total_tasks_completed
 ```
 
 Shorthand still accepted (Praeparo treats these as `bindings`):
@@ -344,8 +344,8 @@ slides:
   - title: Highlights
     context:
       metrics:
-        - documents_verified
-        - documents_verified.within_1_day
+        - tasks_completed
+        - tasks_completed.same_day
 ```
 
 Object form (future-ready; accepted now):
@@ -354,25 +354,25 @@ Object form (future-ready; accepted now):
 context:
   metrics:
     bindings:
-      - key: documents_verified
-        alias: verified_total
-        variant: within_1_day
+      - key: tasks_completed
+        alias: completed_total
+        variant: same_day
         calculate:
-          - dim_customer[CustomerName] = "{{ customer }}"
+          - dim_team[TeamName] = "{{ team_name }}"
         format: "percent:0"
-      - key: documents_verified.within_1_day
-        alias: pct_verified_1d
+      - key: tasks_completed.same_day
+        alias: pct_completed_same_day
         ratio_to: true
         format: "percent:0"
-      - key: documents_verified.within_1_day
-        alias: pct_verified_1d_against_total
-        ratio_to: documents_verified
+      - key: tasks_completed.same_day
+        alias: pct_completed_same_day_against_total
+        ratio_to: tasks_completed
         format: "percent:0"
-      - alias: pct_verified_1d
-        expression: documents_verified.within_1_day / documents_verified
+      - alias: pct_completed_same_day
+        expression: tasks_completed.same_day / tasks_completed
         format: "percent:0"
-      - key: documents_sent
-        alias: total_documents
+      - key: tasks_opened
+        alias: total_tasks_opened
         override: true
 ```
 
@@ -446,13 +446,13 @@ poetry run praeparo pack run \
 You can optionally supply a positional `dest` to derive defaults for `--artefact-dir`
 and a PPTX `--result-file`:
 
-- `praeparo pack run projects/example/pack.yaml out/ing` writes artefacts to
-  `out/ing/_artifacts/` and defaults the PPTX to
-  `out/ing/<pack-slug>_<revision>.pptx` when a revision is available (revision
-  flags or `context.month`), otherwise `out/ing/<pack-slug>.pptx`.
-- `praeparo pack run projects/example/pack.yaml out/ing_governance.pptx` writes
-  artefacts to `out/ing_governance/_artifacts/` and the PPTX to
-  `out/ing_governance.pptx`.
+- `praeparo pack run projects/example/pack.yaml out/customer_pack` writes artefacts to
+  `out/customer_pack/_artifacts/` and defaults the PPTX to
+  `out/customer_pack/<pack-slug>_<revision>.pptx` when a revision is available (revision
+  flags or `context.month`), otherwise `out/customer_pack/<pack-slug>.pptx`.
+- `praeparo pack run projects/example/pack.yaml out/customer_pack.pptx` writes
+  artefacts to `out/customer_pack/_artifacts/` and the PPTX to
+  `out/customer_pack.pptx`.
 
 Explicit flags still win: if you pass `--artefact-dir` or `--result-file`, those
 values override anything derived from the positional `dest`.
@@ -466,7 +466,7 @@ month-scoped output folder:
 ```bash
 poetry run praeparo pack run \
   projects/example/pack.yaml \
-  "out/month={{ month }}/ing"
+  "out/month={{ month }}/customer_pack"
 ```
 
 Key flags:
@@ -478,7 +478,7 @@ Key flags:
 
   ```bash
   poetry run praeparo pack run projects/example/pack.yaml \
-    --context registry/customers/orde/orde_governance_pack.yaml \
+    --context overrides/customer_context.yaml \
     --artefact-dir .tmp/example/pack_png
   ```
 
@@ -511,7 +511,7 @@ Key flags:
   ```bash
   poetry run praeparo pack run projects/example/pack.yaml \
     --artefact-dir .tmp/example/pack_png \
-    --slides overview digital_broker
+    --slides overview self_service
   ```
 
   When `--slides` is used alongside `--result-file`, Praeparo still assembles the
@@ -735,7 +735,7 @@ from the template’s picture placeholders and attach them to each slide’s
 `PipelineOptions.metadata` as `width`/`height` pixel values.
 
 This is primarily for locally-rendered visuals (for example Python visuals,
-governance matrix, and other non-PowerBI renderers) so they can size their PNG
+matrix visuals, and other non-PowerBI renderers) so they can size their PNG
 canvas to match the template viewport before PPTX best-fit placement runs.
 
 Rules:
@@ -890,4 +890,4 @@ legacy `<pack-slug>.pptx`.
 - 2026-02-23: Flow `slide.calculate` into slide metric-context resolution (DEFINE scope) before applying slide `context.metrics.calculate` overrides.
 - 2025-12-12: Inherit `context.metrics.calculate` into slide metric-context execution, with DEFINE/EVALUATE scoping preserved and per-slide by-name overrides.
 - 2025-12-12: Added `ratio_to` support for `context.metrics.bindings` so packs can inject scalar rates/attainment values without duplicating expression bindings.
-- 2025-12-12: Apply `bindings[].format` automatically for display-only Jinja rendering (PPTX text + `governance_highlights`), with `.value` escape hatch for raw numbers.
+- 2025-12-12: Apply `bindings[].format` automatically for display-only Jinja rendering (PPTX text + summary placeholders), with `.value` escape hatch for raw numbers.

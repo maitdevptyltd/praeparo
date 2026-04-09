@@ -26,7 +26,7 @@
 | 6 | CLI: `praeparo visuals render powerbi <file>` (standalone) and pack support so PPTX builders can drop in rendered images. | Not started | Keep deterministic `.tmp/pbi_exports` paths; revision/manifest handling is out of scope. |
 | 7 | Tests: unit (model validation, payload builder, extractor), mocked integration (export polling), snapshot for stitched PNG. | Not started | Gate real API tests behind env flag; keep offline fixtures. |
 | 8 | Docs: developer guide (`docs/visuals/powerbi_visual.md`), architecture touchpoints, CLI help text. | In progress | This doc + reference page drafted. |
-| 9 | Follow-ups: add to examples registry and pack templates; coordinate with MSANational.Metrics for registry/packs migration. | Not started | Depends on pack schema landing in Praeparo. |
+| 9 | Follow-ups: add to the examples registry and pack templates; coordinate with downstream repos for registry/packs migration. | Not started | Depends on pack schema landing in Praeparo. |
 
 ## Risks & Dependencies
 

@@ -17,7 +17,7 @@ dashboard pipelines reuse the same visual definitions found in
 - Supports paginated reports by emitting multiple formats and attaching the
   generated URLs/artefacts to the resolved visual.
 - Normalises filters (dict or list) with the same merge semantics used by the
-  governance pack: pack-level filters merge into placeholder filters unless
+  pack runner: pack-level filters merge into placeholder filters unless
   `filters_merge_strategy: replace` is set.
 - Can keep Power BI exports as PPTX while also extracting a PNG sidecar from the
   embedded slide pictures, including slide crop metadata and overlap trimming.
@@ -29,7 +29,7 @@ dashboard pipelines reuse the same visual definitions found in
 ```yaml
 # registry/visuals/powerbi/performance_dashboard.yaml
 type: powerbi
-title: Performance dashboard (ING)
+title: Operations dashboard
 mode: report          # one of: report (default), visual, paginated
 source:
   group_id: "42db434f-7c50-4396-9db5-96a9558c3823"   # optional when PRAEPARO_PBI_WORKSPACE_ID is set
@@ -38,7 +38,7 @@ source:
   visual_id: null                 # optional when mode=visual
 
 filters:
-  lender: "dim_lender/LenderId eq {{ lender_id }}"
+  team: "dim_team/TeamId eq {{ team_id }}"
   dates: "{{ odata_months_back_range('dim_calendar/month', month, 3) }}"
 filters_merge_strategy: merge      # merge (default) or replace
 
@@ -77,7 +77,7 @@ render:
   `pptx`, Praeparo preserves the deck and also extracts a PNG sidecar when the
   PPTX contains slide images.
 - `render.stitch_slides`: when true, multiple slide images are stitched into one
-  PNG with overlap detection (mirrors the current governance pack behaviour).
+  PNG with overlap detection (mirrors the current pack runner behaviour).
 - `render.max_concurrency`: optional per-visual cap; falls back to the global
   semaphore in the engine.
 
@@ -129,7 +129,7 @@ render:
 ## Interop with packs
 
 - Packs can reference Power BI visuals by path and supply context parameters
-  (for example, `lender_id`, `month`) that feed filter templates in
+  (for example, `team_id`, `month`) that feed filter templates in
   `filters`.
 - Pack-level filters (defined in the pack YAML) are rendered via the same Jinja
   helpers (`odata_months_back_range`, etc.) and merged with slide-level

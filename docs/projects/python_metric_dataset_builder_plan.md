@@ -53,9 +53,9 @@ The builder exposes a fluent API for adding metrics, inline expressions, shared 
 from praeparo.datasets import MetricDatasetBuilder, MetricDatasetBuilderContext
 
 context = MetricDatasetBuilderContext.discover(
-    project_root="projects/ing",
+    project_root="projects/example_client",
     metrics_root="registry/metrics",
-    datasources_root="projects/ing/datasources",
+    datasources_root="projects/example_client/datasources",
 )
 
 dataset = (
@@ -83,12 +83,12 @@ Additional notes:
 - `.expression()` compiles inline expressions using `resolve_expression_metric`.
 - `.calculate()` (global) and per-series `calculate` reuse `normalise_filter_group`.
 - `.define()` lets users append custom DEFINE blocks (e.g. DM partition hints) before rendering.
-- `.datasource(name="ing_powerbi")` overrides auto detection per dataset.
+- `.datasource(name="example_powerbi")` overrides auto detection per dataset.
 
 ### Datasource Resolution
 
 - Default behaviour mirrors the existing planner: start with dataset-level override, fall back to config-provided datasource, then `resolve_datasource(reference=None, visual_path=discrete_path)`.
-- `MetricDatasetBuilderContext.discover()` takes an optional `datasource_file` parameter for notebook-only cases (e.g. `context = ...discover(datasource_file="projects/ing/datasources/live.yaml")`).
+- `MetricDatasetBuilderContext.discover()` takes an optional `datasource_file` parameter for notebook-only cases (e.g. `context = ...discover(datasource_file="projects/example_client/datasources/live.yaml")`).
 - Manual injection points: `.with_datasource(config)` accepts a `ResolvedDataSource` instance, skipping file resolution entirely.
 
 ### Execution & Async Model

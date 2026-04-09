@@ -24,7 +24,7 @@ def test_pack_context_defaults_metrics_root_to_cwd(monkeypatch, tmp_path) -> Non
     context = _instantiate_slide_context(
         registration=registration,
         metadata={},
-        project_root=tmp_path / "customers" / "amp",
+        project_root=tmp_path / "customers" / "example_customer",
     )
 
     assert context is not None
@@ -37,7 +37,7 @@ def test_visual_context_defaults_metrics_root_to_cwd(monkeypatch, tmp_path) -> N
 
     args = Namespace(metrics_root=None, grain=None, calculate=None, define=None)
     metadata: dict[str, object] = {}
-    project_root = tmp_path / "customers" / "amp"
+    project_root = tmp_path / "customers" / "example_customer"
 
     context = _instantiate_visual_context(
         args=args,

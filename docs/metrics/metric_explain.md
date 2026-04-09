@@ -101,8 +101,8 @@ Some visual types and binding adapters are registered by downstream repos. Use `
 
 ```bash
 poetry run praeparo-metrics explain \
-  --plugin msanational_metrics \
-  registry/customers/amp/visuals/performance_dashboard.yaml --list-bindings
+  --plugin custom_visuals_plugin \
+  registry/visuals/custom/performance_dashboard.yaml --list-bindings
 ```
 
 `--plugin` is repeatable and may appear anywhere in the command line.

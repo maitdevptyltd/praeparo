@@ -20,7 +20,7 @@ This guide keeps agents aligned while evolving Praeparo. It explains responsibil
 - When validation or normalisation is required, add field validators or custom types within the Pydantic models rather than ad-hoc parsing logic. Keep business rules close to the model so orchestration layers stay lean, especially for visual context (e.g. customer names, metrics roots, column strategies, DAX context).
 - Push business logic into reusable engines/modules. Keep CLIs and thin wrappers focused on orchestration, argument parsing, and wiring.
 - Run Pyright (basic mode) over every Python surface you modify before handoff, and resolve diagnostics in those files. Note pre-existing issues that cannot be addressed during your task, but do not skip Pyright.
-- Honour downstream consumers (e.g. MSANational.Metrics). Coordinate schema changes with regenerated JSON schema artefacts so IntelliSense stays accurate.
+- Honour downstream consumers. Coordinate schema changes with regenerated JSON schema artefacts so IntelliSense stays accurate.
 - Reuse the shared inheritance helper when adding new `extends` features, capture base expressions with `define`, and choose between model-level inheritance (`extends`) and YAML-level `compose` depending on the scenario (compose merges files; extends links model definitions).
 
 ## Workflow

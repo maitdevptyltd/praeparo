@@ -36,7 +36,7 @@ def test_pack_loader_and_templating(tmp_path: Path) -> None:
     pack_path = tmp_path / "pack.yaml"
     pack_path.write_text(
         """
-schema: ing-pack-draft-1
+schema: example-pack-draft-1
 context:
   lender_id: 201
   month: "2025-10-01"
@@ -775,7 +775,7 @@ def test_run_pack_renders_inline_visual_templates_with_slide_context(tmp_path: P
 
     pack = PackConfig(
         schema="test-pack",
-        context=PackContext.model_validate({"customer": "AMP"}),
+        context=PackContext.model_validate({"customer": "example_customer"}),
         slides=[
             PackSlide(
                 id="slide-1",
@@ -803,7 +803,7 @@ def test_run_pack_renders_inline_visual_templates_with_slide_context(tmp_path: P
 
     assert pipeline.calls
     executed = cast(Any, pipeline.calls[0][0])
-    assert executed.title == "AMP Chart"
+    assert executed.title == "example_customer Chart"
 
 
 def test_run_pack_applies_series_add_to_referenced_visual(tmp_path: Path) -> None:
@@ -849,7 +849,7 @@ def test_run_pack_applies_series_add_to_referenced_visual(tmp_path: Path) -> Non
         return _SeriesVisualConfig(
             type="series_visual",
             title="Base",
-            series=[{"id": "customer_lender", "label": "ORDE"}],
+            series=[{"id": "customer_lender", "label": "Primary Lender"}],
         )
 
     run_pack(
@@ -897,7 +897,7 @@ def test_run_pack_applies_series_remove_and_update_to_referenced_visual(tmp_path
                             {
                                 "id": "customer_lender",
                                 "patch": {
-                                    "label": "ORDE",
+                                    "label": "Selected Lender",
                                     "style": {"color": "#5B9BD5"},
                                 },
                             }
@@ -934,7 +934,7 @@ def test_run_pack_applies_series_remove_and_update_to_referenced_visual(tmp_path
     assert pipeline.calls
     executed = cast(Any, pipeline.calls[0][0])
     assert [entry["id"] for entry in executed.series] == ["customer_lender"]
-    assert executed.series[0]["label"] == "ORDE"
+    assert executed.series[0]["label"] == "Selected Lender"
     assert executed.series[0]["style"]["color"] == "#5B9BD5"
 
 
@@ -1382,7 +1382,7 @@ def test_run_pack_templates_slide_metadata(tmp_path: Path) -> None:
 
     pack = PackConfig(
         schema="test-pack",
-        context=PackContext.model_validate({"customer": "AMP"}),
+        context=PackContext.model_validate({"customer": "example_customer"}),
         slides=[
             PackSlide(
                 title="{{customer}} Dashboard",
@@ -1410,11 +1410,11 @@ def test_run_pack_templates_slide_metadata(tmp_path: Path) -> None:
     )
 
     slide = pack.slides[0]
-    assert slide.title == "AMP Dashboard"
-    assert slide.notes == "Welcome, AMP"
+    assert slide.title == "example_customer Dashboard"
+    assert slide.notes == "Welcome, example_customer"
 
     png_paths = {result.png_path for result in results if result.png_path}
-    assert (tmp_path / "artefacts" / "[01]_amp_dashboard.png") in png_paths
+    assert (tmp_path / "artefacts" / "[01]_example_customer_dashboard.png") in png_paths
 
 
 def test_run_pack_templates_slide_title_for_pptx(tmp_path: Path) -> None:
@@ -1427,7 +1427,7 @@ def test_run_pack_templates_slide_title_for_pptx(tmp_path: Path) -> None:
 
     pack = PackConfig(
         schema="test-pack",
-        context=PackContext.model_validate({"customer": "AMP"}),
+        context=PackContext.model_validate({"customer": "example_customer"}),
         slides=[
             PackSlide(
                 title="{{customer}} Dashboard",
@@ -1450,7 +1450,7 @@ def test_run_pack_templates_slide_title_for_pptx(tmp_path: Path) -> None:
 
     deck = Presentation(result_path)
     assert deck.slides
-    assert deck.slides[0].shapes.title.text == "AMP Dashboard"
+    assert deck.slides[0].shapes.title.text == "example_customer Dashboard"
 
 
 def test_run_pack_names_outputs_with_ordinal_prefix(tmp_path: Path) -> None:
@@ -2865,7 +2865,7 @@ def test_run_pack_supports_python_visual_ref(tmp_path: Path, monkeypatch) -> Non
 def test_default_metrics_root_prefers_registry_metrics(tmp_path: Path) -> None:
     metrics_dir = tmp_path / "repo" / "registry" / "metrics"
     metrics_dir.mkdir(parents=True)
-    pack_path = metrics_dir.parent.parent / "customers" / "amp" / "pack.yaml"
+    pack_path = metrics_dir.parent.parent / "customers" / "example_customer" / "pack.yaml"
     pack_path.parent.mkdir(parents=True)
     pack_path.write_text("{}", encoding="utf-8")
 
@@ -2942,7 +2942,7 @@ def test_restitch_pack_pptx_honours_templated_titles(tmp_path: Path) -> None:
 
     pack = PackConfig(
         schema="test-pack",
-        context=PackContext.model_validate({"customer": "AMP"}),
+        context=PackContext.model_validate({"customer": "example_customer"}),
         slides=[
             PackSlide(
                 title="{{customer}} Dashboard",
@@ -2955,7 +2955,7 @@ def test_restitch_pack_pptx_honours_templated_titles(tmp_path: Path) -> None:
     output_root = tmp_path / "artefacts"
     output_root.mkdir(parents=True, exist_ok=True)
 
-    slug = slugify("AMP Dashboard")
+    slug = slugify("example_customer Dashboard")
     png_path = output_root / f"[01]_{slug}.png"
     _write_coloured_png(png_path, colour=(0, 0, 255, 255))
 

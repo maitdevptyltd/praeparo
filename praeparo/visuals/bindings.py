@@ -8,7 +8,7 @@ workflow needs a consistent way to:
 
 This module provides a small adapter registry keyed by visual type names so
 downstream plugins can register their own binding extractors (for example,
-MSANational's governance_matrix visual).
+a plugin-defined governance matrix visual).
 """
 
 from __future__ import annotations

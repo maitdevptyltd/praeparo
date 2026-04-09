@@ -54,12 +54,19 @@ def test_pptx_template_renders_display_date(tmp_path: Path) -> None:
 def test_pptx_jinja_preserves_static_text(tmp_path: Path) -> None:
     template_prs = Presentation(ASSET_TEMPLATE)
     template_lookup = _notes_template_tags(template_prs)
-    template_slide = template_lookup["governance_matrix_highlights"]
     expected_static = {
         "Instructions Received",
         "Documents Sent",
         "Matters Settled",
     }
+    template_name, template_slide = next(
+        (
+            name,
+            slide,
+        )
+        for name, slide in template_lookup.items()
+        if expected_static.issubset(set(_paragraph_texts(slide)))
+    )
 
     pack = PackConfig(
         schema="test-pack",
@@ -68,7 +75,7 @@ def test_pptx_jinja_preserves_static_text(tmp_path: Path) -> None:
             PackSlide(
                 title="Highlights",
                 id="highlights-slide",
-                template="governance_matrix_highlights",
+                template=template_name,
             )
         ],
     )
