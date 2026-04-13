@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Mapping, Sequence, TYPE_CHECKING
 
+from praeparo.datasources import iter_datasource_roots
 from praeparo.visuals.context_models import VisualContextModel
 from praeparo.visuals.dax import DEFAULT_MEASURE_TABLE, normalise_define_blocks, normalise_filter_group
 from praeparo.visuals.metrics import CalculateInput
@@ -52,10 +53,10 @@ def resolve_default_metrics_root_for_pack(pack_path: Path) -> Path:
 
 
 def _discover_datasources_root(project_root: Path) -> Path | None:
-    """Return the first datasources folder under *project_root*, if any."""
+    """Return the first supported datasources folder under *project_root*, if any."""
 
-    candidate = project_root / "datasources"
-    return candidate if candidate.is_dir() else None
+    roots = iter_datasource_roots(project_root)
+    return roots[0] if roots else None
 
 
 def _select_datasource_file(datasources_root: Path | None) -> Path | None:

@@ -16,7 +16,7 @@ projects/
 ## Key concepts
 
 - **Visuals** live under `visuals/` and are standard Praeparo YAML files (for example `type: matrix` or `type: frame`). Use the optional `datasource` field to reference a datasource by name.
-- **Datasources** (see [Datasource Definitions](../datasources/index.md)) sit alongside visuals and describe how to fetch project data. When a visual omits `datasource`, the CLI falls back to the mock provider for offline development.
+- **Datasources** (see [Datasource Definitions](../datasources/index.md)) sit alongside visuals and describe how to fetch project data. Praeparo resolves named datasources from `datasources/` first, then `registry/datasources/` when present, so registry-style repos can adopt the newer convention without breaking older projects. When a visual omits `datasource`, the CLI falls back to the mock provider for offline development.
 - **Build** contains generated HTML and PNG artefacts. The CLI writes outputs here by default, so add a `.gitignore` entry to keep repositories clean.
 
 ## CLI workflow

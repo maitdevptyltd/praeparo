@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from praeparo.datasets.context import discover_dataset_context
+from praeparo.datasets.context import MetricDatasetBuilderContext, discover_dataset_context
 from praeparo.pipeline import ExecutionContext, PipelineOptions
 from praeparo.visuals.context_models import VisualContextModel
 from praeparo.visuals.dax_context import DAXContextModel
@@ -77,3 +77,29 @@ def test_discover_dataset_context_uses_metadata_ignore_placeholders(tmp_path: Pa
 
     assert dataset_context.metrics_root == metrics_root
     assert dataset_context.ignore_placeholders is True
+
+
+def test_builder_context_discovers_registry_datasources_root(tmp_path: Path) -> None:
+    registry_datasources = tmp_path / "registry" / "datasources"
+    registry_datasources.mkdir(parents=True)
+    registry_datasources.joinpath("default.yaml").write_text("type: powerbi\n", encoding="utf-8")
+
+    context = MetricDatasetBuilderContext.discover(project_root=tmp_path)
+
+    assert context.datasources_root == registry_datasources.resolve()
+    assert context.datasource_file == (registry_datasources / "default.yaml").resolve()
+    assert context.default_datasource == str((registry_datasources / "default.yaml").resolve())
+
+
+def test_builder_context_prefers_legacy_datasources_root_when_both_exist(tmp_path: Path) -> None:
+    legacy_datasources = tmp_path / "datasources"
+    registry_datasources = tmp_path / "registry" / "datasources"
+    legacy_datasources.mkdir(parents=True)
+    registry_datasources.mkdir(parents=True)
+    legacy_datasources.joinpath("default.yaml").write_text("type: powerbi\n", encoding="utf-8")
+    registry_datasources.joinpath("default.yaml").write_text("type: powerbi\n", encoding="utf-8")
+
+    context = MetricDatasetBuilderContext.discover(project_root=tmp_path)
+
+    assert context.datasources_root == legacy_datasources.resolve()
+    assert context.datasource_file == (legacy_datasources / "default.yaml").resolve()

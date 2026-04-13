@@ -156,7 +156,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--datasource",
         dest="datasource",
         default=None,
-        help="Datasource name or YAML path (searched under datasources/).",
+        help="Datasource name or YAML path (searched under datasources/ or registry/datasources/).",
     )
     explain_parser.add_argument(
         "--dataset-id",

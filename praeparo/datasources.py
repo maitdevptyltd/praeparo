@@ -25,6 +25,7 @@ ENV_PATTERNS = (
     re.compile(r"^env:(?P<name>[A-Z0-9_]+)$"),
 )
 DATASOURCE_EXTENSIONS = (".yaml", ".yml")
+DATASOURCE_DIRECTORY_CANDIDATES = ("datasources", "registry/datasources")
 DATASET_ENV_KEY = "PRAEPARO_PBI_DATASET_ID"
 WORKSPACE_ENV_KEY = "PRAEPARO_PBI_WORKSPACE_ID"
 CLIENT_ID_ENV_KEY = "PRAEPARO_PBI_CLIENT_ID"
@@ -87,6 +88,22 @@ def _ancestor_directories(start: Path) -> list[Path]:
     return ancestors
 
 
+def iter_datasource_roots(base: Path) -> tuple[Path, ...]:
+    """Yield supported datasource directories under *base* in resolution order."""
+
+    candidates: list[Path] = []
+    seen: set[Path] = set()
+
+    for relative in DATASOURCE_DIRECTORY_CANDIDATES:
+        candidate = (base / relative).resolve(strict=False)
+        if candidate in seen or not candidate.is_dir():
+            continue
+        seen.add(candidate)
+        candidates.append(candidate)
+
+    return tuple(candidates)
+
+
 def _candidate_paths(reference: str, visual_path: Path) -> list[Path]:
     ref_path = Path(reference)
     ancestors = _ancestor_directories(visual_path.parent)
@@ -112,8 +129,7 @@ def _candidate_paths(reference: str, visual_path: Path) -> list[Path]:
         return candidates
 
     for base in ancestors:
-        data_dir = base / "datasources"
-        if data_dir.is_dir():
+        for data_dir in iter_datasource_roots(base):
             for ext in DATASOURCE_EXTENSIONS:
                 _register(data_dir / f"{reference}{ext}")
         for ext in DATASOURCE_EXTENSIONS:
@@ -263,11 +279,14 @@ def resolve_datasource(
         if normalized.lower() == "mock":
             return ResolvedDataSource(name="mock", type="mock")
         if candidates:
-            msg = f"Data source definition not found: {candidates[0]}"
+            msg = (
+                f"Data source definition not found for '{normalized}' starting from {visual_path}."
+                " Searched datasources/ and registry/datasources/ in ancestor directories, plus relative YAML paths."
+            )
         else:
             msg = (
                 f"Unable to locate data source '{normalized}' for visual {visual_path}."
-                " Provide a name (searched under datasources/) or a YAML path."
+                " Provide a name (searched under datasources/ or registry/datasources/) or a YAML path."
             )
         raise DataSourceConfigError(msg)
 
@@ -304,6 +323,7 @@ def resolve_datasource(
 __all__ = [
     "DataSourceConfigError",
     "ResolvedDataSource",
+    "iter_datasource_roots",
     "load_datasource_config",
     "resolve_datasource",
 ]

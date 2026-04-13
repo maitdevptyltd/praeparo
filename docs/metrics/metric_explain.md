@@ -158,7 +158,7 @@ poetry run praeparo-metrics explain documents_verified --data-mode live --datase
 For live runs, provide either:
 
 - `--dataset-id` (and optionally `--workspace-id`), or
-- `--datasource <name-or-yaml>` (searched under `datasources/`, matching other Praeparo CLIs).
+- `--datasource <name-or-yaml>` (searched under `datasources/` or `registry/datasources/`, matching other Praeparo CLIs).
 
 ## DAX shape (row-based, no measure-per-row)
 

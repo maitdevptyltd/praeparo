@@ -212,7 +212,7 @@ def _build_common_parser() -> argparse.ArgumentParser:
         "--datasource",
         "--data-source",
         dest="datasource",
-        help="Datasource override key.",
+        help="Datasource override key or YAML path (searched under datasources/ or registry/datasources/).",
     )
     parser.add_argument(
         "--dataset-id",
@@ -589,7 +589,7 @@ def _register_pack_parsers(parent: argparse._SubParsersAction[argparse.ArgumentP
         "--datasource",
         "--data-source",
         dest="datasource",
-        help="Datasource override key.",
+        help="Datasource override key or YAML path (searched under datasources/ or registry/datasources/).",
     )
     run_parser.add_argument(
         "--dataset-id",

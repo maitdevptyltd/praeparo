@@ -11,7 +11,7 @@ The builder exposes a fluent API for adding metrics, inline expressions, shared 
 - Reuse Praeparo’s metric catalog, DAX compilation, and datasource resolution inside notebooks or other Python hosts.
 - Decouple chart configuration from DAX planning so YAML planners and code-first clients share a single implementation.
 - Provide both synchronous (`execute`, `to_df`) and asynchronous (`aexecute`, `ato_df`) execution paths. `.execute()` should return `list[dict]` by default, `.to_df()` should return a pandas DataFrame synchronously (when pandas is available), and `.ato_df()` should offer the awaitable equivalent.
-- Auto-detect datasources and registry paths using the existing `datasources/*.yaml` conventions, while allowing explicit overrides for advanced scenarios.
+- Auto-detect datasources and registry paths using the existing `datasources/*.yaml` convention plus `registry/datasources/*.yaml`, while allowing explicit overrides for advanced scenarios.
 - Land the builder upstream in Praeparo first so downstream repos simply bump the submodule.
 
 ## Non-Goals
@@ -45,7 +45,7 @@ The builder exposes a fluent API for adding metrics, inline expressions, shared 
 | `MetricDatasetSeries` | Internal data class capturing the user-facing id, reference, label, expression, value type, and per-series filters. |
 | `MetricDatasetPlan` | Immutable structure with measure plans, grain columns, define blocks, placeholders, rendered query text, and datasources hints. |
 | `MetricDatasetResult` | User-facing container with `rows`, `measure_map`, placeholder info, execution metadata, and helper methods (`to_dataframe`, `to_chart_result`). |
-| `DatasetDatasourceResolver` | Thin wrapper around `resolve_datasource` that also inspects project-local `datasources/*.yaml`. |
+| `DatasetDatasourceResolver` | Thin wrapper around `resolve_datasource` that also inspects project-local `datasources/*.yaml` and `registry/datasources/*.yaml`. |
 
 ### API Surface (Draft)
 
@@ -147,7 +147,7 @@ Additional notes:
 - **Async execution inside running event loops**: mirror existing planner by raising a helpful error when `.execute()` is called from an active loop; document `.aexecute()` for async contexts.
 - **Pandas dependency bloat**: keep DataFrame conversion optional and raise friendly errors if pandas is missing.
 - **Metric drift between YAML and notebooks**: mitigated by reusing the shared builder and metric catalog directly.
-- **Datasource ambiguity in notebooks**: discovery logic will search `datasources/` relative to the provided project root and default to mock when unresolved; provide explicit override hooks.
+- **Datasource ambiguity in notebooks**: discovery logic will search `datasources/` first, then `registry/datasources/` relative to the provided project root, and default to mock when unresolved; provide explicit override hooks.
 
 ## Open Questions
 

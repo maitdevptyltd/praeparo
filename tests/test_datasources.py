@@ -66,6 +66,49 @@ def test_resolve_powerbi_defaults_from_env(
     assert resolved.settings.scope == "env-scope"
 
 
+def test_resolve_powerbi_from_registry_datasources(
+    powerbi_env, monkeypatch: pytest.MonkeyPatch, project_layout: Path
+) -> None:
+    monkeypatch.setenv("PRAEPARO_PBI_DATASET_ID", "registry-dataset")
+
+    registry_datasources = project_layout / "registry" / "datasources"
+    registry_datasources.mkdir(parents=True)
+    (project_layout / "datasources").rmdir()
+    registry_datasources.joinpath("default.yaml").write_text("type: powerbi\n", encoding="utf-8")
+    visual_path = project_layout / "visuals" / "demo.yaml"
+
+    resolved = resolve_datasource("default", visual_path=visual_path)
+
+    assert resolved.type == "powerbi"
+    assert resolved.dataset_id == "registry-dataset"
+    assert resolved.source_path == (registry_datasources / "default.yaml").resolve()
+
+
+def test_resolve_named_datasource_prefers_legacy_directory_when_both_exist(
+    powerbi_env, monkeypatch: pytest.MonkeyPatch, project_layout: Path
+) -> None:
+    monkeypatch.setenv("PRAEPARO_PBI_DATASET_ID", "shared-dataset")
+
+    legacy_datasource = project_layout / "datasources" / "analytics.yaml"
+    registry_datasources = project_layout / "registry" / "datasources"
+    registry_datasources.mkdir(parents=True)
+    registry_datasources.joinpath("analytics.yaml").write_text(
+        "type: powerbi\nworkspaceId: registry-workspace\n",
+        encoding="utf-8",
+    )
+    legacy_datasource.write_text(
+        "type: powerbi\nworkspaceId: legacy-workspace\n",
+        encoding="utf-8",
+    )
+    visual_path = project_layout / "visuals" / "demo.yaml"
+
+    resolved = resolve_datasource("analytics", visual_path=visual_path)
+
+    assert resolved.type == "powerbi"
+    assert resolved.workspace_id == "legacy-workspace"
+    assert resolved.source_path == legacy_datasource.resolve()
+
+
 def test_resolve_powerbi_with_overrides(
     monkeypatch: pytest.MonkeyPatch, project_layout: Path
 ) -> None:
@@ -136,3 +179,14 @@ def test_relative_path_lookup(
 
     assert resolved.type == "powerbi"
     assert resolved.dataset_id == "env-dataset"
+
+
+def test_missing_datasource_message_lists_supported_directories(project_layout: Path) -> None:
+    visual_path = project_layout / "visuals" / "demo.yaml"
+
+    with pytest.raises(DataSourceConfigError) as exc_info:
+        resolve_datasource("missing", visual_path=visual_path)
+
+    message = str(exc_info.value)
+    assert "datasources/" in message
+    assert "registry/datasources/" in message
