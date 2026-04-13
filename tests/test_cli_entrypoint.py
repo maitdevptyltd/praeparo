@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import builtins
 import argparse
+import json
 from pathlib import Path
 import sys
 from typing import Any, Dict, Mapping, cast
@@ -12,7 +13,7 @@ import pytest
 import praeparo.cli as cli
 from praeparo.cli import main as cli_main
 from praeparo.dax import DaxQueryPlan
-from praeparo.models import BaseVisualConfig, PackConfig, PackSlide, PackVisualRef
+from praeparo.models import BaseVisualConfig, PackConfig, PackContext, PackSlide, PackVisualRef
 from praeparo.pack import PackPowerBIFailure, PackSlideResult
 from praeparo.visuals.dax_compilers import DaxCompileArtifact, register_dax_compiler
 from praeparo.visuals.dax import slugify
@@ -159,6 +160,59 @@ def test_cli_run_populates_metadata(monkeypatch, tmp_path) -> None:
         delattr(builtins, "__praeparo_test_plugin_loaded__")
 
 
+def test_schema_subcommand_writes_default_visual_schema(monkeypatch, tmp_path) -> None:
+    plugin_module = tmp_path / "schema_plugin.py"
+    plugin_module.write_text(
+        "\n".join(
+            [
+                "from __future__ import annotations",
+                "",
+                "from pydantic import ConfigDict, Field",
+                "",
+                "from praeparo.models.visual_base import BaseVisualConfig",
+                "from praeparo.visuals import register_visual_schema",
+                "",
+                "class SchemaPluginVisual(BaseVisualConfig):",
+                "    model_config = ConfigDict(extra='forbid')",
+                "    type: str = Field(default='schema_plugin_visual')",
+                "    value: str = 'demo'",
+                "",
+                "register_visual_schema(",
+                "    'schema_plugin_visual',",
+                "    SchemaPluginVisual.model_json_schema,",
+                "    overwrite=True,",
+                "    authoring_parameters=True,",
+                ")",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "praeparo.yaml").write_text("plugins:\n  - schema_plugin\n", encoding="utf-8")
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.syspath_prepend(str(tmp_path))
+
+    with pytest.raises(SystemExit) as exc:
+        cli_main(["schema"])
+
+    assert exc.value.code == 0
+    schema_path = tmp_path / "schemas" / "visual_umbrella.schema.json"
+    payload = json.loads(schema_path.read_text(encoding="utf-8"))
+    assert "schema_plugin_visual" in payload["discriminator"]["mapping"]
+
+
+def test_schema_subcommand_writes_explicit_destination(monkeypatch, tmp_path) -> None:
+    monkeypatch.chdir(tmp_path)
+    destination = tmp_path / "out" / "schema.json"
+
+    with pytest.raises(SystemExit) as exc:
+        cli_main(["schema", str(destination)])
+
+    assert exc.value.code == 0
+    assert destination.exists()
+
+
 def test_yaml_visual_without_typed_context_defaults_metrics_root_to_cwd(monkeypatch, tmp_path) -> None:
     monkeypatch.chdir(tmp_path)
     (tmp_path / "registry" / "metrics").mkdir(parents=True)
@@ -187,10 +241,10 @@ def test_yaml_visual_without_typed_context_defaults_metrics_root_to_cwd(monkeypa
         captured["metrics_root"] = context.dataset_context.metrics_root
         return SchemaArtifact(value={})
 
-    def dataset_builder(pipeline, config, schema_artifact, context):
+    def dataset_builder(pipeline, config, schema, context):
         return DatasetArtifact(value={}, filename="data.json")
 
-    def renderer(pipeline, config, schema_artifact, dataset_artifact, context, outputs):
+    def renderer(pipeline, config, schema, dataset, context, outputs):
         return RenderOutcome(outputs=[])
 
     register_visual_type("dummy_noctx", dummy_loader, overwrite=True, context_model=None)
@@ -603,6 +657,85 @@ def test_pack_cli_loads_plugin_module(monkeypatch, tmp_path) -> None:
             delattr(builtins, "__praeparo_pack_test_plugin_loaded__")
 
 
+def test_pack_cli_auto_discovers_plugin_from_manifest(monkeypatch, tmp_path) -> None:
+    plugin_dir = tmp_path / "plugins"
+    plugin_dir.mkdir()
+    plugin_module_name = "cli_pack_manifest_plugin"
+    (plugin_dir / f"{plugin_module_name}.py").write_text(
+        "import builtins\nbuiltins.__praeparo_pack_manifest_plugin_loaded__ = True\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "praeparo.yaml").write_text(f"plugins:\n  - {plugin_module_name}\n", encoding="utf-8")
+    sys.path.insert(0, str(plugin_dir))
+    monkeypatch.chdir(tmp_path)
+
+    pack_path = tmp_path / "pack.yaml"
+    pack_path.write_text("contents", encoding="utf-8")
+
+    def fake_load_pack_config(path: Path) -> PackConfig:
+        assert path == pack_path
+        return PackConfig(
+            schema="test-pack",
+            slides=[PackSlide(title="Slide One", id="slide-id-1", visual=PackVisualRef(ref="one.yaml"))],
+        )
+
+    def fake_run_pack(
+        pack_path_arg,
+        pack,
+        *,
+        project_root=None,
+        output_root,
+        max_powerbi_concurrency=None,
+        base_options=None,
+        visual_loader=None,
+        pipeline=None,
+        env=None,
+        only_slides=(),
+        evidence_only=False,
+    ):
+        slide = pack.slides[0]
+        png_path = output_root / "slide-id-1.png"
+        png_path.parent.mkdir(parents=True, exist_ok=True)
+        png_path.write_text("png", encoding="utf-8")
+        return [
+            PackSlideResult(
+                slide=slide,
+                visual_path=pack_path_arg,
+                result=VisualExecutionResult(config=BaseVisualConfig(type="powerbi"), outputs=[]),
+                png_path=png_path,
+            )
+        ]
+
+    class FakePipeline:
+        def __init__(self, *_, **__):
+            pass
+
+    monkeypatch.setattr("praeparo.cli.load_pack_config", fake_load_pack_config)
+    monkeypatch.setattr("praeparo.cli.run_pack", fake_run_pack)
+    monkeypatch.setattr("praeparo.cli.VisualPipeline", FakePipeline)
+    monkeypatch.setattr("praeparo.cli.build_default_query_planner_provider", lambda: None)
+
+    artefacts_dir = tmp_path / "artefacts"
+    argv = [
+        "pack",
+        "run",
+        str(pack_path),
+        "--artefact-dir",
+        str(artefacts_dir),
+    ]
+
+    try:
+        with pytest.raises(SystemExit) as exc:
+            cli_main(argv)
+        assert exc.value.code == 0
+        assert hasattr(builtins, "__praeparo_pack_manifest_plugin_loaded__")
+    finally:
+        if str(plugin_dir) in sys.path:
+            sys.path.remove(str(plugin_dir))
+        if hasattr(builtins, "__praeparo_pack_manifest_plugin_loaded__"):
+            delattr(builtins, "__praeparo_pack_manifest_plugin_loaded__")
+
+
 def test_pack_cli_run_invokes_runner(monkeypatch, tmp_path, capsys) -> None:
     pack_path = tmp_path / "pack.yaml"
     pack_path.write_text("contents", encoding="utf-8")
@@ -711,7 +844,7 @@ def test_pack_cli_run_accepts_context_file(monkeypatch, tmp_path, capsys) -> Non
         assert path == pack_path
         return PackConfig(
             schema="test-pack",
-            context={"lender_id": 166, "customer": "default_customer"},
+            context=PackContext.model_validate({"lender_id": 166, "customer": "default_customer"}),
             slides=[PackSlide(title="Slide One", id="slide-id-1", visual=PackVisualRef(ref="one.yaml"))],
         )
 
@@ -810,7 +943,7 @@ def test_pack_cli_dest_templates_render_with_context_override(monkeypatch, tmp_p
     def fake_load_pack_config(path: Path) -> PackConfig:
         return PackConfig(
             schema="test-pack",
-            context={"customer": "Standard Lender"},
+            context=PackContext.model_validate({"customer": "Standard Lender"}),
             slides=[PackSlide(title="Slide One", id="slide-id-1", visual=PackVisualRef(ref="one.yaml"))],
         )
 
@@ -1251,7 +1384,7 @@ def test_pack_cli_revision_updates_default_result(monkeypatch, tmp_path, capsys)
     def fake_load_pack_config(path: Path) -> PackConfig:
         return PackConfig(
             schema="test-pack",
-            context={"month": "2025-12-01"},
+            context=PackContext.model_validate({"month": "2025-12-01"}),
             slides=[PackSlide(title="Slide One", id="slide-id-1", visual=PackVisualRef(ref="one.yaml"))],
         )
 

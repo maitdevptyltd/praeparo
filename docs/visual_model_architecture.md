@@ -1,8 +1,9 @@
 # Visual Model Architecture
 
-Praeparo parses YAML into Pydantic models that describe each visual. The loader
-operates against a discriminated union so new visuals can be added without bespoke
-loader functions.
+Praeparo parses YAML into Pydantic models that describe each visual. Built-in
+visual families use a discriminated union where that keeps the loader simple,
+while plugin visuals register their runtime loader and schema branch explicitly
+without editing Praeparo core unions.
 
 ## Developer API Overview
 
@@ -10,15 +11,17 @@ loader functions.
   defines shared metadata (`type`, `title`, `description`) and a `resolve()` hook
   for deferred loading.
 - `praeparo.visuals` provides registration utilities (`register_visual_type`,
-  `load_visual_definition`) and reusable config primitives (`VisualMetricConfig`,
+  `register_visual_schema`, `load_visual_definition`) and reusable config
+  primitives (`VisualMetricConfig`,
   `VisualGroupConfig`, mock helpers) so projects can add custom visuals without
   writing bespoke loader code.
 - Concrete visuals such as `MatrixConfig` or `FrameConfig` subclass
   `BaseVisualConfig`, declare `type: Literal["..."]`, and add their visual-specific
   fields.
-- `VisualConfigUnion` (in `praeparo.io.yaml_loader`) aggregates the concrete
-  models and feeds a single `TypeAdapter` so the YAML loader can validate a
-  document without custom branching logic.
+- `VisualConfigUnion` (in `praeparo.io.yaml_loader`) aggregates the built-in
+  core models that still benefit from one shared `TypeAdapter`.
+- Plugin visuals are registered through `register_visual_type(...)` for runtime
+  loading and `register_visual_schema(...)` for umbrella-schema export.
 
 ## Creating a Visual Model
 
@@ -56,8 +59,9 @@ series:
 
 1. The YAML loader merges any `compose` chain, applies overrides, and renders
    templated values with the provided parameters.
-2. The merged payload is validated through the `TypeAdapter` built from
-   `VisualConfigUnion`.
+2. Built-in families are validated through the `TypeAdapter` built from
+   `VisualConfigUnion`; plugin families are routed through the explicit visual
+   registry after their plugin module is imported.
 3. The resulting config is returned as a typed `BaseVisualConfig` subclass which
    can be rendered to DAX or Plotly outputs downstream.
 
@@ -105,8 +109,9 @@ filter block).
 
 ### Blockers & Risks
 
-- Adding a new visual requires updating both `VisualConfigUnion` and the
-  generated JSON schema; skipping either step leads to runtime validation gaps
-  and stale IntelliSense for downstream tooling.
+- Plugin visuals now have two explicit registration steps: runtime loading via
+  `register_visual_type(...)` and editor/schema support via
+  `register_visual_schema(...)`. Skipping either step leads to runtime/editor
+  drift for downstream workspaces.
 - The loader assumes templates resolve to strings; templated values that should
   remain structured (e.g. lists) need explicit documentation before adoption.

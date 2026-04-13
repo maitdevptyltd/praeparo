@@ -18,6 +18,7 @@ from praeparo.datasources import DataSourceConfigError
 from praeparo.env import ensure_env_loaded
 from praeparo.io.yaml_loader import ConfigLoadError, load_visual_config
 from praeparo.models import BaseVisualConfig, FrameConfig, MatrixConfig, PackConfig
+from praeparo.plugin_bootstrap import bootstrap_plugins
 from praeparo.pipeline import (
     ExecutionContext,
     OutputTarget,
@@ -46,6 +47,7 @@ from praeparo.pack import (
     run_pack,
 )
 from praeparo.pack.metric_context import dump_context_payload
+from praeparo.schema import DEFAULT_VISUAL_UMBRELLA_SCHEMA_PATH, write_visual_umbrella_schema
 from praeparo.visuals.dax_compilers import (
     DaxCompilerRegistration,
     get_dax_compiler_registration,
@@ -862,6 +864,16 @@ def _build_parser(
     _register_python_visual_parsers(subparsers)
     _register_pack_parsers(subparsers)
 
+    schema_parser = subparsers.add_parser("schema", help="Export the visual umbrella JSON schema.")
+    schema_parser.add_argument(
+        "dest",
+        nargs="?",
+        type=Path,
+        default=None,
+        help=f"Optional destination for the umbrella schema JSON file (defaults to {DEFAULT_VISUAL_UMBRELLA_SCHEMA_PATH}).",
+    )
+    schema_parser.set_defaults(_handler=_handle_schema)
+
     return parser
 
 
@@ -1635,6 +1647,13 @@ def _handle_visual_dax(args: argparse.Namespace) -> int:
     return 0
 
 
+def _handle_schema(args: argparse.Namespace) -> int:
+    destination = args.dest or DEFAULT_VISUAL_UMBRELLA_SCHEMA_PATH
+    write_visual_umbrella_schema(destination)
+    print(f"[ok] Wrote visual umbrella schema to {destination}")
+    return 0
+
+
 # ---------------------------------------------------------------------------
 # Entrypoint
 # ---------------------------------------------------------------------------
@@ -1655,7 +1674,7 @@ def _normalise_argv(
 ) -> list[str]:
     if not argv:
         return list(argv)
-    commands = {"visual", "pack", "python-visual"}
+    commands = {"visual", "pack", "python-visual", "schema"}
     if argv[0] not in commands and not argv[0].startswith("-"):
         if argv[0].endswith(".py"):
             return ["python-visual", "run", *argv]
@@ -1678,18 +1697,10 @@ def _normalise_argv(
 def main(argv: Sequence[str] | None = None) -> None:
     ensure_env_loaded()
     args_list = list(argv) if argv is not None else sys.argv[1:]
-
-    plugin_parser = argparse.ArgumentParser(add_help=False)
-    plugin_parser.add_argument(
-        "--plugin",
-        dest="plugins",
-        action="append",
-        default=[],
-    )
-    preview_args, _ = plugin_parser.parse_known_args(args_list)
-    for module_name in preview_args.plugins or []:
-        if module_name:
-            __import__(module_name)
+    try:
+        bootstrap_plugins(args_list)
+    except RuntimeError as exc:
+        raise SystemExit(str(exc)) from exc
 
     visual_registrations = _iter_registrations()
     dax_registrations = _iter_dax_registrations()

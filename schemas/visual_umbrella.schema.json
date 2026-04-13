@@ -1,0 +1,3200 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PraeparoVisualUmbrellaConfig",
+  "description": "Conditional YAML schema for Praeparo visual definitions. Branches are selected by the top-level 'type' field.",
+  "discriminator": {
+    "propertyName": "type",
+    "mapping": {
+      "matrix": "#/$defs/MatrixConfig",
+      "frame": "#/$defs/FrameConfig",
+      "column": "#/$defs/CartesianChartConfig",
+      "bar": "#/$defs/CartesianChartConfig",
+      "powerbi": "#/$defs/PowerBIVisualConfig",
+      "governance_matrix": "#/$defs/governance_matrix_visual"
+    }
+  },
+  "oneOf": [
+    {
+      "$ref": "#/$defs/MatrixConfig"
+    },
+    {
+      "$ref": "#/$defs/FrameConfig"
+    },
+    {
+      "$ref": "#/$defs/CartesianChartConfig"
+    },
+    {
+      "$ref": "#/$defs/PowerBIVisualConfig"
+    },
+    {
+      "$ref": "#/$defs/governance_matrix_visual"
+    }
+  ],
+  "$defs": {
+    "MatrixConfig": {
+      "additionalProperties": false,
+      "description": "Top-level configuration for a matrix visual.",
+      "properties": {
+        "type": {
+          "const": "matrix",
+          "description": "Visual type identifier; must be 'matrix'.",
+          "title": "Type",
+          "type": "string"
+        },
+        "title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Matrix title used in decks or charts.",
+          "title": "Title"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional helper text for authors.",
+          "title": "Description"
+        },
+        "dataSource": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Named data source reference or relative path to a data source definition.",
+          "title": "Datasource"
+        },
+        "define": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional DAX DEFINE statements prefixed to generated queries.",
+          "title": "Define"
+        },
+        "calculate": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional DAX predicate injected into CALCULATETABLE before other filters.",
+          "title": "Calculate"
+        },
+        "rows": {
+          "description": "Row templates expressed using Jinja-style placeholders.",
+          "items": {
+            "$ref": "#/$defs/MatrixConfig__RowTemplate"
+          },
+          "minItems": 1,
+          "title": "Rows",
+          "type": "array"
+        },
+        "values": {
+          "description": "Collection of value columns that populate the matrix body.",
+          "items": {
+            "$ref": "#/$defs/MatrixConfig__MatrixValueConfig"
+          },
+          "minItems": 1,
+          "title": "Values",
+          "type": "array"
+        },
+        "totals": {
+          "$ref": "#/$defs/MatrixConfig__MatrixTotals",
+          "default": "off",
+          "description": "Controls whether grand totals are displayed for rows, columns, or both."
+        },
+        "filters": {
+          "description": "Global filters applied to every generated query before evaluation.",
+          "items": {
+            "$ref": "#/$defs/MatrixConfig__MatrixFilterConfig"
+          },
+          "title": "Filters",
+          "type": "array"
+        },
+        "autoHeight": {
+          "default": true,
+          "description": "Automatically size the rendered matrix height based on row count.",
+          "title": "Autoheight",
+          "type": "boolean"
+        },
+        "compose": {
+          "title": "Compose",
+          "description": "List of additional YAML files to merge before validation.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          ]
+        },
+        "parameters": {
+          "type": "object",
+          "title": "Parameters",
+          "description": "Template values injected into the configuration before validation.",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {}
+        }
+      },
+      "required": [
+        "type",
+        "rows",
+        "values"
+      ],
+      "title": "MatrixConfig",
+      "type": "object"
+    },
+    "MatrixConfig__MatrixFilterConfig": {
+      "additionalProperties": false,
+      "description": "Declarative global filter applied to a matrix query.",
+      "properties": {
+        "field": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Target column expressed as 'table.column'.",
+          "title": "Field"
+        },
+        "include": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Allowed values that remain after the filter is applied.",
+          "title": "Include"
+        },
+        "expression": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Raw DAX filter expression inserted into the evaluation context.",
+          "title": "Expression"
+        }
+      },
+      "title": "MatrixFilterConfig",
+      "type": "object"
+    },
+    "MatrixConfig__MatrixTotals": {
+      "description": "Supported total display options for a matrix visual.",
+      "enum": [
+        "off",
+        "row",
+        "column",
+        "both"
+      ],
+      "title": "MatrixTotals",
+      "type": "string"
+    },
+    "MatrixConfig__MatrixValueConfig": {
+      "additionalProperties": false,
+      "description": "Declarative configuration for a matrix value column.",
+      "properties": {
+        "id": {
+          "description": "Unique identifier or measure name for the value column.",
+          "title": "Id",
+          "type": "string"
+        },
+        "show_as": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional calculation hint such as 'Percent of column total'.",
+          "title": "Display rule"
+        },
+        "label": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Friendly label used in rendered visuals; defaults to the value id.",
+          "title": "Label"
+        },
+        "format": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Formatting directive, e.g. 'percent:0' or 'duration:hms'.",
+          "title": "Format"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "MatrixValueConfig",
+      "type": "object"
+    },
+    "MatrixConfig__RowTemplate": {
+      "additionalProperties": false,
+      "description": "Template configuration for a matrix row dimension column.",
+      "properties": {
+        "template": {
+          "description": "Row template expressed using Jinja-style placeholders.",
+          "title": "Template",
+          "type": "string"
+        },
+        "label": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional override for the rendered column header.",
+          "title": "Label"
+        },
+        "hidden": {
+          "default": false,
+          "description": "If true, the row participates in queries but is omitted from rendered outputs.",
+          "title": "Hidden",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "template"
+      ],
+      "title": "RowTemplate",
+      "type": "object"
+    },
+    "FrameConfig": {
+      "additionalProperties": false,
+      "description": "Composition of multiple visuals into a single frame.",
+      "properties": {
+        "type": {
+          "const": "frame",
+          "default": "frame",
+          "description": "Visual type identifier; must be 'frame'.",
+          "title": "Type",
+          "type": "string"
+        },
+        "title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Human-friendly title for the visual.",
+          "title": "Title"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional authoring help text.",
+          "title": "Description"
+        },
+        "layout": {
+          "default": "vertical",
+          "description": "Controls the stacking direction for child visuals.",
+          "enum": [
+            "vertical",
+            "horizontal"
+          ],
+          "title": "Layout",
+          "type": "string"
+        },
+        "autoHeight": {
+          "default": true,
+          "description": "Automatically size the rendered frame height based on child content.",
+          "title": "Autoheight",
+          "type": "boolean"
+        },
+        "showTitles": {
+          "default": false,
+          "description": "When true, render subplot titles for each child visual.",
+          "title": "Showtitles",
+          "type": "boolean"
+        },
+        "children": {
+          "description": "Child visuals or references that compose the frame.",
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/FrameConfig__FrameChildDefinition"
+              },
+              {
+                "$ref": "#/$defs/FrameConfig__FrameChildConfig"
+              }
+            ]
+          },
+          "minItems": 1,
+          "title": "Children",
+          "type": "array"
+        },
+        "compose": {
+          "title": "Compose",
+          "description": "List of additional YAML files to merge before validation.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          ]
+        },
+        "parameters": {
+          "type": "object",
+          "title": "Parameters",
+          "description": "Template values injected into the configuration before validation.",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {}
+        }
+      },
+      "required": [
+        "children"
+      ],
+      "title": "FrameConfig",
+      "type": "object"
+    },
+    "FrameConfig__BaseVisualConfig": {
+      "additionalProperties": false,
+      "description": "Shared fields and behaviour for all visual configurations.",
+      "properties": {
+        "type": {
+          "description": "Visual type discriminator.",
+          "title": "Type",
+          "type": "string"
+        },
+        "title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Human-friendly title for the visual.",
+          "title": "Title"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional authoring help text.",
+          "title": "Description"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "title": "BaseVisualConfig",
+      "type": "object"
+    },
+    "FrameConfig__FrameChildConfig": {
+      "additionalProperties": false,
+      "description": "Resolved child visual that participates in a frame visual.",
+      "properties": {
+        "source": {
+          "format": "path",
+          "title": "Source",
+          "type": "string"
+        },
+        "visual": {
+          "$ref": "#/$defs/FrameConfig__BaseVisualConfig"
+        },
+        "parameters": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Parameters",
+          "type": "object"
+        },
+        "overrides": {
+          "additionalProperties": true,
+          "description": "Overrides applied when the child visual was loaded.",
+          "title": "Overrides",
+          "type": "object"
+        }
+      },
+      "required": [
+        "source",
+        "visual",
+        "parameters"
+      ],
+      "title": "FrameChildConfig",
+      "type": "object"
+    },
+    "FrameConfig__FrameChildDefinition": {
+      "additionalProperties": false,
+      "description": "Raw child reference encountered in a frame YAML document.",
+      "properties": {
+        "ref": {
+          "description": "Relative path to the child visual configuration.",
+          "title": "Ref",
+          "type": "string"
+        },
+        "parameters": {
+          "additionalProperties": true,
+          "description": "Parameter overrides injected into the child visual context.",
+          "title": "Parameters",
+          "type": "object"
+        },
+        "overrides": {
+          "additionalProperties": true,
+          "description": "Inline overrides applied to the child visual before validation.",
+          "title": "Overrides",
+          "type": "object"
+        }
+      },
+      "required": [
+        "ref"
+      ],
+      "title": "FrameChildDefinition",
+      "type": "object"
+    },
+    "CartesianChartConfig": {
+      "additionalProperties": false,
+      "description": "Top-level configuration for registered column/bar visuals.",
+      "properties": {
+        "type": {
+          "default": "column",
+          "description": "Visual type discriminator.",
+          "enum": [
+            "column",
+            "bar"
+          ],
+          "title": "Type",
+          "type": "string"
+        },
+        "title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional chart title.",
+          "title": "Title"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Helper copy for editors.",
+          "title": "Description"
+        },
+        "dataSource": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional datasource reference used for live execution.",
+          "title": "Datasource"
+        },
+        "define": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "DEFINE blocks prepended to generated DAX statements.",
+          "title": "Define"
+        },
+        "calculate": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "additionalProperties": {
+                      "type": "string"
+                    },
+                    "type": "object"
+                  }
+                ]
+              },
+              "type": "array"
+            },
+            {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "CALCULATE filters applied globally to every measure in the visual. Accepts strings, sequences, or named mappings (mapping keys are labels).",
+          "title": "Calculate"
+        },
+        "category": {
+          "$ref": "#/$defs/CartesianChartConfig__CategoryConfig",
+          "description": "Configuration for the category axis."
+        },
+        "value_axes": {
+          "$ref": "#/$defs/CartesianChartConfig__ValueAxesConfig",
+          "description": "Primary (and optional secondary) axes."
+        },
+        "layout": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CartesianChartConfig__LayoutConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Presentation-focused layout overrides."
+        },
+        "series": {
+          "description": "Series rendered in the chart.",
+          "items": {
+            "$ref": "#/$defs/CartesianChartConfig__CartesianSeriesConfig"
+          },
+          "title": "Series",
+          "type": "array"
+        },
+        "mock": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CartesianChartConfig__VisualMockConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Mock data scenarios used for previews."
+        },
+        "schema": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional schema version identifier for the visual document.",
+          "title": "Schema"
+        },
+        "compose": {
+          "title": "Compose",
+          "description": "List of additional YAML files to merge before validation.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          ]
+        },
+        "parameters": {
+          "type": "object",
+          "title": "Parameters",
+          "description": "Template values injected into the configuration before validation.",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {}
+        }
+      },
+      "required": [
+        "category",
+        "value_axes",
+        "series"
+      ],
+      "title": "CartesianChartConfig",
+      "type": "object"
+    },
+    "CartesianChartConfig__AxisConfig": {
+      "additionalProperties": false,
+      "description": "Metadata describing a value axis.",
+      "properties": {
+        "label": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Axis title displayed alongside ticks.",
+          "title": "Label"
+        },
+        "format": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Formatting directive (e.g. percent:0).",
+          "title": "Format"
+        },
+        "min": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional lower bound override.",
+          "title": "Min"
+        },
+        "max": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional upper bound override.",
+          "title": "Max"
+        },
+        "ticks": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Custom tick formatting rule.",
+          "title": "Ticks"
+        }
+      },
+      "title": "AxisConfig",
+      "type": "object"
+    },
+    "CartesianChartConfig__CartesianSeriesConfig": {
+      "additionalProperties": false,
+      "description": "Series rendered within a cartesian chart.",
+      "properties": {
+        "id": {
+          "description": "Stable identifier for the series.",
+          "title": "Id",
+          "type": "string"
+        },
+        "label": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Display label for the series.",
+          "title": "Label"
+        },
+        "type": {
+          "default": "column",
+          "description": "Trace type rendered for this series.",
+          "enum": [
+            "column",
+            "line"
+          ],
+          "title": "Type",
+          "type": "string"
+        },
+        "axis": {
+          "default": "primary",
+          "description": "Axis used to scale this series.",
+          "enum": [
+            "primary",
+            "secondary"
+          ],
+          "title": "Axis",
+          "type": "string"
+        },
+        "format": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Formatting directive for rendered values.",
+          "title": "Format"
+        },
+        "stacking": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CartesianChartConfig__SeriesStackingConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional stacking behaviour applied to this series."
+        },
+        "marker": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CartesianChartConfig__SeriesMarkerConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Marker styling used for line traces."
+        },
+        "data_labels": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CartesianChartConfig__DataLabelConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Display options for per-point data labels."
+        },
+        "show_as": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional semantic for derived displays (e.g. percent of total).",
+          "title": "Show As"
+        },
+        "transform": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CartesianChartConfig__SeriesTransformConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional derived value instruction executed after retrieval."
+        },
+        "metric": {
+          "$ref": "#/$defs/CartesianChartConfig__VisualMetricConfig",
+          "description": "Metric binding powering this series."
+        }
+      },
+      "required": [
+        "id",
+        "metric"
+      ],
+      "title": "CartesianSeriesConfig",
+      "type": "object"
+    },
+    "CartesianChartConfig__CategoryConfig": {
+      "additionalProperties": false,
+      "description": "Configuration for the category axis of a column/bar chart.",
+      "properties": {
+        "field": {
+          "description": "Semantic model column referenced by the category axis (e.g. `'dim_calendar'[month]`).",
+          "title": "Field",
+          "type": "string"
+        },
+        "label": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional display label for the axis.",
+          "title": "Label"
+        },
+        "data_type": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CartesianChartConfig__CategoryDataType"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional hint describing the category data type."
+        },
+        "format": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Formatting token applied to rendered category labels.",
+          "title": "Format"
+        },
+        "order": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CartesianChartConfig__CategoryOrder"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Explicit chronological ordering applied after query execution."
+        },
+        "limit": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Maximum number of categories to surface after sorting.",
+          "title": "Limit"
+        },
+        "mock_values": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional ordered mock category labels used when seeding sample data.",
+          "title": "Mock Values"
+        },
+        "sort": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CartesianChartConfig__CategorySortConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Advanced sorting instructions applied to resolved categories."
+        }
+      },
+      "required": [
+        "field"
+      ],
+      "title": "CategoryConfig",
+      "type": "object"
+    },
+    "CartesianChartConfig__CategoryDataType": {
+      "enum": [
+        "string",
+        "number",
+        "date"
+      ],
+      "title": "CategoryDataType",
+      "type": "string"
+    },
+    "CartesianChartConfig__CategoryOrder": {
+      "enum": [
+        "asc",
+        "desc"
+      ],
+      "title": "CategoryOrder",
+      "type": "string"
+    },
+    "CartesianChartConfig__CategorySortConfig": {
+      "additionalProperties": false,
+      "description": "Declarative sorting instructions for a category axis.",
+      "properties": {
+        "by": {
+          "$ref": "#/$defs/CartesianChartConfig__CategorySortMode",
+          "default": "category",
+          "description": "Sorting strategy applied to categories."
+        },
+        "direction": {
+          "$ref": "#/$defs/CartesianChartConfig__CategoryOrder",
+          "default": "asc",
+          "description": "Sort direction applied to the category axis."
+        },
+        "series_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional series identifier used when sorting by series values.",
+          "title": "Series Id"
+        }
+      },
+      "title": "CategorySortConfig",
+      "type": "object"
+    },
+    "CartesianChartConfig__CategorySortMode": {
+      "enum": [
+        "series",
+        "value",
+        "category"
+      ],
+      "title": "CategorySortMode",
+      "type": "string"
+    },
+    "CartesianChartConfig__DataLabelConfig": {
+      "additionalProperties": false,
+      "description": "Data label styling per series.",
+      "properties": {
+        "position": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Label position token (e.g. above, outside_end).",
+          "title": "Position"
+        },
+        "format": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Formatting directive applied to label text.",
+          "title": "Format"
+        }
+      },
+      "title": "DataLabelConfig",
+      "type": "object"
+    },
+    "CartesianChartConfig__LayoutConfig": {
+      "additionalProperties": false,
+      "description": "Container for presentation-only layout toggles.",
+      "properties": {
+        "legend": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CartesianChartConfig__LegendConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Legend placement options."
+        }
+      },
+      "title": "LayoutConfig",
+      "type": "object"
+    },
+    "CartesianChartConfig__LegendConfig": {
+      "additionalProperties": false,
+      "description": "Legend placement metadata.",
+      "properties": {
+        "position": {
+          "$ref": "#/$defs/CartesianChartConfig__LegendPosition",
+          "default": "top",
+          "description": "Where the legend is rendered relative to the plot."
+        }
+      },
+      "title": "LegendConfig",
+      "type": "object"
+    },
+    "CartesianChartConfig__LegendPosition": {
+      "enum": [
+        "top",
+        "bottom",
+        "left",
+        "right",
+        "none"
+      ],
+      "title": "LegendPosition",
+      "type": "string"
+    },
+    "CartesianChartConfig__SeriesMarkerConfig": {
+      "additionalProperties": false,
+      "description": "Marker styling for line series.",
+      "properties": {
+        "show": {
+          "default": false,
+          "description": "When true, render markers on the line trace.",
+          "title": "Show",
+          "type": "boolean"
+        },
+        "size": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional marker size override.",
+          "title": "Size"
+        }
+      },
+      "title": "SeriesMarkerConfig",
+      "type": "object"
+    },
+    "CartesianChartConfig__SeriesStackingConfig": {
+      "additionalProperties": false,
+      "description": "Series-level stacking instructions.",
+      "properties": {
+        "key": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Grouping key used to stack related series together.",
+          "title": "Key"
+        },
+        "mode": {
+          "$ref": "#/$defs/CartesianChartConfig__SeriesStackingMode",
+          "default": "normal",
+          "description": "Stacking behaviour applied to the series."
+        }
+      },
+      "title": "SeriesStackingConfig",
+      "type": "object"
+    },
+    "CartesianChartConfig__SeriesStackingMode": {
+      "enum": [
+        "normal",
+        "percent",
+        "none"
+      ],
+      "title": "SeriesStackingMode",
+      "type": "string"
+    },
+    "CartesianChartConfig__SeriesTransformConfig": {
+      "additionalProperties": false,
+      "description": "Declarative post-processing applied to series data.",
+      "properties": {
+        "mode": {
+          "$ref": "#/$defs/CartesianChartConfig__SeriesTransformMode",
+          "description": "Transformation applied to the resolved series values."
+        },
+        "scope": {
+          "default": "visual",
+          "description": "Scope applied when calculating the transform.",
+          "enum": [
+            "category",
+            "visual"
+          ],
+          "title": "Scope",
+          "type": "string"
+        },
+        "source_series": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional series identifier used as the value source.",
+          "title": "Source Series"
+        }
+      },
+      "required": [
+        "mode"
+      ],
+      "title": "SeriesTransformConfig",
+      "type": "object"
+    },
+    "CartesianChartConfig__SeriesTransformMode": {
+      "enum": [
+        "percent_of_total"
+      ],
+      "title": "SeriesTransformMode",
+      "type": "string"
+    },
+    "CartesianChartConfig__ValueAxesConfig": {
+      "additionalProperties": false,
+      "description": "Primary/secondary axis configuration.",
+      "properties": {
+        "primary": {
+          "$ref": "#/$defs/CartesianChartConfig__AxisConfig",
+          "description": "Primary value axis configuration."
+        },
+        "secondary": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CartesianChartConfig__AxisConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional secondary axis."
+        }
+      },
+      "required": [
+        "primary"
+      ],
+      "title": "ValueAxesConfig",
+      "type": "object"
+    },
+    "CartesianChartConfig__VisualMetricConfig": {
+      "additionalProperties": false,
+      "description": "Reference to a metric or expression used in a visual.",
+      "properties": {
+        "key": {
+          "description": "Metric key or virtual identifier consumed by the visual.",
+          "title": "Key",
+          "type": "string"
+        },
+        "label": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional display label override for the metric.",
+          "title": "Label"
+        },
+        "expression": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Inline expression that replaces the metric lookup when provided.",
+          "title": "Expression"
+        },
+        "calculate": {
+          "description": "Additional predicates applied when resolving this metric for the visual.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Calculate",
+          "type": "array"
+        },
+        "ratio_to": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional ratio hint for this metric. Use true to ratio against the inferred base metric (trimmed variant), or provide an explicit metric key.",
+          "title": "Ratio To"
+        },
+        "mock": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CartesianChartConfig__VisualMetricMock"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional mock configuration specific to this metric."
+        }
+      },
+      "required": [
+        "key"
+      ],
+      "title": "VisualMetricConfig",
+      "type": "object"
+    },
+    "CartesianChartConfig__VisualMetricMock": {
+      "additionalProperties": false,
+      "description": "Mock configuration for a metric when live data is unavailable.",
+      "properties": {
+        "factory": {
+          "default": "count",
+          "description": "Mock factory type (e.g. count, currency, ratio, duration).",
+          "title": "Factory",
+          "type": "string"
+        },
+        "mean": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Expected mean value for generated samples.",
+          "title": "Mean"
+        },
+        "trend": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Linear trend applied across samples.",
+          "title": "Trend"
+        },
+        "trend_range": {
+          "anyOf": [
+            {
+              "maxItems": 2,
+              "minItems": 2,
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional min/max bounds for the trend component.",
+          "title": "Trend Range"
+        },
+        "jitter": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Random jitter applied per sample.",
+          "title": "Jitter"
+        },
+        "min": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Lower bound for generated values.",
+          "title": "Min"
+        },
+        "max": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Upper bound for generated values.",
+          "title": "Max"
+        },
+        "scenario_overrides": {
+          "additionalProperties": {
+            "$ref": "#/$defs/CartesianChartConfig__VisualMetricMockScenarioOverride"
+          },
+          "description": "Per-scenario overrides applied on top of the base mock configuration.",
+          "title": "Scenario Overrides",
+          "type": "object"
+        }
+      },
+      "title": "VisualMetricMock",
+      "type": "object"
+    },
+    "CartesianChartConfig__VisualMetricMockScenario": {
+      "additionalProperties": false,
+      "description": "Baseline characteristics for a visual mock scenario.",
+      "properties": {
+        "label": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional display label for the scenario.",
+          "title": "Label"
+        },
+        "multiplier": {
+          "default": 1.0,
+          "description": "Scale factor applied to base mock values.",
+          "title": "Multiplier",
+          "type": "number"
+        },
+        "offset": {
+          "default": 0.0,
+          "description": "Absolute offset applied to base mock values.",
+          "title": "Offset",
+          "type": "number"
+        },
+        "jitter": {
+          "default": 0.0,
+          "description": "Random jitter range for generated mock values.",
+          "title": "Jitter",
+          "type": "number"
+        }
+      },
+      "title": "VisualMetricMockScenario",
+      "type": "object"
+    },
+    "CartesianChartConfig__VisualMetricMockScenarioOverride": {
+      "additionalProperties": false,
+      "description": "Overrides applied to a specific mock scenario for a metric.",
+      "properties": {
+        "multiplier": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Scenario-specific multiplier override.",
+          "title": "Multiplier"
+        },
+        "offset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Scenario-specific offset override.",
+          "title": "Offset"
+        },
+        "jitter": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Scenario-specific jitter override.",
+          "title": "Jitter"
+        }
+      },
+      "title": "VisualMetricMockScenarioOverride",
+      "type": "object"
+    },
+    "CartesianChartConfig__VisualMockConfig": {
+      "additionalProperties": false,
+      "description": "Container for mock scenarios referenced by a visual.",
+      "properties": {
+        "scenarios": {
+          "additionalProperties": {
+            "$ref": "#/$defs/CartesianChartConfig__VisualMetricMockScenario"
+          },
+          "description": "Named mock scenarios available to metrics within the visual.",
+          "title": "Scenarios",
+          "type": "object"
+        }
+      },
+      "title": "VisualMockConfig",
+      "type": "object"
+    },
+    "PowerBIVisualConfig": {
+      "additionalProperties": false,
+      "description": "Declarative configuration for exporting a Power BI asset.",
+      "properties": {
+        "type": {
+          "const": "powerbi",
+          "default": "powerbi",
+          "title": "Type",
+          "type": "string"
+        },
+        "title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Human-friendly title for the visual.",
+          "title": "Title"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional authoring help text.",
+          "title": "Description"
+        },
+        "mode": {
+          "default": "report",
+          "description": "Export flavour: whole report page, single visual, or paginated.",
+          "enum": [
+            "report",
+            "visual",
+            "paginated"
+          ],
+          "title": "Mode",
+          "type": "string"
+        },
+        "source": {
+          "$ref": "#/$defs/PowerBIVisualConfig__PowerBISource"
+        },
+        "filters": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          ],
+          "description": "OData filters applied at export time.",
+          "title": "Filters"
+        },
+        "filters_merge_strategy": {
+          "default": "merge",
+          "description": "How to combine inherited filters with local ones.",
+          "enum": [
+            "merge",
+            "replace"
+          ],
+          "title": "Filters Merge Strategy",
+          "type": "string"
+        },
+        "parameters": {
+          "description": "Parameter values for paginated reports.",
+          "items": {
+            "$ref": "#/$defs/PowerBIVisualConfig__PowerBIParameter"
+          },
+          "title": "Parameters",
+          "type": "array"
+        },
+        "export_formats": {
+          "description": "Additional artifacts to emit for paginated exports.",
+          "items": {
+            "enum": [
+              "pptx",
+              "pdf",
+              "xlsx",
+              "csv"
+            ],
+            "type": "string"
+          },
+          "title": "Export Formats",
+          "type": "array"
+        },
+        "render": {
+          "$ref": "#/$defs/PowerBIVisualConfig__PowerBIRenderOptions",
+          "description": "Render-time options for the exported asset."
+        },
+        "compose": {
+          "title": "Compose",
+          "description": "List of additional YAML files to merge before validation.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          ]
+        }
+      },
+      "required": [
+        "source"
+      ],
+      "title": "PowerBIVisualConfig",
+      "type": "object"
+    },
+    "PowerBIVisualConfig__PowerBIParameter": {
+      "description": "Parameter supplied to a paginated report export.",
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "value": {
+          "title": "Value",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "value"
+      ],
+      "title": "PowerBIParameter",
+      "type": "object"
+    },
+    "PowerBIVisualConfig__PowerBIRenderOptions": {
+      "description": "Controls how the exported asset is materialised on disk.",
+      "properties": {
+        "format": {
+          "description": "Primary export format requested from Power BI.",
+          "enum": [
+            "png",
+            "pptx",
+            "pdf"
+          ],
+          "title": "Format",
+          "type": "string"
+        },
+        "stitch_slides": {
+          "description": "Whether PPTX slide segments should be stitched into one PNG sidecar.",
+          "title": "Stitch Slides",
+          "type": "boolean"
+        },
+        "max_concurrency": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional per-visual concurrency cap (currently unused).",
+          "title": "Max Concurrency"
+        }
+      },
+      "title": "PowerBIRenderOptions",
+      "type": "object"
+    },
+    "PowerBIVisualConfig__PowerBISource": {
+      "description": "Identifiers that locate the Power BI asset.",
+      "properties": {
+        "group_id": {
+          "description": "Power BI workspace (group) identifier. Falls back to PRAEPARO_PBI_WORKSPACE_ID when omitted.",
+          "title": "Group Id",
+          "type": "string"
+        },
+        "report_id": {
+          "description": "Power BI report or paginated report identifier. Falls back to PRAEPARO_PBI_DEFAULT_REPORT_ID when omitted.",
+          "title": "Report Id",
+          "type": "string"
+        },
+        "page": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Power BI page name (required for report/visual modes).",
+          "title": "Page"
+        },
+        "visual_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional target visual id (only when mode=visual).",
+          "title": "Visual Id"
+        }
+      },
+      "title": "PowerBISource",
+      "type": "object"
+    },
+    "governance_matrix_visual": {
+      "additionalProperties": false,
+      "description": "Governance matrix visual definition.",
+      "properties": {
+        "type": {
+          "const": "governance_matrix",
+          "default": "governance_matrix",
+          "description": "Visual type discriminator.",
+          "title": "Type",
+          "type": "string"
+        },
+        "title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Human-friendly title for the visual.",
+          "title": "Title"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional authoring help text.",
+          "title": "Description"
+        },
+        "name": {
+          "description": "Display name for the governance matrix visual.",
+          "title": "Name",
+          "type": "string"
+        },
+        "datasource": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional Praeparo datasource reference used for live data.",
+          "title": "Datasource"
+        },
+        "calculate": {
+          "$ref": "#/$defs/governance_matrix_visual__GovernanceMatrixCalculate",
+          "description": "Scoped predicates applied to every metric in this visual."
+        },
+        "style": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/governance_matrix_visual__GovernanceMatrixStyle"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional styling defaults applied to all sections and metrics in this visual."
+        },
+        "theme": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/governance_matrix_visual__GovernanceMatrixTheme"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional theme overrides for this visual."
+        },
+        "layout_mode": {
+          "anyOf": [
+            {
+              "enum": [
+                "label-fill",
+                "trim-label",
+                "trim-all"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional snapshot/PPTX column sizing mode. When omitted, governance matrices use the default full-width layout unless a CLI or pack metadata override supplies one.",
+          "title": "Layout Mode"
+        },
+        "header_metric_label": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Override the header label for the metric column (defaults to 'Metric').",
+          "title": "Header Metric Label"
+        },
+        "header_label_style": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/governance_matrix_visual__GovernanceMatrixStyle"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional style applied to the metric header cell."
+        },
+        "header_value_style": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/governance_matrix_visual__GovernanceMatrixStyle"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional style applied to the value/date header cells."
+        },
+        "sla_defaults": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/governance_matrix_visual__GovernanceMatrixSLADefaults"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional SLA defaults applied when rows omit overrides."
+        },
+        "sla_palette": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/governance_matrix_visual__GovernanceMatrixSLAPalette"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional SLA indicator colour overrides."
+        },
+        "show_metrics_header": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": true,
+          "description": "When metrics are provided at the visual root, controls whether their synthetic section header is rendered.",
+          "title": "Show Metrics Header"
+        },
+        "columns": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/governance_matrix_visual__GovernanceMatrixColumn"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Dataset column references used for matrix visuals (ordered).",
+          "title": "Columns"
+        },
+        "mock": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/governance_matrix_visual__VisualMockConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "sections": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/governance_matrix_visual__GovernanceMatrixSection"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sections"
+        },
+        "metrics": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/governance_matrix_visual__GovernanceMatrixMetric"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Metrics"
+        },
+        "content_order": {
+          "anyOf": [
+            {
+              "items": {
+                "enum": [
+                  "sections",
+                  "metrics"
+                ],
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Explicit display order when both sections and metrics are defined.",
+          "title": "Content Order"
+        },
+        "compose": {
+          "title": "Compose",
+          "description": "List of additional YAML files to merge before validation.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          ]
+        },
+        "parameters": {
+          "type": "object",
+          "title": "Parameters",
+          "description": "Template values injected into the configuration before validation.",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {}
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "GovernanceMatrixVisualConfig",
+      "type": "object"
+    },
+    "governance_matrix_visual__GovernanceMatrixCalculate": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "define": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "evaluate": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "type": "object"
+        },
+        {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "define": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "evaluate": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "type": "object"
+              }
+            ]
+          },
+          "type": "object"
+        },
+        {
+          "items": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "define": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "evaluate": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  ]
+                },
+                "type": "object"
+              }
+            ]
+          },
+          "type": "array"
+        }
+      ],
+      "description": "Named calculate predicates with governance-matrix override semantics.\n\n    Governance matrix visuals have three calculate layers (visual \u2192 section \u2192 metric).\n    For governance matrices we want two behaviours:\n\n    - **Named entries** (`calculate.<name>: ...`) are overrideable, with last-writer-wins\n      semantics per name (mirrors Praeparo pack behaviour).\n    - **Unlabelled entries** (`calculate: <string|list>` or `calculate: {define:..., evaluate:...}`)\n      remain additive, preserving layer order.\n\n    We preserve authored names by normalising the raw YAML into a `ScopedCalculateMap`.\n    ",
+      "title": "GovernanceMatrixCalculate"
+    },
+    "governance_matrix_visual__GovernanceMatrixColumn": {
+      "additionalProperties": false,
+      "description": "Dataset column configuration for matrix outputs.",
+      "properties": {
+        "field": {
+          "description": "DAX column reference used as the matrix grain and live payload key (e.g. 'dim_calendar'[Month]).",
+          "title": "Field",
+          "type": "string"
+        },
+        "format": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional formatting string applied to rendered column labels (e.g. MMM-yy).",
+          "title": "Format"
+        },
+        "type": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Semantic type for payload coercion (date, string, number).",
+          "title": "Type"
+        },
+        "order": {
+          "anyOf": [
+            {
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional column ordering hint (asc or desc).",
+          "title": "Order"
+        },
+        "mock_values": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional display labels for mock datasets (order preserved).",
+          "title": "Mock Values"
+        }
+      },
+      "required": [
+        "field"
+      ],
+      "title": "GovernanceMatrixColumn",
+      "type": "object"
+    },
+    "governance_matrix_visual__GovernanceMatrixMetric": {
+      "additionalProperties": false,
+      "description": "Reference to a metric row used in a governance matrix visual.",
+      "properties": {
+        "key": {
+          "description": "Metric key or virtual identifier consumed by the visual.",
+          "title": "Key",
+          "type": "string"
+        },
+        "label": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional display label override for the metric.",
+          "title": "Label"
+        },
+        "expression": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Inline expression that replaces the metric lookup when provided.",
+          "title": "Expression"
+        },
+        "calculate": {
+          "$ref": "#/$defs/governance_matrix_visual__GovernanceMatrixCalculate",
+          "description": "Scoped predicates applied to this row (define/evaluate)."
+        },
+        "ratio_to": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Display this row as a percent of another metric/variant. Use `true` to reference the immediate parent.",
+          "title": "Ratio To"
+        },
+        "mock": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/governance_matrix_visual__VisualMetricMock"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional mock configuration specific to this metric."
+        },
+        "format": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional display format token for this metric row (percent, number, currency).",
+          "title": "Format"
+        },
+        "sla": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/governance_matrix_visual__GovernanceMatrixSLA"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Customer-specific SLA target for this metric."
+        },
+        "style": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/governance_matrix_visual__GovernanceMatrixStyle"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional styling overrides applied to this metric row."
+        },
+        "value_style": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/governance_matrix_visual__GovernanceMatrixStyle"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional styling applied to the value cells for this metric (label unaffected)."
+        }
+      },
+      "required": [
+        "key"
+      ],
+      "title": "GovernanceMatrixMetric",
+      "type": "object"
+    },
+    "governance_matrix_visual__GovernanceMatrixSLA": {
+      "additionalProperties": false,
+      "description": "Target expectations for a governance matrix metric.",
+      "properties": {
+        "basis": {
+          "default": "auto",
+          "description": "Which value to evaluate against (auto, ratio, value).",
+          "enum": [
+            "auto",
+            "ratio",
+            "value"
+          ],
+          "title": "Basis",
+          "type": "string"
+        },
+        "operator": {
+          "default": "gte",
+          "description": "Comparison direction (gte = higher-is-better, lte = lower-is-better).",
+          "enum": [
+            "gte",
+            "lte"
+          ],
+          "title": "Operator",
+          "type": "string"
+        },
+        "target_percent": {
+          "anyOf": [
+            {
+              "maximum": 100,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Desired performance as a percentage (0-100).",
+          "title": "Target Percent"
+        },
+        "target_value": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Desired performance as a raw value (counts/currency/percent points depending on basis).",
+          "title": "Target Value"
+        },
+        "warn_band": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Width of the warn tier around the target (same units as the evaluated basis).",
+          "title": "Warn Band"
+        },
+        "bands": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/governance_matrix_visual__GovernanceMatrixSLABand"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Explicit tier bands (takes precedence over operator/targets/warn_band).",
+          "title": "Bands"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Freeform description when the SLA cannot be expressed as a percentage.",
+          "title": "Description"
+        }
+      },
+      "title": "GovernanceMatrixSLA",
+      "type": "object"
+    },
+    "governance_matrix_visual__GovernanceMatrixSLABand": {
+      "additionalProperties": false,
+      "description": "Explicit SLA band for governance matrix visuals.",
+      "properties": {
+        "level": {
+          "description": "Semantic level emitted by the SLA evaluator.",
+          "enum": [
+            "met",
+            "warn",
+            "breach"
+          ],
+          "title": "Level",
+          "type": "string"
+        },
+        "min": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Lower threshold for this band.",
+          "title": "Min"
+        },
+        "min_inclusive": {
+          "default": true,
+          "description": "Whether min is inclusive.",
+          "title": "Min Inclusive",
+          "type": "boolean"
+        },
+        "max": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Upper threshold for this band.",
+          "title": "Max"
+        },
+        "max_inclusive": {
+          "default": true,
+          "description": "Whether max is inclusive.",
+          "title": "Max Inclusive",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "level"
+      ],
+      "title": "GovernanceMatrixSLABand",
+      "type": "object"
+    },
+    "governance_matrix_visual__GovernanceMatrixSLADefaults": {
+      "additionalProperties": false,
+      "description": "Visual-level defaults applied to SLA evaluation when rows omit overrides.",
+      "properties": {
+        "warn_band": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Default warn band width applied when rows omit sla.warn_band.",
+          "title": "Warn Band"
+        }
+      },
+      "title": "GovernanceMatrixSLADefaults",
+      "type": "object"
+    },
+    "governance_matrix_visual__GovernanceMatrixSLAPalette": {
+      "additionalProperties": false,
+      "description": "Optional palette overrides for SLA indicator colours.",
+      "properties": {
+        "met": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Colour for met SLA indicators.",
+          "title": "Met"
+        },
+        "warn": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Colour for warn SLA indicators.",
+          "title": "Warn"
+        },
+        "breach": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Colour for breach SLA indicators.",
+          "title": "Breach"
+        }
+      },
+      "title": "GovernanceMatrixSLAPalette",
+      "type": "object"
+    },
+    "governance_matrix_visual__GovernanceMatrixSection": {
+      "additionalProperties": false,
+      "description": "Grouping of metrics within a governance matrix visual.",
+      "properties": {
+        "key": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional identifier for referencing this group elsewhere in the visual definition.",
+          "title": "Key"
+        },
+        "name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Display label for the section.",
+          "title": "Name"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Narrative notes describing the group.",
+          "title": "Description"
+        },
+        "calculate": {
+          "$ref": "#/$defs/governance_matrix_visual__GovernanceMatrixCalculate",
+          "description": "Scoped predicates applied to every metric nested within this group."
+        },
+        "metrics": {
+          "description": "Metrics that inherit this group's filters.",
+          "items": {
+            "$ref": "#/$defs/governance_matrix_visual__GovernanceMatrixMetric"
+          },
+          "title": "Metrics",
+          "type": "array"
+        },
+        "style": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/governance_matrix_visual__GovernanceMatrixStyle"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional styling overrides applied to this section header and rows."
+        },
+        "show_header": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Whether to render the section header row (default: true).",
+          "title": "Show Header"
+        }
+      },
+      "title": "GovernanceMatrixSection",
+      "type": "object"
+    },
+    "governance_matrix_visual__GovernanceMatrixStyle": {
+      "additionalProperties": false,
+      "description": "Declarative styling for governance matrix visuals.",
+      "properties": {
+        "background": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Background shorthand.",
+          "title": "Background"
+        },
+        "background-color": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Background colour.",
+          "title": "Background-Color"
+        },
+        "color": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Text colour.",
+          "title": "Color"
+        },
+        "font": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Font shorthand.",
+          "title": "Font"
+        },
+        "font-family": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Font family.",
+          "title": "Font-Family"
+        },
+        "font-weight": {
+          "anyOf": [
+            {
+              "enum": [
+                "normal",
+                "bold",
+                "bolder",
+                "lighter",
+                "500",
+                "600",
+                "700"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Font weight.",
+          "title": "Font-Weight"
+        },
+        "font-style": {
+          "anyOf": [
+            {
+              "enum": [
+                "normal",
+                "italic"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Font style.",
+          "title": "Font-Style"
+        },
+        "text-decoration": {
+          "anyOf": [
+            {
+              "enum": [
+                "none",
+                "underline"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Text decoration.",
+          "title": "Text-Decoration"
+        },
+        "border-color": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Border colour.",
+          "title": "Border-Color"
+        },
+        "border-width": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Border width (e.g. '1px').",
+          "title": "Border-Width"
+        }
+      },
+      "title": "GovernanceMatrixStyle",
+      "type": "object"
+    },
+    "governance_matrix_visual__GovernanceMatrixTheme": {
+      "additionalProperties": false,
+      "description": "Optional visual-level theme overrides.",
+      "properties": {
+        "section_header_background": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Section Header Background"
+        },
+        "section_header_color": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Section Header Color"
+        },
+        "table_border_color": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Table Border Color"
+        },
+        "table_border_width": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Table Border Width"
+        },
+        "table_header_background": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Table Header Background"
+        },
+        "table_header_color": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Table Header Color"
+        },
+        "odd_row_background": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Odd Row Background"
+        },
+        "even_row_background": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Even Row Background"
+        }
+      },
+      "title": "GovernanceMatrixTheme",
+      "type": "object"
+    },
+    "governance_matrix_visual__VisualMetricMock": {
+      "additionalProperties": false,
+      "description": "Mock configuration for a metric when live data is unavailable.",
+      "properties": {
+        "factory": {
+          "default": "count",
+          "description": "Mock factory type (e.g. count, currency, ratio, duration).",
+          "title": "Factory",
+          "type": "string"
+        },
+        "mean": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Expected mean value for generated samples.",
+          "title": "Mean"
+        },
+        "trend": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Linear trend applied across samples.",
+          "title": "Trend"
+        },
+        "trend_range": {
+          "anyOf": [
+            {
+              "maxItems": 2,
+              "minItems": 2,
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional min/max bounds for the trend component.",
+          "title": "Trend Range"
+        },
+        "jitter": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Random jitter applied per sample.",
+          "title": "Jitter"
+        },
+        "min": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Lower bound for generated values.",
+          "title": "Min"
+        },
+        "max": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Upper bound for generated values.",
+          "title": "Max"
+        },
+        "scenario_overrides": {
+          "additionalProperties": {
+            "$ref": "#/$defs/governance_matrix_visual__VisualMetricMockScenarioOverride"
+          },
+          "description": "Per-scenario overrides applied on top of the base mock configuration.",
+          "title": "Scenario Overrides",
+          "type": "object"
+        }
+      },
+      "title": "VisualMetricMock",
+      "type": "object"
+    },
+    "governance_matrix_visual__VisualMetricMockScenario": {
+      "additionalProperties": false,
+      "description": "Baseline characteristics for a visual mock scenario.",
+      "properties": {
+        "label": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional display label for the scenario.",
+          "title": "Label"
+        },
+        "multiplier": {
+          "default": 1.0,
+          "description": "Scale factor applied to base mock values.",
+          "title": "Multiplier",
+          "type": "number"
+        },
+        "offset": {
+          "default": 0.0,
+          "description": "Absolute offset applied to base mock values.",
+          "title": "Offset",
+          "type": "number"
+        },
+        "jitter": {
+          "default": 0.0,
+          "description": "Random jitter range for generated mock values.",
+          "title": "Jitter",
+          "type": "number"
+        }
+      },
+      "title": "VisualMetricMockScenario",
+      "type": "object"
+    },
+    "governance_matrix_visual__VisualMetricMockScenarioOverride": {
+      "additionalProperties": false,
+      "description": "Overrides applied to a specific mock scenario for a metric.",
+      "properties": {
+        "multiplier": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Scenario-specific multiplier override.",
+          "title": "Multiplier"
+        },
+        "offset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Scenario-specific offset override.",
+          "title": "Offset"
+        },
+        "jitter": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Scenario-specific jitter override.",
+          "title": "Jitter"
+        }
+      },
+      "title": "VisualMetricMockScenarioOverride",
+      "type": "object"
+    },
+    "governance_matrix_visual__VisualMockConfig": {
+      "additionalProperties": false,
+      "description": "Container for mock scenarios referenced by a visual.",
+      "properties": {
+        "scenarios": {
+          "additionalProperties": {
+            "$ref": "#/$defs/governance_matrix_visual__VisualMetricMockScenario"
+          },
+          "description": "Named mock scenarios available to metrics within the visual.",
+          "title": "Scenarios",
+          "type": "object"
+        }
+      },
+      "title": "VisualMockConfig",
+      "type": "object"
+    }
+  }
+}

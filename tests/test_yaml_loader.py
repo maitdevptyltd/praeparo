@@ -2,10 +2,10 @@
 
 import pytest
 
-from typing import Literal
+from typing import Literal, cast
 
 from praeparo.io.yaml_loader import ConfigLoadError, load_matrix_config, load_visual_config
-from praeparo.models import BaseVisualConfig, MatrixConfig
+from praeparo.models import BaseVisualConfig, FrameChildConfig, FrameConfig, MatrixConfig, PowerBIVisualConfig
 from praeparo.visuals import register_visual_type
 
 
@@ -140,14 +140,17 @@ def test_load_visual_config_frame_resolves_parameters_and_overrides(tmp_path: Pa
     )
 
     visual = load_visual_config(frame)
+    assert isinstance(visual, FrameConfig)
     assert visual.type == "frame"
     assert len(visual.children) == 1
 
     child = visual.children[0]
-    assert child.visual.title == "Child Override Title"
-    assert child.visual.description == "Child override description"
-    assert child.visual.filters[0].expression == "Flag = TRUE()"
-    assert child.visual.rows[0].label == "Downtown"
+    assert isinstance(child, FrameChildConfig)
+    child_visual = cast(MatrixConfig, child.visual)
+    assert child_visual.title == "Child Override Title"
+    assert child_visual.description == "Child override description"
+    assert child_visual.filters[0].expression == "Flag = TRUE()"
+    assert child_visual.rows[0].label == "Downtown"
     assert child.parameters == {"CityLabel": "Downtown", "FilterExpression": "Flag = TRUE()"}
     assert child.overrides == {"title": "Child Override Title", "description": "Child override description"}
 
@@ -207,3 +210,27 @@ def test_load_visual_config_supports_registered_visuals(tmp_path: Path) -> None:
     assert isinstance(visual, _DummyVisualConfig)
     assert visual.type == "dummy"
     assert visual.value == "example"
+
+
+def test_load_visual_config_preserves_powerbi_parameters(tmp_path: Path) -> None:
+    visual_path = tmp_path / "powerbi.yaml"
+    visual_path.write_text(
+        """
+        type: powerbi
+        mode: paginated
+        source:
+          group_id: demo-group
+          report_id: demo-report
+        parameters:
+          - name: Customer
+            value: Example
+        """,
+        encoding="utf-8",
+    )
+
+    visual = load_visual_config(visual_path)
+    assert isinstance(visual, PowerBIVisualConfig)
+
+    assert visual.type == "powerbi"
+    assert visual.parameters[0].name == "Customer"
+    assert visual.parameters[0].value == "Example"

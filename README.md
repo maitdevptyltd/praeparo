@@ -125,7 +125,28 @@ The CLI exchanges the refresh token for an access token, issues the DAX statemen
 When `--dataset-id` is omitted the mock provider remains available for offline development.
 
 
-Run `python -m praeparo.schema` to regenerate `schemas/matrix.json`. Import this schema into your editor to unlock auto-complete and validation for matrix YAML files.
+Generate the umbrella visual schema with:
+
+```bash
+poetry run praeparo schema
+poetry run praeparo schema ./schemas/visual_umbrella.schema.json
+```
+
+That default command writes `schemas/visual_umbrella.schema.json`, which can be
+attached to stable visual YAML families in your editor. Keep the advanced
+`python -m praeparo.schema --matrix|--charts|--metrics|--pack ...` path for
+specialized exports only.
+
+For downstream workspaces, declare repo-local plugins in a root `praeparo.yaml`
+manifest:
+
+```yaml
+plugins:
+  - my_project_plugin
+```
+
+Praeparo now auto-loads plugins in this order: explicit `--plugin`, then
+`PRAEPARO_PLUGINS`, then `praeparo.yaml`, then opt-in package metadata.
 
 ### Metric definitions (preview)
 

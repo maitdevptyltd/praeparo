@@ -181,19 +181,22 @@ def _prepare_payload(
     if overrides:
         payload = _merge_dicts(payload, overrides)
 
+    raw_parameters = payload.get("parameters")
     if parameters_override:
-        existing = payload.get("parameters", {}) or {}
+        existing = raw_parameters or {}
         if not isinstance(existing, Mapping):
             msg = f"parameters must be a mapping when provided ({path})"
             raise ConfigLoadError(msg)
         normalized_existing = {str(k): v for k, v in existing.items()}
         normalized_override = {str(k): v for k, v in parameters_override.items()}
         payload["parameters"] = {**normalized_existing, **normalized_override}
+        raw_parameters = payload.get("parameters")
 
-    parameters = payload.pop("parameters", {}) or {}
-    if not isinstance(parameters, Mapping):
-        msg = f"parameters must be a mapping when provided ({path})"
-        raise ConfigLoadError(msg)
+    parameters: Mapping[str, Any] = {}
+    if raw_parameters is None:
+        payload.pop("parameters", None)
+    elif isinstance(raw_parameters, Mapping):
+        parameters = payload.pop("parameters", {}) or {}
 
     context = _build_context(payload, parameters)
     _apply_parameter_templates(payload, context=context)

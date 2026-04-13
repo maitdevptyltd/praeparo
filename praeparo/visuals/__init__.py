@@ -15,7 +15,12 @@ from .registry import (
     VisualCLIOptions,
     VisualCLIHooks,
     VisualLoader,
+    VisualSchemaBuilder,
+    VisualSchemaRegistration,
+    get_visual_schema_registration,
+    iter_visual_schema_registrations,
     load_visual_definition,
+    register_visual_schema,
     register_visual_type,
 )
 from .context import ContextLoadError, load_context_file, merge_context_payload, resolve_dax_context
@@ -32,6 +37,7 @@ __all__ = [
     "VisualMockConfig",
     "load_visual_definition",
     "normalise_str_sequence",
+    "register_visual_schema",
     "register_visual_type",
     "ContextLoadError",
     "load_context_file",
@@ -42,4 +48,8 @@ __all__ = [
     "VisualCLIHooks",
     "VisualContextModel",
     "DAXContextModel",
+    "VisualSchemaBuilder",
+    "VisualSchemaRegistration",
+    "get_visual_schema_registration",
+    "iter_visual_schema_registrations",
 ]

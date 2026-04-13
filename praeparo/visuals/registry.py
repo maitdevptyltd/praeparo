@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Callable, Dict, Iterable, Mapping, Sequence, Tuple, Type
+from typing import TYPE_CHECKING, Any, Callable, Dict, Iterable, Mapping, Sequence, Tuple, Type
 
 import yaml
 
@@ -16,6 +16,7 @@ if TYPE_CHECKING:  # pragma: no cover
     from praeparo.pipeline import VisualExecutionResult
 
 VisualLoader = Callable[[Path, Mapping[str, object], Tuple[Path, ...]], BaseVisualConfig]
+VisualSchemaBuilder = Callable[[], dict[str, Any]]
 
 
 @dataclass(frozen=True)
@@ -59,7 +60,17 @@ class VisualTypeRegistration:
     context_model: Type[VisualContextModel] | None = None
 
 
+@dataclass(frozen=True)
+class VisualSchemaRegistration:
+    """Explicit schema metadata used by umbrella-schema generation."""
+
+    build_schema: VisualSchemaBuilder
+    include_compose: bool = True
+    authoring_parameters: bool = False
+
+
 _VISUAL_REGISTRY: Dict[str, VisualTypeRegistration] = {}
+_VISUAL_SCHEMA_REGISTRY: Dict[str, VisualSchemaRegistration] = {}
 
 
 def _is_python_visual_type(value: str) -> bool:
@@ -98,6 +109,28 @@ def register_visual_type(
     if not overwrite and key in _VISUAL_REGISTRY:
         raise ValueError(f"Visual type '{key}' is already registered")
     _VISUAL_REGISTRY[key] = VisualTypeRegistration(loader=loader, cli=cli, context_model=context_model)
+
+
+def register_visual_schema(
+    type_name: str,
+    build_schema: VisualSchemaBuilder,
+    *,
+    overwrite: bool = False,
+    include_compose: bool = True,
+    authoring_parameters: bool = False,
+) -> None:
+    """Register schema metadata for a visual type used by umbrella exports."""
+
+    if not isinstance(type_name, str) or not type_name.strip():
+        raise ValueError("type_name must be a non-empty string")
+    key = type_name.strip().lower()
+    if not overwrite and key in _VISUAL_SCHEMA_REGISTRY:
+        raise ValueError(f"Visual schema '{key}' is already registered")
+    _VISUAL_SCHEMA_REGISTRY[key] = VisualSchemaRegistration(
+        build_schema=build_schema,
+        include_compose=include_compose,
+        authoring_parameters=authoring_parameters,
+    )
 
 
 def load_visual_definition(
@@ -180,16 +213,36 @@ def iter_visual_registrations() -> Iterable[tuple[str, VisualTypeRegistration]]:
     return tuple(_VISUAL_REGISTRY.items())
 
 
+def get_visual_schema_registration(type_name: str) -> VisualSchemaRegistration | None:
+    """Return the registered schema metadata for the supplied visual type."""
+
+    if not isinstance(type_name, str):
+        raise TypeError("type_name must be a string")
+    key = type_name.strip().lower()
+    if not key:
+        raise ValueError("type_name must be a non-empty string")
+    return _VISUAL_SCHEMA_REGISTRY.get(key)
+
+
+def iter_visual_schema_registrations() -> Iterable[tuple[str, VisualSchemaRegistration]]:
+    return tuple(_VISUAL_SCHEMA_REGISTRY.items())
+
+
 __all__ = [
     "VisualCLIArgument",
     "VisualCLIOptions",
     "VisualCLIHooks",
     "VisualLoader",
+    "VisualSchemaBuilder",
+    "VisualSchemaRegistration",
     "VisualTypeRegistration",
     "_is_python_visual_type",
     "get_visual_cli_options",
     "get_visual_registration",
+    "get_visual_schema_registration",
     "iter_visual_registrations",
+    "iter_visual_schema_registrations",
     "load_visual_definition",
+    "register_visual_schema",
     "register_visual_type",
 ]

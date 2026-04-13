@@ -29,7 +29,7 @@ from praeparo.pipeline.registry import (
 )
 from praeparo.visuals.context_models import VisualContextModel
 from praeparo.visuals.dax.planner_core import slugify
-from praeparo.visuals.registry import register_visual_type
+from praeparo.visuals.registry import register_visual_schema, register_visual_type
 
 
 def _load_powerbi_visual(path: Path, payload: Mapping[str, object], stack: Tuple[Path, ...]) -> PowerBIVisualConfig:
@@ -320,6 +320,7 @@ def _maybe_extract_pptx_image(*, export_path: Path, stitch_slides: bool) -> str 
 
 
 register_visual_type("powerbi", _load_powerbi_visual, overwrite=True)
+register_visual_schema("powerbi", PowerBIVisualConfig.model_json_schema, overwrite=True)
 register_visual_pipeline(
     "powerbi",
     VisualPipelineDefinition[dict, PowerBIExportDataset, BaseVisualConfig, VisualContextModel](

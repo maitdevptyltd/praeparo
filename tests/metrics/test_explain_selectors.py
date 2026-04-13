@@ -350,3 +350,83 @@ def test_metrics_cli_loads_plugins_before_listing_bindings(tmp_path: Path, monke
     out = capsys.readouterr().out
     assert "visual.yaml#documents_sent" in out
     assert "visual.yaml#documents_sent.within_1d" in out
+
+
+def test_metrics_cli_auto_discovers_plugins_from_manifest(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    plugin_module = tmp_path / "test_manifest_plugin.py"
+    plugin_module.write_text(
+        "\n".join(
+            [
+                "from __future__ import annotations",
+                "",
+                "from pathlib import Path",
+                "from typing import Mapping, Tuple, Sequence",
+                "",
+                "from pydantic import BaseModel, ConfigDict, Field",
+                "",
+                "from praeparo.models.visual_base import BaseVisualConfig",
+                "from praeparo.models.scoped_calculate import ScopedCalculateFilters",
+                "from praeparo.visuals.registry import register_visual_type",
+                "from praeparo.visuals.bindings import VisualMetricBinding, register_visual_bindings_adapter",
+                "",
+                "class PluginVisualConfig(BaseVisualConfig):",
+                "    model_config = ConfigDict(extra='forbid')",
+                "    type: str = Field(default='manifest_plugin_visual')",
+                "    metrics: list[str] = Field(default_factory=list)",
+                "",
+                "def _loader(path: Path, payload: Mapping[str, object], stack: Tuple[Path, ...]):",
+                "    return PluginVisualConfig.model_validate(payload)",
+                "",
+                "class _Adapter:",
+                "    def list_bindings(self, visual: BaseVisualConfig, *, source_path=None) -> Sequence[VisualMetricBinding]:",
+                "        assert isinstance(visual, PluginVisualConfig)",
+                "        return tuple(",
+                "            VisualMetricBinding(",
+                "                binding_id=metric,",
+                "                selector_segments=(metric,),",
+                "                label=metric,",
+                "                metric_key=metric,",
+                "                calculate=ScopedCalculateFilters(),",
+                "            )",
+                "            for metric in visual.metrics",
+                "        )",
+                "    def resolve_binding(self, visual: BaseVisualConfig, selector_segments: Sequence[str], *, source_path=None):",
+                "        raise NotImplementedError",
+                "",
+                "register_visual_type('manifest_plugin_visual', _loader, overwrite=True)",
+                "register_visual_bindings_adapter('manifest_plugin_visual', _Adapter(), overwrite=True)",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "praeparo.yaml").write_text("plugins:\n  - test_manifest_plugin\n", encoding="utf-8")
+
+    monkeypatch.syspath_prepend(str(tmp_path))
+
+    visual_path = tmp_path / "visual.yaml"
+    visual_path.write_text(
+        "\n".join(
+            [
+                "type: manifest_plugin_visual",
+                "metrics:",
+                "  - documents_sent",
+                "  - documents_sent.within_1d",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    code = run(["explain", "visual.yaml", "--list-bindings"])
+    assert code == 0
+
+    out = capsys.readouterr().out
+    assert "visual.yaml#documents_sent" in out
+    assert "visual.yaml#documents_sent.within_1d" in out

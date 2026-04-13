@@ -9,7 +9,7 @@ from typing import Mapping, Tuple
 from praeparo.models import CartesianChartConfig
 from praeparo.pipeline import build_default_query_planner_provider
 from praeparo.visuals.dax_compilers import DaxCompileArtifact, register_dax_compiler
-from praeparo.visuals.registry import register_visual_type
+from praeparo.visuals.registry import register_visual_schema, register_visual_type
 
 
 def _load_cartesian_visual(path: Path, payload: Mapping[str, object], stack: Tuple[Path, ...]) -> CartesianChartConfig:
@@ -55,6 +55,18 @@ def _chart_dax_compiler(visual: object, context, args: argparse.Namespace) -> Tu
 
 register_visual_type("column", _load_cartesian_visual, overwrite=True)
 register_visual_type("bar", _load_cartesian_visual, overwrite=True)
+register_visual_schema(
+    "column",
+    CartesianChartConfig.model_json_schema,
+    overwrite=True,
+    authoring_parameters=True,
+)
+register_visual_schema(
+    "bar",
+    CartesianChartConfig.model_json_schema,
+    overwrite=True,
+    authoring_parameters=True,
+)
 register_dax_compiler("column", _chart_dax_compiler, overwrite=True)
 register_dax_compiler("bar", _chart_dax_compiler, overwrite=True)
 

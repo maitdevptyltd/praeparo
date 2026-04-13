@@ -8,6 +8,7 @@ import sys
 from typing import Sequence
 
 from ..env import ensure_env_loaded
+from ..plugin_bootstrap import bootstrap_plugins
 from ..schema import write_metric_schema
 from .catalog import MetricDiscoveryError, load_metric_catalog
 from .explain_command import run_explain_command
@@ -184,13 +185,11 @@ def _build_parser() -> argparse.ArgumentParser:
 def run(argv: Sequence[str] | None = None) -> int:
     ensure_env_loaded()
     args_list = list(argv) if argv is not None else sys.argv[1:]
-
-    preview_parser = argparse.ArgumentParser(add_help=False)
-    preview_parser.add_argument("--plugin", dest="plugins", action="append", default=[])
-    preview_args, _ = preview_parser.parse_known_args(args_list)
-    for module_name in preview_args.plugins or []:
-        if module_name:
-            __import__(module_name)
+    try:
+        bootstrap_plugins(args_list)
+    except RuntimeError as exc:
+        print(str(exc))
+        return 1
 
     parser = _build_parser()
     args = parser.parse_args(args_list)
