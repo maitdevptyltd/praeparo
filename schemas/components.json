@@ -1,0 +1,131 @@
+{
+  "$defs": {
+    "MetricExplainSpec": {
+      "additionalProperties": false,
+      "description": "Optional configuration for exporting row-level metric evidence.",
+      "properties": {
+        "from": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional driving table expression used to build the evidence rowset.",
+          "title": "From"
+        },
+        "where": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional extra rowset predicates appended after compiled calculate filters.",
+          "title": "Where"
+        },
+        "grain": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Evidence grain column reference (string) or a mapping of labels to column references.",
+          "title": "Grain"
+        },
+        "define": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            {
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "additionalProperties": {
+                      "type": "string"
+                    },
+                    "type": "object"
+                  }
+                ]
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional DEFINE blocks scoped to explain queries only. Accepts the same shapes as visual context `define` (string, mapping, or mixed sequences).",
+          "title": "Define"
+        },
+        "select": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Mapping of evidence column labels to DAX expressions evaluated per row.",
+          "title": "Select"
+        }
+      },
+      "title": "MetricExplainSpec",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Schema-backed document model for reusable metric components.",
+  "properties": {
+    "schema": {
+      "const": "component-draft-1",
+      "description": "Schema identifier for the metric component document.",
+      "title": "Schema",
+      "type": "string"
+    },
+    "explain": {
+      "$ref": "#/$defs/MetricExplainSpec",
+      "description": "Explain-plan fragment merged into composed metrics."
+    }
+  },
+  "required": [
+    "schema",
+    "explain"
+  ],
+  "title": "MetricComponentDocument",
+  "type": "object"
+}

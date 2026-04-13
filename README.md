@@ -134,8 +134,30 @@ poetry run praeparo schema ./schemas/visual_umbrella.schema.json
 
 That default command writes `schemas/visual_umbrella.schema.json`, which can be
 attached to stable visual YAML families in your editor. Keep the advanced
-`python -m praeparo.schema --matrix|--charts|--metrics|--pack ...` path for
+`python -m praeparo.schema --matrix|--charts|--metrics|--components|--pack ...` path for
 specialized exports only.
+
+Metric components use the same advanced export path:
+
+```bash
+poetry run python -m praeparo.schema --components schemas/components.json
+```
+
+That refreshes the committed `schemas/components.json` artifact and mirrors the
+current `registry/components/**` contract: `schema: component-draft-1` plus the
+supported top-level `explain` payload.
+
+Generic context layers use a dedicated advanced export as well:
+
+```bash
+poetry run python -m praeparo.schema --context-layer schemas/context_layer.json
+```
+
+That refreshes the committed `schemas/context_layer.json` artifact for
+`registry/context/**/*.yaml|yml` authoring. The schema stays permissive for
+repo-specific values like `month` or `business_time`, while reusing Praeparo’s
+existing `context.metrics.*` models so nested `bindings`, `calculate`, and
+`allow_empty` IntelliSense matches runtime behaviour.
 
 For downstream workspaces, declare repo-local plugins in a root `praeparo.yaml`
 manifest:

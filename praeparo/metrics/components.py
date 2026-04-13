@@ -10,9 +10,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Mapping
+from typing import Literal, Mapping
 
 import yaml
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from praeparo.metrics.models import MetricExplainSpec
 
@@ -42,12 +43,37 @@ _FORBIDDEN_COMPONENT_KEYS = {
 }
 
 
+class MetricComponentDocument(BaseModel):
+    """Schema-backed document model for reusable metric components."""
+
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    schema_version: Literal["component-draft-1"] = Field(
+        ...,
+        alias="schema",
+        description="Schema identifier for the metric component document.",
+    )
+    explain: MetricExplainSpec = Field(
+        ...,
+        description="Explain-plan fragment merged into composed metrics.",
+    )
+
+    @model_validator(mode="after")
+    def _require_supported_payload(self) -> "MetricComponentDocument":
+        # Components stay intentionally narrow for now: the schema header identifies
+        # the contract, and `explain` is the only supported payload merged into metrics.
+        if self.explain is None:  # pragma: no cover - guarded by required field/schema.
+            msg = "component must define an explain block."
+            raise ValueError(msg)
+        return self
+
+
 @dataclass(frozen=True)
 class MetricComponentLayer:
     """Validated component payload that can be merged into a metric layer."""
 
     path: Path
-    explain: MetricExplainSpec | None = None
+    explain: MetricExplainSpec
 
 
 def resolve_component_path(ref: str, *, declaring_file: Path) -> Path:
@@ -140,9 +166,12 @@ def load_component_payload(path: Path) -> MetricComponentLayer:
             f"{path}: component does not define any supported keys ({sorted(_ALLOWED_COMPONENT_KEYS)})."
         )
 
-    explain_payload = document.get("explain")
-    explain = MetricExplainSpec.model_validate(explain_payload) if explain_payload is not None else None
-    return MetricComponentLayer(path=path, explain=explain)
+    try:
+        validated = MetricComponentDocument.model_validate(payload)
+    except ValidationError as exc:
+        raise MetricComponentError(f"{path}: invalid component payload: {exc}") from exc
+
+    return MetricComponentLayer(path=path, explain=validated.explain)
 
 
 class MetricComponentLoader:
@@ -172,9 +201,9 @@ class MetricComponentLoader:
 
 __all__ = [
     "MetricComponentError",
+    "MetricComponentDocument",
     "MetricComponentLayer",
     "MetricComponentLoader",
     "load_component_payload",
     "resolve_component_path",
 ]
-

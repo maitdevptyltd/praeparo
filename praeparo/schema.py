@@ -11,12 +11,16 @@ from pathlib import Path
 from typing import Any
 
 from .metrics import MetricDefinition
+from .metrics.components import MetricComponentDocument
 from .models import CartesianChartConfig, FrameConfig, MatrixConfig, PackConfig
 from .models.powerbi import PowerBIVisualConfig
+from .visuals.context_schema import ContextLayerDocument
 from .visuals.registry import iter_visual_schema_registrations
 
 DEFAULT_VISUAL_UMBRELLA_SCHEMA_PATH = Path("schemas/visual_umbrella.schema.json")
 _BUILT_IN_VISUAL_TYPES = {"matrix", "frame", "column", "bar", "powerbi"}
+DEFAULT_COMPONENT_SCHEMA_PATH = Path("schemas/components.json")
+DEFAULT_CONTEXT_LAYER_SCHEMA_PATH = Path("schemas/context_layer.json")
 
 
 def _compose_property_schema() -> dict[str, Any]:
@@ -68,6 +72,18 @@ def metric_json_schema() -> dict[str, Any]:
     return MetricDefinition.model_json_schema()
 
 
+def component_json_schema() -> dict[str, Any]:
+    """Return the JSON schema for metric component documents."""
+
+    return MetricComponentDocument.model_json_schema()
+
+
+def context_layer_json_schema() -> dict[str, Any]:
+    """Return the JSON schema for generic context-layer documents."""
+
+    return ContextLayerDocument.model_json_schema()
+
+
 def pack_json_schema() -> dict[str, Any]:
     """Return the JSON schema for pack configurations."""
 
@@ -89,6 +105,18 @@ def write_metric_schema(path: Path) -> None:
     """Write the metric definition schema to *path*."""
 
     _write_schema(path, metric_json_schema())
+
+
+def write_component_schema(path: Path) -> None:
+    """Write the metric component schema to *path*."""
+
+    _write_schema(path, component_json_schema())
+
+
+def write_context_layer_schema(path: Path) -> None:
+    """Write the generic context-layer schema to *path*."""
+
+    _write_schema(path, context_layer_json_schema())
 
 
 def write_pack_schema(path: Path) -> None:
@@ -278,6 +306,24 @@ def run(argv: list[str] | None = None) -> int:
         help="Destination for the metric schema JSON file (omit to skip).",
     )
     parser.add_argument(
+        "--components",
+        type=Path,
+        default=None,
+        help=(
+            "Destination for the metric component schema JSON file "
+            f"(omit to skip; committed artefact typically {DEFAULT_COMPONENT_SCHEMA_PATH})."
+        ),
+    )
+    parser.add_argument(
+        "--context-layer",
+        type=Path,
+        default=None,
+        help=(
+            "Destination for the generic context-layer schema JSON file "
+            f"(omit to skip; committed artefact typically {DEFAULT_CONTEXT_LAYER_SCHEMA_PATH})."
+        ),
+    )
+    parser.add_argument(
         "--pack",
         type=Path,
         default=None,
@@ -289,15 +335,23 @@ def run(argv: list[str] | None = None) -> int:
         "matrix": args.matrix,
         "charts": args.charts,
         "metrics": args.metrics,
+        "components": args.components,
+        "context_layer": args.context_layer,
         "pack": args.pack,
     }
     if any(target is not None for target in advanced_targets.values()):
         if args.dest is not None:
-            parser.error("positional dest cannot be combined with --matrix/--charts/--metrics/--pack")
+            parser.error(
+                "positional dest cannot be combined with "
+                "--matrix/--charts/--metrics/--components/--context-layer/--pack"
+            )
 
-        matrix_target = args.matrix or Path("schemas/matrix.json")
-        write_matrix_schema(matrix_target)
-        print(f"Wrote matrix schema to {matrix_target}")
+        # Advanced exports are explicit on purpose. Each flag writes only the schema
+        # it names so specialized tooling can refresh one contract without mutating
+        # sibling artefacts as a side effect.
+        if args.matrix is not None:
+            write_matrix_schema(args.matrix)
+            print(f"Wrote matrix schema to {args.matrix}")
 
         if args.charts is not None:
             write_cartesian_schema(args.charts)
@@ -306,6 +360,14 @@ def run(argv: list[str] | None = None) -> int:
         if args.metrics is not None:
             write_metric_schema(args.metrics)
             print(f"Wrote metric schema to {args.metrics}")
+
+        if args.components is not None:
+            write_component_schema(args.components)
+            print(f"Wrote metric component schema to {args.components}")
+
+        if args.context_layer is not None:
+            write_context_layer_schema(args.context_layer)
+            print(f"Wrote context-layer schema to {args.context_layer}")
 
         if args.pack is not None:
             write_pack_schema(args.pack)
@@ -324,13 +386,19 @@ def main() -> None:
 
 
 __all__ = [
+    "DEFAULT_COMPONENT_SCHEMA_PATH",
+    "DEFAULT_CONTEXT_LAYER_SCHEMA_PATH",
     "DEFAULT_VISUAL_UMBRELLA_SCHEMA_PATH",
     "cartesian_json_schema",
+    "component_json_schema",
+    "context_layer_json_schema",
     "matrix_json_schema",
     "metric_json_schema",
     "pack_json_schema",
     "visual_umbrella_json_schema",
     "write_cartesian_schema",
+    "write_component_schema",
+    "write_context_layer_schema",
     "write_matrix_schema",
     "write_metric_schema",
     "write_pack_schema",

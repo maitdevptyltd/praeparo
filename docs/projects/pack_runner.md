@@ -485,6 +485,29 @@ Key flags:
   Context files may be plain context-layer payloads or full pack-shaped YAML
   documents; pack-shaped files contribute their top-level `context`,
   `calculate`, `define`, and `filters` fragments.
+
+  Downstream repos can attach Praeparo’s context-layer schema to
+  `registry/context/**/*.yaml` so authored layers get IntelliSense for
+  top-level `define` / `calculate` / `filters` plus nested
+  `context.metrics.bindings`, `context.metrics.calculate`, and
+  `context.metrics.allow_empty`:
+
+  ```bash
+  poetry run python -m praeparo.schema --context-layer schemas/context_layer.json
+  ```
+
+  In VS Code, map the generated artifact to your registry context files:
+
+  ```json
+  {
+    "yaml.schemas": {
+      "./.submodules/praeparo/schemas/context_layer.json": [
+        "registry/context/**/*.yaml",
+        "registry/context/**/*.yml"
+      ]
+    }
+  }
+  ```
 - `--project-root` – override the project root used for metrics/datasources discovery
   and default build paths. Defaults to the current working directory. When a slide’s
   visual declares a typed context model, its `metrics_root` still takes precedence.

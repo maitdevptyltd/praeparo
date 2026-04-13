@@ -46,6 +46,22 @@ Phase 1.5 support:
 - Allowed top-level keys: `explain`
 - Forbidden keys: metric identity fields such as `key`, `display_name`, `section`, `define`, `expression`, `variants`, etc.
 
+## JSON schema export
+
+Praeparo owns the component contract, so editor schema support should come from
+the upstream exporter rather than a repo-local duplicate:
+
+```bash
+poetry run python -m praeparo.schema --components schemas/components.json
+```
+
+That refreshes the committed `schemas/components.json` artifact and mirrors the
+current loader contract exactly:
+
+- `schema` must be `component-draft-1`
+- `explain` is required
+- extra top-level keys are rejected
+
 ## Merge order
 
 Composition is applied deterministically alongside inheritance:
@@ -57,4 +73,3 @@ Composition is applied deterministically alongside inheritance:
 3. Apply variant overrides (parent variant → leaf variant).
 
 This keeps component ordering stable and ensures the metric YAML remains the final authority.
-

@@ -1,0 +1,486 @@
+{
+  "$defs": {
+    "ContextLayerFragments": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        {
+          "items": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              }
+            ]
+          },
+          "type": "array"
+        }
+      ],
+      "description": "Authored shape for top-level calculate/define/filters context fragments.",
+      "title": "ContextLayerFragments"
+    },
+    "PackContext": {
+      "additionalProperties": true,
+      "description": "Context payload shared by slides.\n\nExtra keys are allowed so packs can continue to pass arbitrary template values.",
+      "properties": {
+        "calculate": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Deprecated alias for metrics.calculate; use context.metrics.calculate instead.",
+          "title": "Calculate"
+        },
+        "metrics": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PackMetricsContext"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional metric context bindings and scoping predicates."
+        }
+      },
+      "title": "PackContext",
+      "type": "object"
+    },
+    "PackMetricBinding": {
+      "additionalProperties": false,
+      "description": "Binding describing how a metric value becomes a Jinja variable.\n\nBindings may reference a catalogue metric (`key` + optional `variant`) or declare an\narithmetic `expression` over other metrics/aliases. When `alias` is omitted it is\nderived from the full metric key by replacing dots with underscores.",
+      "properties": {
+        "key": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Catalogue metric key (e.g., documents_verified) or dotted variant key.",
+          "title": "Key"
+        },
+        "alias": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Jinja-safe variable name exposed to templates.",
+          "title": "Alias"
+        },
+        "variant": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional variant path appended to `key` when `key` is not dotted.",
+          "title": "Variant"
+        },
+        "calculate": {
+          "$ref": "#/$defs/ScopedCalculateFilters",
+          "description": "Optional DAX CALCULATE predicates for this binding. Named entries default to DEFINE scope; use calculate.<name>.evaluate to apply a predicate around the measure in SUMMARIZECOLUMNS."
+        },
+        "format": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional formatting hint mirroring Praeparo format tokens.",
+          "title": "Format"
+        },
+        "ratio_to": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional ratio semantics for this binding. `true` ratios against the base metric inferred from the dotted key. A string value must be a catalogue metric key used as the denominator.",
+          "title": "Ratio To"
+        },
+        "expression": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional arithmetic expression referencing metric keys or aliases.",
+          "title": "Expression"
+        },
+        "override": {
+          "default": false,
+          "description": "True when intentionally shadowing an inherited alias.",
+          "title": "Override",
+          "type": "boolean"
+        }
+      },
+      "title": "PackMetricBinding",
+      "type": "object"
+    },
+    "PackMetricsContext": {
+      "additionalProperties": false,
+      "description": "Metrics-only context for packs and slides.\n\nThis wrapper scopes DAX predicates to metric-context resolution without\naffecting slide visuals.",
+      "properties": {
+        "calculate": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ScopedCalculateMap"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional DAX CALCULATE predicates applied to metric-context execution. Shorthand entries default to DEFINE scope (outer dataset scoping). Use calculate.<name>.evaluate to apply calculation-group filters around every bound series in SUMMARIZECOLUMNS."
+        },
+        "allow_empty": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Whether context.metrics may resolve to zero rows without raising. Defaults to true when omitted. Slides inherit the pack-level value unless they provide an explicit override.",
+          "title": "Allow Empty"
+        },
+        "bindings": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/PackMetricBinding"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Metric bindings resolved into Jinja variables.",
+          "title": "Bindings"
+        }
+      },
+      "title": "PackMetricsContext",
+      "type": "object"
+    },
+    "ScopedCalculateFilters": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "define": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "evaluate": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "type": "object"
+        },
+        {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "define": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "evaluate": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "type": "object"
+              }
+            ]
+          },
+          "type": "object"
+        },
+        {
+          "items": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "define": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "evaluate": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  ]
+                },
+                "type": "object"
+              }
+            ]
+          },
+          "type": "array"
+        }
+      ],
+      "description": "Split calculate predicates between DEFINE and EVALUATE scopes.",
+      "title": "ScopedCalculateFilters"
+    },
+    "ScopedCalculateMap": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "define": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "evaluate": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "type": "object"
+              }
+            ]
+          },
+          "type": "object"
+        },
+        {
+          "items": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "define": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "evaluate": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  ]
+                },
+                "type": "object"
+              }
+            ]
+          },
+          "type": "array"
+        }
+      ],
+      "description": "Named calculate map with per-scope merge helpers.\n\n    This model is used for `context.metrics.calculate` at both pack root and slide\n    scope so root definitions automatically apply to slide metric-context runs.\n    ",
+      "title": "ScopedCalculateMap"
+    }
+  },
+  "additionalProperties": true,
+  "description": "Generic context-layer payload merged before pack and explain execution.",
+  "properties": {
+    "context": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/PackContext"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Optional nested template context. Reuses the pack context contract so `context.metrics.bindings`, `context.metrics.calculate`, and `context.metrics.allow_empty` behave the same way in context layers."
+    },
+    "calculate": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ContextLayerFragments"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Optional top-level DAX CALCULATE fragments merged into the execution context."
+    },
+    "define": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ContextLayerFragments"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Optional top-level DEFINE fragments merged into the execution context."
+    },
+    "filters": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ContextLayerFragments"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Optional top-level filter fragments available to downstream templating and datasources."
+    }
+  },
+  "title": "ContextLayerDocument",
+  "type": "object"
+}

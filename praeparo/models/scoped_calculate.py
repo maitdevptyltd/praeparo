@@ -80,6 +80,50 @@ def _allocate_merge_key(existing: Mapping[str, object], base: str) -> str:
     return candidate
 
 
+def _string_array_schema() -> JsonSchemaValue:
+    return {"type": "array", "items": {"type": "string"}}
+
+
+def _scoped_object_schema() -> JsonSchemaValue:
+    return {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "define": _string_array_schema(),
+            "evaluate": _string_array_schema(),
+        },
+    }
+
+
+def _scoped_named_entry_schema() -> JsonSchemaValue:
+    return {
+        "anyOf": [
+            {"type": "string"},
+            _string_array_schema(),
+            _scoped_object_schema(),
+        ]
+    }
+
+
+def _scoped_named_mapping_schema() -> JsonSchemaValue:
+    return {
+        "type": "object",
+        "additionalProperties": _scoped_named_entry_schema(),
+    }
+
+
+def _mixed_scoped_sequence_schema() -> JsonSchemaValue:
+    return {
+        "type": "array",
+        "items": {
+            "anyOf": [
+                {"type": "string"},
+                _scoped_named_mapping_schema(),
+            ]
+        },
+    }
+
+
 def _parse_scoped_filters(value: object) -> tuple[list[str], list[str]]:
     """Parse calculate payloads into DEFINE/EVALUATE predicate lists."""
 
@@ -309,6 +353,19 @@ class ScopedCalculateMap(RootModel[dict[str, ScopedCalculateEntry]]):
         combined = [*self.flatten_define(), *self.flatten_evaluate()]
         return tuple(sorted(set(item.strip() for item in combined if item and item.strip())))
 
+    @classmethod
+    def __get_pydantic_json_schema__(cls, core_schema: Any, handler: Any) -> JsonSchemaValue:
+        return {
+            "title": "ScopedCalculateMap",
+            "description": cls.__doc__,
+            "anyOf": [
+                {"type": "string"},
+                _string_array_schema(),
+                _scoped_named_mapping_schema(),
+                _mixed_scoped_sequence_schema(),
+            ],
+        }
+
 
 class ScopedCalculateFilters(BaseModel):
     """Split calculate predicates between DEFINE and EVALUATE scopes."""
@@ -340,40 +397,15 @@ class ScopedCalculateFilters(BaseModel):
 
     @classmethod
     def __get_pydantic_json_schema__(cls, core_schema: Any, handler: Any) -> JsonSchemaValue:
-        define_schema: JsonSchemaValue = {"type": "array", "items": {"type": "string"}}
-        evaluate_schema: JsonSchemaValue = {"type": "array", "items": {"type": "string"}}
-        scoped_object: JsonSchemaValue = {
-            "type": "object",
-            "additionalProperties": False,
-            "properties": {
-                "define": define_schema,
-                "evaluate": evaluate_schema,
-            },
-        }
-        named_entry: JsonSchemaValue = {
-            "anyOf": [
-                {"type": "string"},
-                {"type": "array", "items": {"type": "string"}},
-                scoped_object,
-            ]
-        }
-        named_mapping: JsonSchemaValue = {
-            "type": "object",
-            "additionalProperties": named_entry,
-        }
-        list_mixed: JsonSchemaValue = {
-            "type": "array",
-            "items": {"anyOf": [{"type": "string"}, named_mapping]},
-        }
         return {
             "title": "ScopedCalculateFilters",
             "description": cls.__doc__,
             "anyOf": [
                 {"type": "string"},
-                {"type": "array", "items": {"type": "string"}},
-                scoped_object,
-                named_mapping,
-                list_mixed,
+                _string_array_schema(),
+                _scoped_object_schema(),
+                _scoped_named_mapping_schema(),
+                _mixed_scoped_sequence_schema(),
             ],
         }
 

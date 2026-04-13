@@ -11,6 +11,7 @@ from praeparo.visuals.context_layers import (
     resolve_layered_context_payload,
 )
 from praeparo.visuals.context import resolve_dax_context
+from praeparo.visuals.context_schema import ContextLayerDocument
 
 
 def test_discover_registry_context_paths_sorts_by_relative_path(tmp_path: Path) -> None:
@@ -234,3 +235,48 @@ def test_load_context_layer_file_adapts_pack_shaped_payload(tmp_path: Path) -> N
     assert payload["lender_id"] == 178
     assert payload["customer"] == "override_customer"
     assert payload["calculate"] == {"lender": "'dim_lender'[LenderId] = {{ lender_id }}"}
+
+
+def test_context_layer_document_reuses_pack_metrics_context_and_allows_extras() -> None:
+    document = ContextLayerDocument.model_validate(
+        {
+            "context": {
+                "month": "2025-11-01",
+                "metrics": {
+                    "allow_empty": False,
+                    "calculate": {
+                        "month": "'dim_calendar'[Month] = DATEVALUE(\"{{ month }}\")",
+                        "segment": {
+                            "evaluate": "'dim_segment'[Name] = \"Broker\"",
+                        },
+                    },
+                    "bindings": [
+                        {"key": "documents_completed", "alias": "completed"},
+                    ],
+                },
+            },
+            "define": {
+                "get_reporting_month": "VAR ReportingMonth = DATEVALUE(\"{{ month }}\")",
+            },
+            "calculate": {
+                "lender": "'dim_lender'[LenderId] = 178",
+            },
+            "filters": {
+                "month": "dim_calendar/month eq '{{ month }}'",
+            },
+            "display_date": "November 2025",
+        }
+    )
+
+    assert document.model_extra == {"display_date": "November 2025"}
+    assert document.context is not None
+    assert document.context.model_extra == {"month": "2025-11-01"}
+    assert document.context.metrics is not None
+    assert document.context.metrics.allow_empty is False
+    assert document.context.metrics.bindings is not None
+    assert document.context.metrics.bindings[0].alias == "completed"
+
+    metrics_calculate = document.context.metrics.calculate
+    assert metrics_calculate is not None
+    assert metrics_calculate.root["month"].define == ['\'dim_calendar\'[Month] = DATEVALUE("{{ month }}")']
+    assert metrics_calculate.root["segment"].evaluate == ['\'dim_segment\'[Name] = "Broker"']
