@@ -20,10 +20,10 @@
 | - | ---- | ------ | --------------- |
 | 1 | Model: add `PowerBIVisualConfig` (mode, source, filters, parameters, render) and include in `VisualConfigUnion`; update JSON schemas. | Not started | Reuse existing filter merge helpers; keep `filters` as dict|list. |
 | 2 | Payload builder: helper to build ExportTo payloads (report/visual/paginated) with validation of mutually exclusive fields. | Not started | Mirror Slick’s `build_export_payload`/`build_paginated_export_payload`. |
-| 3 | Export service: async client that polls `ExportToFile`, downloads artefacts, and caches under `.tmp/pbi_exports/...`; add concurrency semaphore + retry/backoff knobs. | Not started | Reuse `praeparo.powerbi` HTTPX client; no new deps; emit structured errors (401/404/timeout). |
+| 3 | Export service: async client that polls `ExportToFile`, downloads artefacts, and caches under a deterministic local export directory such as `build/pbi_exports/...`; add concurrency semaphore + retry/backoff knobs. | Not started | Reuse `praeparo.powerbi` HTTPX client; no new deps; emit structured errors (401/404/timeout). |
 | 4 | PPTX extractor: stitch largest pictures per slide, apply crop metadata, and return PNG blob + PPTX path; unit-test with fixtures. | Not started | Port logic from Slick with coverage for multi-slide and no-picture cases. |
 | 5 | Planner integration: resolve filters/parameters with templating, respect `filters_merge_strategy`, attach paths to resolved visual for pack renderers. | Not started | Align merge semantics with governance pack. |
-| 6 | CLI: `praeparo visuals render powerbi <file>` (standalone) and pack support so PPTX builders can drop in rendered images. | Not started | Keep deterministic `.tmp/pbi_exports` paths; revision/manifest handling is out of scope. |
+| 6 | CLI: `praeparo visuals render powerbi <file>` (standalone) and pack support so PPTX builders can drop in rendered images. | Not started | Keep deterministic local export paths such as `build/pbi_exports`; revision/manifest handling is out of scope. |
 | 7 | Tests: unit (model validation, payload builder, extractor), mocked integration (export polling), snapshot for stitched PNG. | Not started | Gate real API tests behind env flag; keep offline fixtures. |
 | 8 | Docs: developer guide (`docs/visuals/powerbi_visual.md`), architecture touchpoints, CLI help text. | In progress | This doc + reference page drafted. |
 | 9 | Follow-ups: add to the examples registry and pack templates; coordinate with downstream repos for registry/packs migration. | Not started | Depends on pack schema landing in Praeparo. |
@@ -46,7 +46,7 @@
   PPTX stitching (fixture PPTX with multiple slides and crops).
 - Mocked export flow: fake `ExportToFile` responses exercised via httpx/pytest
   fixtures; verify polling and error cases (401, 404, timeout).
-- CLI smoke: dry-run render writes PNG + PPTX to `.tmp/pbi_exports/...` without
+- CLI smoke: dry-run render writes PNG + PPTX to `build/pbi_exports/...` without
   hitting the API when `PRAEPARO_RUN_POWERBI_TESTS` is unset.
 
 ## Open Questions

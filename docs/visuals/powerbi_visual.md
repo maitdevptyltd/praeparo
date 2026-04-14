@@ -4,25 +4,64 @@
 
 ## What it is
 
-`type: powerbi` is a declarative visual that snapshots an existing Power BI asset
-(report page, single visual, or paginated report) into an image and optional
-sidecar artefacts (PPTX, XLSX, CSV, PDF). It is the bridge that lets deck and
-dashboard pipelines reuse the same visual definitions found in
-`registry/visuals/**` while centralising the export logic inside Praeparo.
+`type: powerbi` is a declarative visual that snapshots an existing Power BI
+asset, such as a report page, a single visual, or a paginated report, into an
+image and optional sidecar files (`PPTX`, `XLSX`, `CSV`, `PDF`). It lets deck
+and dashboard pipelines reuse the same visual definitions found in
+`registry/visuals/**` while keeping the export steps inside Praeparo.
 
 ## Key behaviours
 
-- Calls the Power BI Export-to-File API with the supplied workspace (`group_id`),
-  report (`report_id`), and target (`page` or `visual_id`).
+- Calls the Power BI Export-to-File API with the supplied workspace
+  (`group_id`), report (`report_id`), and target (`page` or `visual_id`).
 - Supports paginated reports by emitting multiple formats and attaching the
-  generated URLs/artefacts to the resolved visual.
-- Normalises filters (dict or list) with the same merge semantics used by the
-  pack runner: pack-level filters merge into placeholder filters unless
+  generated URLs or artefacts to the resolved visual.
+- Normalises filters (dict or list) with the same merge rules used by the pack
+  runner: pack-level filters merge into placeholder filters unless
   `filters_merge_strategy: replace` is set.
-- Can keep Power BI exports as PPTX while also extracting a PNG sidecar from the
-  embedded slide pictures, including slide crop metadata and overlap trimming.
-- Exposes concurrency guards and retry-friendly polling so multiple visuals can
+- Can keep Power BI exports as PPTX while also extracting a PNG sidecar from
+  the slide images, including crop metadata and overlap trimming.
+- Uses concurrency guards and retry-friendly polling so multiple visuals can
   export safely in parallel.
+
+## Environment and default resolution
+
+Power BI visuals are meant to stay concise in YAML. Praeparo resolves export
+identifiers and render defaults in a predictable order so authors can skip
+repeating boilerplate when the environment already supplies it.
+
+Resolution is:
+
+1. explicit YAML values in the visual definition,
+2. runtime overrides supplied by the caller,
+3. environment defaults,
+4. model fallbacks.
+
+The most common defaults are:
+
+- `source.group_id` falls back to `PRAEPARO_PBI_WORKSPACE_ID`.
+- `source.report_id` falls back to `PRAEPARO_PBI_DEFAULT_REPORT_ID`.
+- `render.format` falls back to `PRAEPARO_PBI_DEFAULT_EXPORT_FORMAT`.
+- `render.stitch_slides` falls back to `PRAEPARO_PBI_DEFAULT_STITCH_SLIDES`.
+
+Fields that identify the asset slice itself, such as `source.page` and
+`source.visual_id`, stay in YAML because they describe the report content
+rather than the environment. That keeps the reusable defaults focused on
+credentials and export policy.
+
+Example with environment-provided workspace and report identifiers:
+
+```yaml
+type: powerbi
+mode: report
+source:
+  page: Overview
+render:
+  format: png
+```
+
+In that form, Praeparo can export the visual without repeating workspace or
+report identifiers in every file.
 
 ## YAML contract (proposed)
 
@@ -83,20 +122,20 @@ render:
 
 ## Execution flow
 
-1) **Load** – YAML is validated against `PowerBIVisualConfig` (discriminated by
+1) **Load** – YAML is validated against `PowerBIVisualConfig` (marked by
    `type: powerbi`) and registered in `VisualConfigUnion`.
 2) **Plan** – the planner builds the export payload using the configured format
-   (or the `.env` default), then resolves filters/parameters with the provided
-   context and pack-level defaults.
-3) **Export** – the Power BI client polls `ExportToFile` until `Succeeded`, then
-   downloads the artefact to a deterministic path under `.tmp/pbi_exports/…`.
-4) **Extract** – when the downloaded artefact is a PPTX, Praeparo parses the
-   deck, crops the largest picture on each slide (respecting PowerPoint crop
-   metadata), and optionally stitches those segments vertically to avoid
-   clipping multi-section visuals.
+   (or the `.env` default), then resolves filters and parameters with the
+   provided context and pack-level defaults.
+3) **Export** – the Power BI client polls `ExportToFile` until `Succeeded`,
+   then downloads the artefact to a predictable local folder such as
+   `build/pbi_exports/...`.
+4) **Extract** – when the downloaded artefact is a PPTX, Praeparo reads the
+   deck, crops the largest picture on each slide, and optionally stitches those
+   segments vertically to avoid clipping multi-section visuals.
 5) **Attach** – the resolved visual exposes `image_path`, `pptx_path`, and
-   optional `artifacts` (for paginated sidecars) so downstream pack builders and
-   PPTX renderers can drop them into placeholders.
+   optional `artifacts` so downstream pack builders and PPTX renderers can drop
+   them into placeholders.
 
 ## Credentials & security
 
@@ -111,10 +150,11 @@ render:
   - `PRAEPARO_PBI_DEFAULT_STITCH_SLIDES=true|false`
   - `PRAEPARO_PBI_EXPORT_POLL_INTERVAL=<seconds>`
   - `PRAEPARO_PBI_EXPORT_TIMEOUT=<seconds>`
-- Avoid embedding secrets in YAML; keep creds in env/Key Vault and load via
-  `python-dotenv` or host-specific secret managers.
-- Exports are cached locally; callers should ensure `.tmp/` is excluded from
-  distribution archives unless required for audit.
+- Avoid embedding secrets in YAML; keep credentials in env/Key Vault and load
+  them via `python-dotenv` or host-specific secret managers.
+- Exports are cached locally; callers should ensure the chosen export
+  cache or output directory is excluded from distribution archives unless it is
+  needed for audit.
 
 ## Failure modes to handle
 
@@ -137,9 +177,9 @@ render:
   `metadata["powerbi_filters"]`.
 - Pack-level DAX `define` blocks are consumed by DAX-backed pipelines (matrix,
   cartesian, etc.) and are **not** used by Power BI visuals.
-- This allows existing visual definitions (`type: powerbi` under
-  `visuals/`) to be reused across multiple slides and packs without
-  re-authoring filters or export logic.
+- This lets existing visual definitions (`type: powerbi` under `visuals/`) be
+  reused across multiple slides and packs without rewriting filters or export
+  logic.
 
 ## Current limits
 
@@ -148,5 +188,5 @@ render:
 - The per-visual `max_concurrency` field is still a placeholder; pack-level
   concurrency is controlled via `--max-pbi-concurrency` /
   `PRAEPARO_PBI_MAX_CONCURRENCY`.
-- Standalone `visual run` already works through the shared registry; there is no
-  dedicated `powerbi`-only CLI shim yet.
+- Standalone `visual run` already works through the shared registry; there is
+  no dedicated `powerbi`-only CLI shim yet.

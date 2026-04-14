@@ -1,23 +1,34 @@
 # Metric Expressions (Arithmetic + `ratio_to()` + `min/max`)
 
-Praeparo supports lightweight **metric expressions** anywhere a config accepts an `expression:` field (for example inline visual series, registry expression metrics, and pack metric bindings).
+Praeparo supports lightweight **metric expressions** anywhere a config accepts
+an `expression:` field, such as inline visual series, registry expression
+metrics, and pack metric bindings.
 
-Expressions are parsed using Python's `ast` module and compiled into DAX by substituting referenced metric identifiers with their compiled measure expressions.
+Expressions are parsed with Python's `ast` module and compiled into DAX by
+swapping metric references for their compiled measure expressions.
+
+This is the compile-time step in the flow: `MetricDaxBuilder` resolves the
+referenced metrics first, then the visual pipeline renders the resulting DAX
+through shared helpers such as `render_visual_plan`. Visual-specific naming,
+ratio-to-parent presentation, and SLA decoration happen after compilation in
+the visual layer.
 
 ## Syntax
 
 - Allowed operators: `+`, `-`, `*`, `/`, parentheses.
 - Identifiers refer to **metric keys** and **variant keys** using dotted notation.
 
-Because expressions are parsed as Python, dotted identifiers must be written as attribute chains (which mirrors YAML dotted keys):
+Because expressions are parsed as Python, dotted identifiers must be written as
+attribute chains, which mirrors dotted YAML keys:
 
 ```text
-documents_sent.within_1_business_day_from_file_ready
+response_time.within_target
 ```
 
 ## `ratio_to()` in expressions
 
-Use `ratio_to()` when you want a ratioed value inside an expression without defining an extra percent variant.
+Use `ratio_to()` when you want a ratio inside an expression without creating a
+separate percent metric.
 
 Supported forms:
 
@@ -30,18 +41,18 @@ Examples:
 
 ```yaml
 expression: |
-  ratio_to(documents_sent.within_1_business_day_from_file_ready) * 0.85 +
-  ratio_to(documents_sent.within_2_business_days_from_file_ready) * 1.0
+  ratio_to(response_time.within_target) * 0.85 +
+  ratio_to(response_time.within_slightly_late) * 1.0
 ```
 
 ```yaml
 expression: |
-  1 - ratio_to(missed_settlements_by_msa, "matters_settled")
+  1 - ratio_to(completion_rate, "total_completions")
 ```
 
 ```yaml
 expression: |
-  min(ratio_to(documents_sent.within_5_minutes_automated, "documents_sent.automated", 1) / 1.0, 1)
+  min(ratio_to(throughput.within_threshold, "throughput.total", 1) / 1.0, 1)
 ```
 
 Semantics:
@@ -50,7 +61,8 @@ Semantics:
   - without fallback: `DIVIDE(numerator, denominator)`
   - with fallback: denominator-guarded `IF` + `DIVIDE` so fallback is returned whenever denominator is blank/zero.
 - The inferred denominator is the **immediate parent** (`a.b.c → a.b`).
-- `ratio_to()` produces a numeric ratio (typically `0–1`), so format as percent where appropriate.
+- `ratio_to()` produces a numeric ratio (usually `0–1`), so format it as a
+  percent where that reads better.
 - Fallback applies when the denominator is blank or zero (including zero-volume cases where both numerator and
   denominator are blank). If denominator is present and numerator is blank, the ratio remains blank.
 
@@ -69,7 +81,23 @@ Validation rules:
     - third argument must be a numeric literal fallback value.
 - `min()` / `max()` expect 2+ positional arguments.
 
+## Pipeline Fit
+
+- Compile expression metrics once from the shared metric catalog, then reuse
+  them in the visual pipeline.
+- DAX-backed visuals should consume the prepared
+  `ExecutionContext.dataset_context` instead of finding the same roots again for
+  each visual.
+- Use expression `ratio_to()` when the ratio sits inside a larger arithmetic
+  expression; use the series-level `ratio_to` feature when the ratio is only
+  needed after query execution.
+
 ## Notes and related features
 
-- Series-level `ratio_to` (a separate feature) computes ratios post-query for simple numerator/denominator pairs without embedding the ratio in DAX. Use expression `ratio_to()` when you need ratioed values inside a larger arithmetic expression.
-- `min()/max()` compilation uses a blank-safe pattern: if any argument evaluates to `BLANK()` (for example a missing `ratio_to()` denominator), the `min/max` result is `BLANK()` rather than silently falling back to the non-blank argument.
+- Series-level `ratio_to` is a separate feature that computes ratios after the
+  query for simple numerator/denominator pairs. Use expression `ratio_to()`
+  when you need the ratio inside a larger arithmetic expression.
+- `min()/max()` compilation uses a blank-safe pattern: if any argument
+  evaluates to `BLANK()` (for example a missing `ratio_to()` denominator), the
+  result is `BLANK()` rather than silently falling back to the non-blank
+  argument.

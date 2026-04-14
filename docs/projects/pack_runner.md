@@ -2,25 +2,23 @@
 
 ## Purpose
 
-Packs let you orchestrate **multiple visuals as a single unit**: a pack YAML
-describes slides, shared context, and per-slide overrides, and the
-`praeparo pack run` command uses the existing visual registry and pipelines to
-emit PNG artefacts for each slide.
+Packs let you run **multiple visuals as one unit**. A pack YAML describes the
+slides, shared settings, and per-slide overrides, and `praeparo pack run`
+produces PNG output for each slide.
 
-The pack runner is intentionally type-agnostic:
+The pack runner works with any supported visual type:
 
-- Each slide references an existing visual YAML via `visual.ref`.
-- Praeparo resolves the visual config and delegates execution to the registered
-  visual pipeline (matrix, frame, Power BI, etc.).
-- Pack-level context and filters are rendered via Jinja and merged with
-  slide-level overrides before reaching the visual pipeline.
+- Each slide points to an existing visual YAML through `visual.ref`.
+- Praeparo loads that visual and runs it with the right visual setup (matrix,
+  frame, Power BI, etc.).
+- Pack-level context and filters are rendered with Jinja and merged with
+  slide-level overrides before the visual runs.
 
-This keeps pack orchestration thin while reusing the same visual definitions
-and pipelines your project already depends on.
+This keeps pack runs simple while reusing the same visuals and project setup.
 
 ## Pack YAML shape
 
-A pack configuration is a small YAML document with:
+A pack configuration is a small YAML file with:
 
 - A schema/id,
 - Optional `extends` path to a parent pack,
@@ -119,7 +117,11 @@ slides:
 - `evidence` – optional post-run evidence exports for selected visual bindings.
   Evidence exports reuse the same planner/executor surfaces as `praeparo-metrics explain`
   and write artefacts under `<artefact_dir>/<output_dir>` alongside a `manifest.json`
-  for traceability.
+  for traceability. They target pack-qualified binding instances, not raw metric
+  keys, so the same metric can be exported separately from different slides,
+  placeholders, or visual bindings when needed.
+  See [Metric Explain](../metrics/metric_explain.md) for selector forms and the
+  discovery-first `--list-slides` / `--list-bindings` flow.
   - `enabled` – defaults to false when omitted.
   - `output_dir` – directory under `--artefact-dir` used for evidence exports (supports Jinja templates).
   - `when` – `pack_complete` (default) runs only after a fully successful pack; `always` runs even when
@@ -134,6 +136,8 @@ slides:
     - `select` – list of attribute keys (e.g. `sla`) matched against `VisualMetricBinding.metadata`.
     - `select_mode` – `all` (default) requires every key, `any` requires at least one.
     - `include` / `exclude` – force-include / force-exclude binding ids after selection.
+  Use `praeparo-metrics explain --list-slides` and `--list-bindings` when you need
+  to discover the exact binding ids before wiring an evidence export.
 - `slides` – ordered slide definitions:
   - `id` – optional stable identifier (used for filtering and slug generation).
   - `title` – human-readable slide title.
@@ -237,7 +241,7 @@ in this deterministic order:
 
 ### Evidence output layout (pack.evidence)
 
-When enabled, evidence exports are written under the pack artefact directory:
+When enabled, evidence exports are written under the pack output folder:
 
 - `<artefact_dir>/<output_dir>/manifest.json`
 - `<artefact_dir>/<output_dir>/<slide_slug>/<binding_slug>/evidence.csv`
@@ -249,16 +253,27 @@ When enabled, evidence exports are written under the pack artefact directory:
 - `<artefact_dir>/<output_dir>/<slide_slug>/<placeholder_id>/<binding_slug>/_artifacts/explain.dax` (for placeholder-based slides)
 - `<artefact_dir>/<output_dir>/<slide_slug>/<placeholder_id>/<binding_slug>/_artifacts/summary.json` (for placeholder-based slides)
 
+Notes:
+
+- `binding_slug` is derived from the resolved binding instance, so the export path stays stable even when the same metric key appears in multiple places.
+- Placeholder-based slides insert the placeholder id into the path so exports stay partitioned by the visual slot that owns the binding.
+- The evidence manifest records the resolved binding metadata, which makes the export set traceable without needing to reverse-engineer the raw metric key.
+
 Operational notes:
 
-- Evidence exports are row-level extracts and may contain sensitive identifiers; treat artefact directories accordingly.
+- Evidence exports are row-level extracts and may contain sensitive identifiers;
+  treat output folders accordingly.
 - Use `explain.max_concurrency` to bound cost (especially in live Power BI mode).
 
 ## Metric Context Bindings (`context.metrics`)
 
 Packs can declare scalar KPI dependencies under `context.metrics`. Praeparo
-fetches these values via DAX and injects them as top-level Jinja variables so
+fetches these values via DAX and makes them available as Jinja variables so
 text placeholders, YAML shapes, and tables can reference them directly.
+
+These bindings use the same pack-level model as `explain` and pack evidence
+exports: the catalogue metric key is the source, but the resolved binding
+instance is what gets rendered, templated, and exported.
 
 Root-level metrics are resolved **once per pack** and inherited by every slide.
 Slides may extend the inherited metric dict or override an alias only when
@@ -298,8 +313,8 @@ Display-only fields (Phase 8):
 
 Default behaviour:
 
-- `{{ count_instructions }}` renders formatted output when `format` is set.
-- `{{ count_instructions.value }}` returns the raw numeric value (float/int/None).
+- `{{ count_tasks }}` renders formatted output when `format` is set.
+- `{{ count_tasks.value }}` returns the raw numeric value (float/int/None).
 
 Examples:
 
@@ -393,8 +408,8 @@ Notes:
   `SUMMARIZECOLUMNS`), use `calculate.<name>.evaluate`:
   ```yaml
   bindings:
-    - key: instructions_received
-      alias: count_instructions
+    - key: tasks_completed
+      alias: count_tasks
       calculate:
         period:
           evaluate: "'Time Intelligence'[Period] = \"Current Month\""
@@ -440,19 +455,19 @@ Once a pack YAML exists, run:
 ```bash
 poetry run praeparo pack run \
   projects/example/pack.yaml \
-  --artefact-dir .tmp/example/pack_png
+  --artefact-dir out/example/pack_png
 ```
 
 You can optionally supply a positional `dest` to derive defaults for `--artefact-dir`
 and a PPTX `--result-file`:
 
-- `praeparo pack run projects/example/pack.yaml out/customer_pack` writes artefacts to
-  `out/customer_pack/_artifacts/` and defaults the PPTX to
-  `out/customer_pack/<pack-slug>_<revision>.pptx` when a revision is available (revision
-  flags or `context.month`), otherwise `out/customer_pack/<pack-slug>.pptx`.
-- `praeparo pack run projects/example/pack.yaml out/customer_pack.pptx` writes
-  artefacts to `out/customer_pack/_artifacts/` and the PPTX to
-  `out/customer_pack.pptx`.
+- `praeparo pack run projects/example/pack.yaml out/operations_pack` writes artefacts to
+  `out/operations_pack/_artifacts/` and defaults the PPTX to
+  `out/operations_pack/<pack-slug>_<revision>.pptx` when a revision is available (revision
+  flags or `context.month`), otherwise `out/operations_pack/<pack-slug>.pptx`.
+- `praeparo pack run projects/example/pack.yaml out/operations_pack.pptx` writes
+  artefacts to `out/operations_pack/_artifacts/` and the PPTX to
+  `out/operations_pack.pptx`.
 
 Explicit flags still win: if you pass `--artefact-dir` or `--result-file`, those
 values override anything derived from the positional `dest`.
@@ -466,7 +481,7 @@ month-scoped output folder:
 ```bash
 poetry run praeparo pack run \
   projects/example/pack.yaml \
-  "out/month={{ month }}/customer_pack"
+  "out/month={{ month }}/operations_pack"
 ```
 
 Key flags:
@@ -478,17 +493,17 @@ Key flags:
 
   ```bash
   poetry run praeparo pack run projects/example/pack.yaml \
-    --context overrides/customer_context.yaml \
-    --artefact-dir .tmp/example/pack_png
+    --context overrides/team_context.yaml \
+    --artefact-dir out/example/pack_png
   ```
 
   Context files may be plain context-layer payloads or full pack-shaped YAML
   documents; pack-shaped files contribute their top-level `context`,
   `calculate`, `define`, and `filters` fragments.
 
-  Downstream repos can attach Praeparo’s context-layer schema to
-  `registry/context/**/*.yaml` so authored layers get IntelliSense for
-  top-level `define` / `calculate` / `filters` plus nested
+  For workspaces using Praeparo’s registry-based layout, attach the
+  context-layer schema to `registry/context/**/*.yaml` so authored layers get
+  IntelliSense for top-level `define` / `calculate` / `filters` plus nested
   `context.metrics.bindings`, `context.metrics.calculate`, and
   `context.metrics.allow_empty`:
 
@@ -533,7 +548,7 @@ Key flags:
 
   ```bash
   poetry run praeparo pack run projects/example/pack.yaml \
-    --artefact-dir .tmp/example/pack_png \
+    --artefact-dir out/example/pack_png \
     --slides overview self_service
   ```
 
@@ -559,13 +574,13 @@ Key flags:
   ```bash
   poetry run praeparo pack run projects/example/pack.yaml \
     --plugin your_project \
-    --artefact-dir .tmp/example/pack_png
+    --artefact-dir out/example/pack_png
   ```
 
   The same flag can be supplied at the top level if preferred:
 
   ```bash
-  poetry run praeparo --plugin your_project pack run projects/example/pack.yaml --artefact-dir .tmp/example/pack_png
+  poetry run praeparo --plugin your_project pack run projects/example/pack.yaml --artefact-dir out/example/pack_png
   ```
 
 - `--png-scale`, `--datasource`, and other global options – share semantics with
@@ -583,11 +598,11 @@ Key flags:
 ```bash
 # Live by default when omitted
 poetry run praeparo pack run projects/example/pack.yaml \
-  --artefact-dir .tmp/example/pack_live
+  --artefact-dir out/example/pack_live
 
 # Force mock providers for every slide in the pack
 poetry run praeparo pack run projects/example/pack.yaml \
-  --artefact-dir .tmp/example/pack_mock \
+  --artefact-dir out/example/pack_mock \
   --data-mode mock
 ```
 
@@ -603,14 +618,14 @@ Adjust the Praeparo log level with either:
 
 ```bash
 poetry run praeparo pack run projects/example/pack.yaml \
-  --artefact-dir .tmp/example/pack_png \
+  --artefact-dir out/example/pack_png \
   --log-level INFO
 ```
 
 or by setting the environment variable:
 
 ```bash
-PRAEPARO_LOG_LEVEL=INFO poetry run praeparo pack run projects/example/pack.yaml --artefact-dir .tmp/example/pack_png
+PRAEPARO_LOG_LEVEL=INFO poetry run praeparo pack run projects/example/pack.yaml --artefact-dir out/example/pack_png
 ```
 
 Log records include the pack path, slide slug/title, resolved visual type,
@@ -687,7 +702,7 @@ Example with three exports in flight:
 
 ```bash
 poetry run praeparo pack run projects/example/pack.yaml \
-  --artefact-dir .tmp/example/pack_png \
+  --artefact-dir out/example/pack_png \
   --max-pbi-concurrency 3
 ```
 
@@ -702,8 +717,8 @@ When one or more Power BI slides fail, the runner now surfaces a detailed summar
 
 ```
 1 Power BI slide(s) failed:
-  - discharges_dashboard (Discharges Dashboard): HttpError: DAX error: Token Eof expected near '!='
-Hint: re-run with --slides "Discharges Dashboard" --max-pbi-concurrency 1 for focused debugging.
+  - throughput_dashboard (Throughput Dashboard): HttpError: DAX error: Token Eof expected near '!='
+Hint: re-run with --slides "Throughput Dashboard" --max-pbi-concurrency 1 for focused debugging.
 ```
 
 Use these flags to narrow failures and keep successful outputs:
@@ -793,12 +808,12 @@ Jinja templating):
 
 ```yaml
 context:
-  logo: ./assets/customer_logo.png
+  logo: ./assets/brand_mark.png
 
 slides:
-  - id: home
-    title: Home
-    template: home
+  - id: cover
+    title: Cover
+    template: cover
     image: "{{ logo }}"
 ```
 
@@ -807,14 +822,14 @@ Placeholder-level image example (mix static images with visuals):
 ```yaml
 slides:
   - id: dashboard_two_up
-    title: Lodgement vs Discharges
+    title: Volume vs Throughput
     template: two_up
     placeholders:
       left_chart:
         visual:
-          ref: ./visuals/powerbi/lodgement.yaml
+          ref: ./visuals/powerbi/throughput.yaml
       right_chart:
-        image: ./assets/digital_first_logo.png
+        image: ./assets/division_mark.png
 ```
 
 Notes:
@@ -824,7 +839,7 @@ Notes:
   exactly one of `visual`, `image`, or `text`.
 - `image` values support the same Jinja context as other pack fields, so shared
   base packs can define placeholder contracts like `image: "{{ logo }}"` and
-  let customer overlays supply `context.logo`.
+  let environment-specific overlays supply `context.logo`.
 - When `--slides` is used and a skipped slide is missing PNGs, Praeparo leaves
   its template placeholders unchanged/blank; template-only slides still pass
   through unchanged.
@@ -842,15 +857,15 @@ To use text placeholders:
 
 ```yaml
 slides:
-  - id: home
-    title: Home
-    template: home
+  - id: cover
+    title: Cover
+    template: cover
     placeholders:
       display_date_text:
         text: "{{ month }}"
       subtitle_text:
         text:
-          - "Customer: {{ customer }}"
+          - "Team: {{ team_name }}"
           - "Month: {{ month }}"
 ```
 
@@ -867,12 +882,12 @@ Shorthand example (equivalent to the long-form binding above):
 
 ```yaml
 slides:
-  - id: home
-    title: Home
-    template: home
+  - id: cover
+    title: Cover
+    template: cover
     placeholders:
       display_date_text: "{{ month }}"
-      subtitle_text: "Customer: {{ customer }}"
+      subtitle_text: "Team: {{ team_name }}"
 ```
 - Text placeholders render using the same slide context as the rest of the pack
   templating flow (including `context.metrics` bindings and display formatting),
