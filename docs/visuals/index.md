@@ -43,6 +43,16 @@ assert config.type == "combo"
 and raises clear errors when a YAML file is missing `type` or points at an
 unregistered visual.
 
+## Schema export
+
+- Use `praeparo schema [dest]` to export the visual umbrella schema.
+- The umbrella branches on the top-level `type` field for supported visual
+  families.
+- Plugin-defined visual families only appear when they register a schema branch
+  with `register_visual_schema(...)`.
+- See [visual_umbrella_schema.md](visual_umbrella_schema.md) for the CLI,
+  plugin auto-discovery rules, and downstream editor wiring.
+
 ## Shared Model Primitives
 
 The package also publishes reusable Pydantic models for visual YAML:

@@ -9,6 +9,9 @@ developer-facing docs instead of treating these notes as the source of truth.
 
 Current topics:
 
+- [Schema Exports](schema_exports/index.md)
+  Status: **Implemented**
+  Active docs: [Visuals / Visual Umbrella Schema](../visuals/visual_umbrella_schema.md)
 - [Text Placeholders](text_placeholders/index.md)
   Status: mixed
   Active docs: [Projects / Pack Runner](../projects/pack_runner.md)

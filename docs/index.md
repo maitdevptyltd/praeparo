@@ -12,6 +12,7 @@ Use this folder as the canonical developer documentation for Praeparo. Start her
 ## Visuals
 
 - Visual registry, typed context, CLI shorthand: [`visuals/index.md`](visuals/index.md)
+- Visual umbrella schema and `praeparo schema`: [`visuals/visual_umbrella_schema.md`](visuals/visual_umbrella_schema.md)
 - Visual context models (`--context`, `--calculate`, `--define`): [`visuals/visual_context_model.md`](visuals/visual_context_model.md)
 - Metric expressions (`expression:` and `ratio_to()`): [`visuals/metric_expressions.md`](visuals/metric_expressions.md)
 - Python-backed visuals (`praeparo python-visual ...`): [`visuals/python_visuals.md`](visuals/python_visuals.md)
