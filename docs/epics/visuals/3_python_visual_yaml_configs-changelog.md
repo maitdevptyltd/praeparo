@@ -1,0 +1,2 @@
+2025-12-12T01:35:44+10:00 – Implemented YAML→Python visual loading (path-based `type`), config_model validation with reserved meta stripped, cartesian base config split for Python reuse, and test coverage in Praeparo.
+2025-12-12T01:09:35+10:00 – Initial draft of PV‑3 epic describing YAML configs that point at Python visuals via `type` and use per-visual config models (cartesian-backed Amp dashboards as the first consumer).

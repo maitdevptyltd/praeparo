@@ -99,6 +99,64 @@ praeparo visuals/my_visual.py ./exports/
 praeparo visual run visuals/my_visual.py ./exports/report.png
 ```
 
+## YAML wrappers (`type: ./module.py`)
+
+Python visuals can also be referenced from YAML by pointing `type` at a module
+path instead of a registered visual kind:
+
+```yaml
+schema: draft-1
+type: ./documents_sent.py
+
+title: Documents Sent
+category:
+  field: "'dim_calendar'[month]"
+  label: Month
+  data_type: date
+value_axes:
+  primary:
+    label: Documents sent
+    format: number:0
+series:
+  - id: documents_sent
+    label: Documents sent
+    type: column
+    metric:
+      key: documents_sent
+```
+
+When `type` resolves to a `.py` module, Praeparo:
+
+- imports the module and discovers the `PythonVisualBase` subclass,
+- reads that class's `config_model`,
+- strips reserved YAML meta keys such as `type`, `schema`, and
+  `schema_version`,
+- validates the remaining payload with `config_model`, and
+- executes the visual through the standard visual pipeline.
+
+This keeps the YAML flat while still giving the Python visual a strongly typed
+config surface.
+
+Example:
+
+```python
+from praeparo.models import CartesianChartConfig
+from praeparo.pipeline import PythonVisualBase
+from praeparo.visuals.context_models import VisualContextModel
+
+
+class DashboardContext(VisualContextModel):
+    pass
+
+
+class DashboardVisual(PythonVisualBase[CartesianChartConfig, DashboardContext]):
+    config_model = CartesianChartConfig
+    context_model = DashboardContext
+```
+
+Use this pattern when you want pack refs, shared YAML front matter, or project
+review workflows to stay YAML-first while the implementation remains code-first.
+
 ## Responsive tiers and breakpoints
 
 Python visuals often need a few layout modes instead of one fixed figure. The

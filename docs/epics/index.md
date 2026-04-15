@@ -9,6 +9,13 @@ developer-facing docs instead of treating these notes as the source of truth.
 
 Current topics:
 
+- [Text Placeholders](text_placeholders/index.md)
+  Status: mixed
+  Active docs: [Projects / Pack Runner](../projects/pack_runner.md)
+- [Visuals](visuals/index.md)
+  Status: mixed
+  Active docs: [Visuals / Python-Backed Visuals](../visuals/python_visuals.md),
+  [Visuals / Index](../visuals/index.md)
 - [Registry Expression Metrics / Phase 1](registry_expression_metrics/1_expression_metrics_in_registry.md)
   Status: **Complete** for Phase 1; [Phase 2](registry_expression_metrics/2_variant_expressions_and_migration.md) remains **Draft**
 - [Registry-Root Anchored Visual Paths](registry_paths/1_registry_root_anchored_visual_paths.md)

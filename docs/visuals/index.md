@@ -136,6 +136,8 @@ If you want the compiled statements to be visible, register a compiler through
   `render`.
 - Run them with `praeparo python-visual run path/to/module.py [dest]` or
   simply `praeparo path/to/module.py [dest]` if you want the shorter form.
+- YAML visuals can also set `type: ./module.py`; Praeparo validates the
+  remaining YAML fields with the Python visual's `config_model`.
 - Context models stay typed, and the pipeline still discovers metrics and
   datasources for you.
 - See [python_visuals.md](python_visuals.md) for the full quickstart.
