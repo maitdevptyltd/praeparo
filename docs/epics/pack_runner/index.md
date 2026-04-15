@@ -41,3 +41,7 @@ Phases:
   Status: **Implemented**
 - [Phase 16: Pack PPTX Pipeline And Revisions](16_pack_pptx_pipeline_and_revisions.md)
   Status: **Implemented**
+- [Phase 17: Pack Schema And Registry Wiring](17_pack_schema_and_registry_wiring.md)
+  Status: **Draft**
+- [Phase 18: Pack Concurrent Exports For DAX-Backed Visuals](18_pack_concurrent_exports_for_dax_backed_visuals.md)
+  Status: **Draft**

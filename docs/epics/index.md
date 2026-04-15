@@ -12,7 +12,7 @@ Current topics:
 - [Field References](field_references/index.md)
   Status: **Draft**
 - [Pack Runner](pack_runner/index.md)
-  Status: Phases 1-16 **Implemented**
+  Status: Phases 1-16 **Implemented**; Phases 17-18 **Draft**
   Active docs: [Projects / Pack Runner](../projects/pack_runner.md),
   [Projects / Context Layers](../projects/context_layers.md),
   [Visuals / Visual Context Models](../visuals/visual_context_model.md)
