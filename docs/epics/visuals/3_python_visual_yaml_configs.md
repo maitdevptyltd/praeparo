@@ -225,7 +225,7 @@ Each of those YAML visuals:
 - Uses `type: ./documents_sent.py` (or a renamed `visual.py`) to point at the shared `DashboardVisual`.
 - Supplies its own cartesian‑shaped config (category, axes, series) so the same Python visual can render different tiles with consistent styling.
 
-Pack behaviour around PPTX templates, placeholder geometry, and Python visual sizing is covered separately in the pack epics (notably `13_pack_template_geometry_and_visual_sizing`).
+Pack behaviour around PPTX templates, placeholder geometry, and Python visual sizing is covered separately in the pack epics (notably [Pack Template Geometry And Visual Sizing](../pack_runner/12_pack_template_geometry_and_visual_sizing.md)).
 
 ## 4. Implementation Plan (Praeparo)
 

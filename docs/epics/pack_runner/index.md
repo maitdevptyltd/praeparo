@@ -22,3 +22,13 @@ Phases:
   Status: **Implemented**
 - [Phase 7: Pre-Execution DAX Artifacts And Pack Error Context](7_pre_execution_dax_artifacts_and_pack_error_context.md)
   Status: **Implemented**
+- [Phase 8: Pack Error Handling And Slide-Level Debugging](8_pack_error_handling_and_slide_level_debugging.md)
+  Status: **Implemented**
+- [Phase 9: Pack Artifact Naming Convention](9_pack_artifact_naming_convention.md)
+  Status: **Implemented**
+- [Phase 10: Pack Static Images And Logos](10_pack_static_images_and_logos.md)
+  Status: **Implemented**
+- [Phase 11: Pack Revision Modes And PPTX Restitch](11_pack_revision_modes_and_pptx_restitch.md)
+  Status: **Implemented**
+- [Phase 12: Pack Template Geometry And Visual Sizing](12_pack_template_geometry_and_visual_sizing.md)
+  Status: **Implemented**
