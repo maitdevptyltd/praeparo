@@ -18,3 +18,5 @@ Phases:
   Status: **Implemented**
 - [Phase 5: Pack `visual.ref` Inline Config Overrides](5_pack_visual_ref_inline_config_overrides.md)
   Status: **Implemented**
+- [Phase 6: Pack Post-Run Metric Evidence Exports](6_pack_post_run_metric_evidence_exports.md)
+  Status: **Implemented**

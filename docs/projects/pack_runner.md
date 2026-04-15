@@ -122,6 +122,13 @@ slides:
   placeholders, or visual bindings when needed.
   See [Metric Explain](../metrics/metric_explain.md) for selector forms and the
   discovery-first `--list-slides` / `--list-bindings` flow.
+  Example:
+  ```yaml
+  evidence:
+    enabled: true
+    bindings:
+      select: [sla]
+  ```
   - `enabled` – defaults to false when omitted.
   - `output_dir` – directory under `--artefact-dir` used for evidence exports (supports Jinja templates).
   - `when` – `pack_complete` (default) runs only after a fully successful pack; `always` runs even when
