@@ -10,3 +10,5 @@ Phases:
 
 - [Phase 1: Pack Live Data Mode Default](1_pack_live_data_mode_default.md)
   Status: **Implemented**
+- [Phase 2: Pack Inheritance + Slide Operations for Standard Pack Reuse](2_pack_extends_and_slide_operations_for_standard_pack_reuse.md)
+  Status: **Implemented**
