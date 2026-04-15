@@ -35,7 +35,7 @@ title: Monthly activity
 description: Compare actual activity with a target line.
 
 category:
-  field: dim_calendar.month
+  field: "'dim_calendar'[month]"
   label: Month
   data_type: string
   order: asc
@@ -72,6 +72,8 @@ layout:
 ## Key fields
 
 - `category.field` identifies the semantic-model column used for grouping.
+  Use canonical DAX column syntax here today (for example
+  `"'dim_calendar'[month]"`).
 - `category.order` and `category.sort` control the order of the visible buckets.
 - `value_axes.primary` is required; `value_axes.secondary` is optional when the
   chart needs an overlay or second scale.
@@ -90,6 +92,17 @@ layout:
   relative values instead of absolute ones.
 - `layout.legend` controls presentation only; it should not change the data
   shape.
+
+## Field references
+
+Praeparo already has some field-reference ergonomics in adjacent surfaces, and
+payload lookup can often tolerate alternatives such as `dim_calendar.month`.
+However, cartesian DAX planning still treats grain columns as raw strings when
+it renders `SUMMARIZECOLUMNS`.
+
+For that reason, treat canonical DAX column syntax as the supported contract
+for `category.field` today. Use dotted shorthand only if you have confirmed
+the generated DAX and payload mapping for that specific visual path.
 
 ## Result shape
 

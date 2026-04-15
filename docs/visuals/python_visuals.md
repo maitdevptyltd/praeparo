@@ -137,6 +137,12 @@ When `type` resolves to a `.py` module, Praeparo:
 This keeps the YAML flat while still giving the Python visual a strongly typed
 config surface.
 
+If the wrapped config model includes DAX-backed chart fields such as
+`category.field`, keep using canonical DAX column syntax in that YAML today.
+Praeparo has some partial support for dotted shorthand field references, but
+that behaviour is not yet a universal contract across all DAX-backed visual
+and dataset-builder paths.
+
 Example:
 
 ```python
@@ -231,6 +237,9 @@ Refs ending in `.yaml` / `.yml` keep the existing YAML visual behaviour. Packs c
   declared `context_model` during `praeparo visual run`, so `--context`,
   `--calculate`, and `--define` filters flow into generated DAX the same way as
   native YAML visuals.
+- When the wrapped config model is DAX-backed, prefer canonical DAX column
+  references in YAML fields such as `category.field` until field-reference
+  normalisation is centralised across Praeparo.
 - `schema_artifact.value` is `None` by default. Override `build_schema` only if
   your visual needs it.
 - Context models stay strongly typed. Re-use `VisualContextModel` fields

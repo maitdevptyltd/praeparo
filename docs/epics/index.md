@@ -9,6 +9,8 @@ developer-facing docs instead of treating these notes as the source of truth.
 
 Current topics:
 
+- [Field References](field_references/index.md)
+  Status: **Draft**
 - [Pack Runner](pack_runner/index.md)
   Status: mixed
   Active docs: [Projects / Pack Runner](../projects/pack_runner.md)

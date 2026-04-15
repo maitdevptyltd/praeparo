@@ -14,6 +14,18 @@ The Metric Dataset Builder is a code-first companion to Praeparo’s YAML visual
 - Call `.render()` to inspect the generated `SUMMARIZECOLUMNS` without executing the dataset.
 - Use `.use_mock()` (or context discovery with `use_mock=True`) to keep notebook iterations deterministic without reaching Power BI.
 
+## Field references
+
+Use canonical DAX column references for builder grain columns today, for
+example `"'dim_calendar'[Month]"`.
+
+Some Praeparo surfaces already recognise dotted shorthand such as
+`dim_calendar.month`, and payload lookup includes compatibility heuristics for
+alternate key shapes. That support is still partial rather than a single
+first-class contract, so `.grain(...)` and `.mock_column(...)` should continue
+to use canonical DAX references unless a future field-reference page says
+otherwise.
+
 ## Quickstart
 
 ```python
@@ -72,11 +84,11 @@ fig.show()
 | `.expression(identifier, expression, *, label=None, value_type="number")` | Declares an inline expression built from existing metrics (`documents_sent.automated / documents_sent`). Expressions inherit the builder’s `ignore_placeholders` flag when referenced metrics are missing. |
 | `.calculate(filters)` | Appends global filters (string or list) that wrap every measure via `CALCULATE`. |
 | `.define(blocks)` | Adds additional DEFINE blocks rendered before SUMMARIZECOLUMNS (useful for session-level calculations). |
-| `.grain(*columns)` | Overrides the SUMMARIZECOLUMNS grain (defaults to a single column). |
+| `.grain(*columns)` | Overrides the SUMMARIZECOLUMNS grain (defaults to a single column). Pass canonical DAX column references such as `"'dim_calendar'[Month]"`. |
 | `.datasource(name=None)` | Pins the datasource file/key. If omitted, the builder auto-resolves using the same logic as YAML visuals. |
 | `.use_mock(flag=True)` | Forces execution through the deterministic mock provider (handy offline). |
 | `.mock_rows(count)` | Overrides the number of mock grain rows emitted when mocks are enabled. |
-| `.mock_column(column, values)` | Registers deterministic mock values for a grain column (e.g., month labels). |
+| `.mock_column(column, values)` | Registers deterministic mock values for a grain column (e.g., month labels). Use the same canonical DAX column reference you passed to `.grain(...)`. |
 | `.mock_series(series_id, *, mean=None, trend=None, trend_range=None, factory="count")` | Tunes mock value generation per series (counts, ratios, etc.) so stacked visuals look realistic. |
 | `.plan()` | Returns the reusable `MetricDatasetPlan`. |
 | `.execute()` | Synchronous convenience wrapper around `.aexecute()`. Returns `list[dict[str, object]]`. |

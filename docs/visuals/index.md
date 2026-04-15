@@ -90,6 +90,23 @@ Future visuals (combo charts, scorecards, and similar patterns) should reuse
 these helpers instead of duplicating calculate or mock handling in each
 project.
 
+## Field references
+
+Field-reference ergonomics are currently partial in Praeparo rather than one
+centralised contract.
+
+- Some surfaces already accept or resolve dotted references such as
+  `table.column`.
+- Matrix row templates use `FieldReference`-style placeholder parsing.
+- Some payload lookup paths also tolerate alternate key shapes.
+- DAX-backed grain definitions and builder APIs should still prefer canonical
+  DAX column references unless a visual-specific page explicitly documents a
+  different supported shape.
+
+Use the visual-specific docs as the source of truth for now. Where the docs do
+not say otherwise, prefer canonical DAX references for grain and category
+columns.
+
 ## DAX Planning Helpers
 
 When a visual needs to emit DAX, reuse the helpers under
