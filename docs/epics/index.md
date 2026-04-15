@@ -12,6 +12,11 @@ Current topics:
 - [Pack Runner](pack_runner/index.md)
   Status: mixed
   Active docs: [Projects / Pack Runner](../projects/pack_runner.md)
+- [Visual Context](visual_context/index.md)
+  Status: Phases 1-3 **Complete**
+  Active docs: [Visuals / Visual Context Models](../visuals/visual_context_model.md),
+  [Visual Pipeline Engine](../visual_pipeline_engine.md),
+  [Visuals / Python Metric Dataset Builder](../visuals/python_metric_dataset_builder.md)
 - [Schema Exports](schema_exports/index.md)
   Status: **Implemented**
   Active docs: [Visuals / Visual Umbrella Schema](../visuals/visual_umbrella_schema.md)
