@@ -193,4 +193,5 @@ Start with [`docs/index.md`](docs/index.md), then drill into:
 - Packs: [`docs/projects/pack_runner.md`](docs/projects/pack_runner.md)
 - Visuals + CLI: [`docs/visuals/index.md`](docs/visuals/index.md)
 - Metrics: [`docs/metrics/metric_dax_builder.md`](docs/metrics/metric_dax_builder.md)
+- Registry -> TMDL generation: [`docs/metrics/tmdl_generation.md`](docs/metrics/tmdl_generation.md)
 - Datasources: [`docs/datasources/index.md`](docs/datasources/index.md)

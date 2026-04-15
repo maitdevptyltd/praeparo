@@ -26,6 +26,10 @@ What you get back is **DAX expressions**, not registered measures. You decide:
 - how to name them, and
 - how to write them out (TMDL, ad-hoc queries, visual plans, and so on).
 
+For project-level guidance on table grouping, naming, coexistence with an
+existing semantic model, and using these compiled snippets in a TMDL writer,
+see [TMDL Generation](tmdl_generation.md).
+
 Visual pipelines can pass those DAX snippets into `praeparo.visuals.dax.render_visual_plan` and add visual-specific naming, ratio, or SLA presentation rules on top. The builder stays focused on metric compilation.
 
 ## Inputs (registry YAML)

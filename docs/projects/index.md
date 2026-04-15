@@ -127,3 +127,4 @@ Need to compile registry YAML into canonical DAX snippets (for example to power 
 Start with:
 
 - [Metric → DAX Builder](../metrics/metric_dax_builder.md)
+- [TMDL Generation](../metrics/tmdl_generation.md)

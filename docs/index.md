@@ -21,6 +21,7 @@ Use this folder as the canonical developer documentation for Praeparo. Start her
 ## Metrics
 
 - Metric → DAX builder (registry compilation): [`metrics/metric_dax_builder.md`](metrics/metric_dax_builder.md)
+- TMDL generation and generated-model planning: [`metrics/tmdl_generation.md`](metrics/tmdl_generation.md)
 
 ## Architecture (Reference)
 
