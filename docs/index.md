@@ -21,6 +21,7 @@ Use this folder as the canonical developer documentation for Praeparo. Start her
 ## Metrics
 
 - Metric → DAX builder (registry compilation): [`metrics/metric_dax_builder.md`](metrics/metric_dax_builder.md)
+- Metric debugging and evidence workflows: [`metrics/metric_debugging.md`](metrics/metric_debugging.md)
 - TMDL generation and generated-model planning: [`metrics/tmdl_generation.md`](metrics/tmdl_generation.md)
 
 ## Architecture (Reference)
@@ -28,6 +29,7 @@ Use this folder as the canonical developer documentation for Praeparo. Start her
 - Visual model architecture (loader + models): [`visual_model_architecture.md`](visual_model_architecture.md)
 - Visual pipeline engine (planner/provider model): [`visual_pipeline_engine.md`](visual_pipeline_engine.md)
 
-## Historical Notes
+## Epics
 
-- MVP-era notes (archived): [`mvp/index.md`](mvp/index.md)
+- MVP-era notes: [`mvp/index.md`](mvp/index.md)
+- Framework feature epics: [`epics/index.md`](epics/index.md)
