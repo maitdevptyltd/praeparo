@@ -760,6 +760,11 @@ Use these flags to narrow failures and keep successful outputs:
 
 For DAX-backed visuals (matrix/cartesian and Python visuals that return a `MetricDatasetBuilder`), Praeparo writes the compiled `.dax` plans to each slide’s `artefact_dir` *before* execution. Check `<artefact-dir>/[NN]_<slide-slug>/*.dax` even when a slide fails.
 
+When a single slide fails outside the aggregated Power BI summary path, Praeparo
+raises a `PackExecutionError` that includes the pack path, slide slug/title/id,
+visual ref/path, failure phase, and any discovered DAX artifact paths. This is
+the primary debugging surface for pack-authored DAX-backed visuals.
+
 ## Integration with existing visuals
 
 Because the pack runner delegates to the visual registry:
