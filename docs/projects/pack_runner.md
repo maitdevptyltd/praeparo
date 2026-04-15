@@ -501,6 +501,24 @@ Key flags:
   documents; pack-shaped files contribute their top-level `context`,
   `calculate`, `define`, and `filters` fragments.
 
+  Effective precedence for pack runs is:
+
+  1. `registry/context/**` workspace defaults
+  2. pack `context` defaults from the pack YAML
+  3. explicit CLI `--context` files
+
+  Plain context-layer files also hoist `context:` keys into top-level template
+  variables, so a file like:
+
+  ```yaml
+  context:
+    customer: "Example Co"
+    month: "2025-11-01"
+  ```
+
+  makes both `{{ customer }}` and `{{ month }}` available to pack templating
+  and output-path templating without requiring `{{ context.customer }}`.
+
   For workspaces using Praeparo’s registry-based layout, attach the
   context-layer schema to `registry/context/**/*.yaml` so authored layers get
   IntelliSense for top-level `define` / `calculate` / `filters` plus nested

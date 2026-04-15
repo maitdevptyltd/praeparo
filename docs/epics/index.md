@@ -12,7 +12,7 @@ Current topics:
 - [Field References](field_references/index.md)
   Status: **Draft**
 - [Pack Runner](pack_runner/index.md)
-  Status: Phases 1-2 **Implemented**
+  Status: Phases 1-4 **Implemented**
   Active docs: [Projects / Pack Runner](../projects/pack_runner.md)
 - [Visual Context](visual_context/index.md)
   Status: Phases 1-3 **Complete**

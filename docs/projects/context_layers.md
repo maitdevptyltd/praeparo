@@ -55,6 +55,28 @@ Both shapes may include nested `context` mappings. Those mappings are deep-
 merged so a later layer can update one field without replacing the whole
 branch.
 
+When a layer carries a `context:` mapping, Praeparo also hoists those keys into
+the merged top-level payload used for Jinja rendering. That means a layer like:
+
+```yaml
+context:
+  month: "2025-11-01"
+  display_date: "November 2025"
+```
+
+exposes both:
+
+- `context.month` / `context.display_date` in the nested compatibility mapping,
+- and top-level `month` / `display_date` for templates such as
+  `{{ month }}` or `{{ display_date }}`.
+
+This hoisting applies to plain context-layer payloads as well as pack-shaped
+files that are used as context layers.
+
+If a later layer or override supplies the same top-level key, normal merge
+precedence still applies: later values win in the merged payload, and the
+hoisted template variable reflects that final value.
+
 Named `calculate` and `define` entries use last-writer-wins semantics when the
 same key appears in more than one layer. Sequence forms are preserved in merge
 order.
@@ -85,8 +107,9 @@ context:
 
 If a visual run also passes `--context local.yaml`, Praeparo merges the
 workspace layers first, then `local.yaml`, then any CLI `--calculate` or
-`--define` values. The final templated result can reuse `{{ shared_label }}` and
-`{{ artefact_dir }}` in later fragments.
+`--define` values. The final templated result can reuse `{{ shared_label }}`,
+`{{ artefact_dir }}`, and any hoisted `context:` keys in later fragments
+without requiring `context.<name>` syntax.
 
 ## Schema Support
 
