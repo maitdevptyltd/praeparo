@@ -16,3 +16,5 @@ Phases:
   Status: **Implemented**
 - [Phase 4: Pack CLI Context Overrides for Base Pack Reuse](4_pack_cli_context_overrides_for_base_pack_reuse.md)
   Status: **Implemented**
+- [Phase 5: Pack `visual.ref` Inline Config Overrides](5_pack_visual_ref_inline_config_overrides.md)
+  Status: **Implemented**

@@ -156,6 +156,12 @@ slides:
     visual (for example, `title`). Overrides are shallow (top-level only) and are
     validated against the referenced visual’s Pydantic model, so unknown fields are
     rejected.
+    Example:
+    ```yaml
+    visual:
+      ref: "@/visuals/example_dashboard.yaml"
+      title: "Dashboard - Complex Segment"
+    ```
   - `visual.series_remove` – optional list of series ids removed from the referenced
     visual before validation.
   - `visual.series_update` – optional list of `{ id, patch }` operations. Each patch
