@@ -4,7 +4,8 @@ This family tracks framework work around pack execution, defaults, and shared
 runner ergonomics.
 
 Use these phase records as implementation history. For the current supported
-contract, start with [Projects / Pack Runner](../../projects/pack_runner.md).
+contract, start with [Projects / Pack Runner](../../projects/pack_runner.md)
+and [Projects / Context Layers](../../projects/context_layers.md).
 
 Phases:
 
@@ -31,4 +32,12 @@ Phases:
 - [Phase 11: Pack Revision Modes And PPTX Restitch](11_pack_revision_modes_and_pptx_restitch.md)
   Status: **Implemented**
 - [Phase 12: Pack Template Geometry And Visual Sizing](12_pack_template_geometry_and_visual_sizing.md)
+  Status: **Implemented**
+- [Phase 13: Pack Context And Filters](13_pack_context_and_filters.md)
+  Status: **Implemented**
+- [Phase 14: Pack PNG Pipeline](14_pack_png_pipeline.md)
+  Status: **Implemented**
+- [Phase 15: Pack Async Power BI Exports](15_pack_async_powerbi_exports.md)
+  Status: **Implemented**
+- [Phase 16: Pack PPTX Pipeline And Revisions](16_pack_pptx_pipeline_and_revisions.md)
   Status: **Implemented**
