@@ -31,9 +31,11 @@ Current topics:
   Status: **Complete** for Phase 1; [Phase 2](registry_expression_metrics/2_variant_expressions_and_migration.md) remains **Draft**
 - [Registry-Root Anchored Visual Paths](registry_paths/1_registry_root_anchored_visual_paths.md)
   Status: **Draft**
-- [Context Layers](context_layers.md)
-  Status: **Implemented**
-  Active docs: [Projects / Context Layers](../projects/context_layers.md)
+- [Context Layers](context_layers/index.md)
+  Status: Phases 1-2 **Implemented**
+  Active docs: [Projects / Context Layers](../projects/context_layers.md),
+  [Projects / Pack Runner](../projects/pack_runner.md),
+  [Visuals / Visual Context Models](../visuals/visual_context_model.md)
 - [Metric Debugging And Bindings](metric_explain_and_bindings.md)
   Status: **Implemented**
   Active docs: [Metrics / Metric Debugging](../metrics/metric_debugging.md),

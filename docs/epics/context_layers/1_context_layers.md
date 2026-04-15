@@ -1,22 +1,17 @@
-# Epic: Context Layers
+# Epic: Context Layers (Phase 1)
 
 > Status: **Implemented**
 
-This page preserves the detailed phase record for layered context files and
-repeatable `--context` semantics.
-
-Current developer guidance lives in:
-
-- [Projects / Context Layers](../projects/context_layers.md)
-- [Projects / Pack Runner](../projects/pack_runner.md)
+- Canonical developer docs live in `docs/projects/context_layers.md` and `docs/projects/pack_runner.md`.
 
 ## Scope
 
-`CTX-1` introduced a project-level context convention under `registry/context/**`
-and made `--context` repeatable so shared values, helper `DEFINE` fragments,
-and reusable `calculate` filters could be layered deterministically.
+Phase 1 introduced a project-level context convention under
+`registry/context/**` and made `--context` repeatable so shared values, helper
+`DEFINE` fragments, and reusable `calculate` filters could be layered
+deterministically.
 
-The broad contract landed upstream, while this epic record remained useful for
+The broad contract landed upstream, while this phase record remains useful for
 the original goals, merge semantics, guardrails, and business-time examples
 that motivated the feature.
 
@@ -40,7 +35,7 @@ instead of forcing every metric author to inline the same DAX.
 
 ## Goals
 
-The original phase set out to preserve these design goals:
+Phase 1 set out to preserve these design goals:
 
 1. Add a workspace convention: `registry/context/**` as a default global
    context root.
@@ -55,7 +50,7 @@ The original phase set out to preserve these design goals:
 
 ## Non-goals
 
-The epic explicitly did not try to:
+The phase explicitly did not try to:
 
 - template or re-render the metric catalogue itself
 - require new model tables or bridges for customer config
@@ -75,7 +70,7 @@ The epic explicitly did not try to:
 
 ### Default location and ordering
 
-The epic proposed:
+The phase proposed:
 
 - a default root at `registry/context/`
 - loading all `*.yaml`, `*.yml`, and `*.json` files under that root
@@ -177,7 +172,7 @@ The original implementation plan called for:
 4. extending the merge engine so `define` mirrors `calculate`
 5. failing fast when templated DAX still contains unresolved `{{ ... }}`
 
-The epic also called for tests around:
+The phase also called for tests around:
 
 - registry context auto-load ordering
 - repeatable `--context` precedence
@@ -209,13 +204,10 @@ workspace-level default behaved unexpectedly.
 
 ## Lasting Design Decisions
 
-These parts of the original epic survived and still matter:
+These parts of the original phase survived and still matter:
 
 - context layers are a workspace contract, not a business-domain feature
 - ordering must be deterministic, never filesystem-accidental
 - later named layers override earlier ones
 - Jinja rendering happens after merge so later values can feed earlier helper
   fragments
-
-This epic page preserves that design history. For current behavior, use
-[Projects / Context Layers](../projects/context_layers.md).
