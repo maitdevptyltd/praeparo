@@ -320,7 +320,8 @@ format token.
 
 Display-only fields (Phase 8):
 
-- PPTX text run rendering (`{{ ... }}` inside slide templates and placeholder text blocks).
+- PPTX text run rendering (`{{ ... }}` inside slide templates, table cells, and
+  placeholder text blocks).
 - Nested render of slide `context` values after metric injection, excluding keys named
   `calculate`, `filters`, `define`, or `expression` (so execution surfaces keep raw numbers).
 
@@ -936,6 +937,8 @@ slides:
 - Text placeholders render using the same slide context as the rest of the pack
   templating flow (including `context.metrics` bindings and display formatting),
   so you can reference metric aliases directly in the text value.
+- Inline `{{ ... }}` tokens inside PPTX table cells are rendered during the
+  same slide-template pass as ordinary text boxes.
 
 ### Revision-aware defaults
 
@@ -968,6 +971,8 @@ legacy `<pack-slug>.pptx`.
 
 ## Changelog
 
+- 2026-04-29: Render inline PPTX Jinja tokens inside table cell text frames
+  during pack assembly.
 - 2026-04-29: Expanded pack, slide, Power BI, and evidence INFO log
   messages so log viewers that hide structured fields still show slide,
   binding, metric, path, count, and duration context.

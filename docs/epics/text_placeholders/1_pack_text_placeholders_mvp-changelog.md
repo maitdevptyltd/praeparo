@@ -1,3 +1,5 @@
+2026-04-29T16:47:51+10:00 – Extended inline PPTX Jinja rendering to table cell text frames during pack assembly.
+
 2025-12-13T09:28:41+10:00 – Marked Phase 1 as **Complete**; documented `placeholders.*.text` bindings upstream and aligned this epic with shipped behaviour.
 
 2025-12-12T14:02:13+10:00 – Moved YAML-defined shape block scope into dedicated Phase 4 epic.

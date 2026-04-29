@@ -26,7 +26,7 @@ from pptx.oxml.ns import qn
 from pptx.opc.constants import RELATIONSHIP_TYPE as RT
 from pptx.shapes.group import GroupShape
 import pptx.shapes.picture as pptx_picture
-from pptx.text.text import _Run
+from pptx.text.text import TextFrame, _Run
 from pptx.util import Pt
 
 from praeparo.models import PackConfig, PackSlide
@@ -280,6 +280,25 @@ def _iter_shapes(shapes) -> Iterable[object]:
             yield from _iter_shapes(shape.shapes)
 
 
+def _iter_text_frames(shape) -> Iterable[TextFrame]:
+    """Yield text frames owned directly by a shape or by its table cells."""
+
+    if getattr(shape, "has_text_frame", False):
+        text_frame = shape.text_frame
+        if text_frame is not None:
+            yield text_frame
+
+    if not getattr(shape, "has_table", False):
+        return
+
+    table = shape.table
+    for row in table.rows:
+        for cell in row.cells:
+            text_frame = cell.text_frame
+            if text_frame is not None:
+                yield text_frame
+
+
 def _render_jinja_in_slide(
     slide,
     env: Environment,
@@ -290,42 +309,37 @@ def _render_jinja_in_slide(
     The rendering is deliberately conservative: only runs containing ``{{`` are
     touched, runs outside a template remain unchanged, and multi-run templates
     are recombined before rendering to preserve formatting for surrounding text.
+    Table cell text frames participate in the same pass as ordinary text boxes.
     """
 
     for shape in _iter_shapes(slide.shapes):
-        if not getattr(shape, "has_text_frame", False):
-            continue
+        for text_frame in _iter_text_frames(shape):
+            for paragraph in text_frame.paragraphs:
+                runs: list[_Run] = list(paragraph.runs)
+                i = 0
+                while i < len(runs):
+                    text = runs[i].text
+                    if "{{" not in text:
+                        i += 1
+                        continue
 
-        text_frame = shape.text_frame
-        if text_frame is None:
-            continue
+                    fragment = text
+                    j = i
+                    while "}}" not in fragment and j + 1 < len(runs):
+                        j += 1
+                        fragment += runs[j].text
 
-        for paragraph in text_frame.paragraphs:
-            runs: list[_Run] = list(paragraph.runs)
-            i = 0
-            while i < len(runs):
-                text = runs[i].text
-                if "{{" not in text:
-                    i += 1
-                    continue
+                    if "}}" not in fragment:
+                        i = j + 1
+                        continue
 
-                fragment = text
-                j = i
-                while "}}" not in fragment and j + 1 < len(runs):
-                    j += 1
-                    fragment += runs[j].text
+                    rendered = env.from_string(fragment).render(**context)
+                    runs[i].text = rendered
 
-                if "}}" not in fragment:
+                    for k in range(i + 1, j + 1):
+                        runs[k].text = ""
+
                     i = j + 1
-                    continue
-
-                rendered = env.from_string(fragment).render(**context)
-                runs[i].text = rendered
-
-                for k in range(i + 1, j + 1):
-                    runs[k].text = ""
-
-                i = j + 1
 
 
 def _add_manual_replace_watermark(*, slide, slide_width: int, slide_height: int) -> None:

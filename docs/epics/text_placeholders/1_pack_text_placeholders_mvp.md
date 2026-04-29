@@ -108,6 +108,8 @@ During PPTX assembly:
 
 This ensures placeholder text can still include Jinja (e.g. `{{ display_date }}`)
 and see the same slide context as inline tokens.
+Inline template rendering covers ordinary text boxes and table cell text frames
+so commentary tables authored directly in PPTX use the same Jinja context.
 > Declarative YAML shape blocks graduated into their own Phase 4 epic (`4_pptx_shape_blocks.md`) so Phase 1 can stay focused on text bindings.
 
 ## 4. Design
