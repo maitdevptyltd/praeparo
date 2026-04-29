@@ -106,7 +106,7 @@ Prefer the explicit flags for clarity, but you can use a positional shorthand:
 
 Each visual slide is loaded and run through the matching visual path; PNGs
 land in `<artefact-dir>/[NN]_<slide-slug>.png` with per-slide outputs under
-`<artefact-dir>/[NN]_<slide-slug>/`. Pack CLI logging defaults to `DEBUG` for
+`<artefact-dir>/[NN]_<slide-slug>/`. Pack CLI logging defaults to `INFO` for
 Praeparo logs while suppressing INFO/DEBUG output from dependencies unless
 they are `WARNING` or higher. Override Praeparo verbosity with `--log-level`
 or `PRAEPARO_LOG_LEVEL`, and restore dependency logs with

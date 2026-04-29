@@ -87,7 +87,7 @@ logger = logging.getLogger(__name__)
 def _configure_logging(log_level: str | None, *, include_third_party_logs: bool | None = None) -> None:
     """Configure CLI logging.
 
-    Praeparo logs are emitted at the selected level (default DEBUG). To avoid
+    Praeparo logs are emitted at the selected level (default INFO). To avoid
     noisy dependencies during pack runs, logs from non-Praeparo libraries are
     suppressed unless they are WARNING+ by default. Set
     `--include-third-party-logs` or `PRAEPARO_INCLUDE_THIRD_PARTY_LOGS=1` to
@@ -100,9 +100,9 @@ def _configure_logging(log_level: str | None, *, include_third_party_logs: bool 
         return raw.strip().lower() in {"1", "true", "yes", "on"}
 
     env_level = os.getenv(LOG_LEVEL_ENV_VAR)
-    candidate = (log_level or env_level or "DEBUG").upper()
+    candidate = (log_level or env_level or "INFO").upper()
     resolved = logging.getLevelName(candidate)
-    level = resolved if isinstance(resolved, int) else logging.DEBUG
+    level = resolved if isinstance(resolved, int) else logging.INFO
 
     include_env = _env_flag_enabled(os.getenv(INCLUDE_THIRD_PARTY_LOGS_ENV_VAR))
     include_third_party = include_env if include_third_party_logs is None else bool(include_third_party_logs)
@@ -828,7 +828,7 @@ def _build_parser(
         "--log-level",
         dest="log_level",
         choices=["CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG", "NOTSET"],
-        help=f"Override log level (default DEBUG; also honours {LOG_LEVEL_ENV_VAR}).",
+        help=f"Override log level (default INFO; also honours {LOG_LEVEL_ENV_VAR}).",
     )
     parser.add_argument(
         "--include-third-party-logs",

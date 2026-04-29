@@ -50,6 +50,37 @@ def test_configure_logging_filters_non_praeparo_logs(monkeypatch, _restore_loggi
     assert "third-party-warning" in output
 
 
+def test_configure_logging_defaults_praeparo_logs_to_info(monkeypatch, _restore_logging) -> None:
+    monkeypatch.delenv(LOG_LEVEL_ENV_VAR, raising=False)
+    monkeypatch.delenv(INCLUDE_THIRD_PARTY_LOGS_ENV_VAR, raising=False)
+
+    _configure_logging(None, include_third_party_logs=False)
+
+    root = logging.getLogger()
+    stream = StringIO()
+    for handler in root.handlers:
+        if isinstance(handler, logging.StreamHandler):
+            handler.setStream(stream)
+
+    praeparo_logger = logging.getLogger("praeparo.test")
+    third_party_logger = logging.getLogger("httpx")
+
+    praeparo_logger.debug("praeparo-debug")
+    praeparo_logger.info("praeparo-info")
+    third_party_logger.info("third-party-info")
+    third_party_logger.warning("third-party-warning")
+
+    for handler in root.handlers:
+        if hasattr(handler, "flush"):
+            handler.flush()
+
+    output = stream.getvalue()
+    assert "praeparo-debug" not in output
+    assert "praeparo-info" in output
+    assert "third-party-info" not in output
+    assert "third-party-warning" in output
+
+
 def test_configure_logging_includes_third_party_when_enabled(monkeypatch, _restore_logging) -> None:
     monkeypatch.delenv(LOG_LEVEL_ENV_VAR, raising=False)
     monkeypatch.delenv(INCLUDE_THIRD_PARTY_LOGS_ENV_VAR, raising=False)

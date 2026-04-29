@@ -640,9 +640,10 @@ poetry run praeparo pack run projects/example/pack.yaml \
 ### Logging
 
 `praeparo pack run` emits structured logs via Python’s logging module. The CLI
-defaults to `DEBUG` for Praeparo’s own logs to aid pack debugging. To keep pack
-output readable, logs from other libraries are suppressed unless they are
-WARNING+ by default. Opt in to full dependency logging with
+defaults to `INFO` for Praeparo’s own logs, with `--log-level DEBUG` available
+for deep troubleshooting. To keep pack output readable, logs from other
+libraries are suppressed unless they are WARNING+ by default. Opt in to full
+dependency logging with
 `--include-third-party-logs` or `PRAEPARO_INCLUDE_THIRD_PARTY_LOGS=1`.
 
 Adjust the Praeparo log level with either:
@@ -970,6 +971,8 @@ legacy `<pack-slug>.pptx`.
 - 2026-04-29: Expanded pack, slide, Power BI, and evidence INFO log
   messages so log viewers that hide structured fields still show slide,
   binding, metric, path, count, and duration context.
+- 2026-04-29: Changed the CLI logging default from DEBUG to INFO now that pack
+  and evidence INFO messages carry review-ready context.
 - 2026-02-25: Default `context.metrics` zero-row handling to allow empty results (`allow_empty: true` by default), with optional strict mode via `allow_empty: false`.
 - 2026-02-23: Flow `slide.calculate` into slide metric-context resolution (DEFINE scope) before applying slide `context.metrics.calculate` overrides.
 - 2025-12-12: Inherit `context.metrics.calculate` into slide metric-context execution, with DEFINE/EVALUATE scoping preserved and per-slide by-name overrides.
