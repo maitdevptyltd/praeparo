@@ -339,6 +339,20 @@ class PackSlideResult:
 DEFAULT_POWERBI_CONCURRENCY = 5
 
 
+def _format_slide_log_context(
+    *,
+    index: int,
+    total: int,
+    slide: PackSlide,
+    slide_slug: str,
+    placeholder_id: str | None = None,
+) -> str:
+    title = f" title={slide.title!r}" if slide.title else ""
+    slide_id = f" id={slide.id}" if slide.id else ""
+    placeholder = f" placeholder={placeholder_id}" if placeholder_id else ""
+    return f"{index}/{total} slug={slide_slug}{slide_id}{title}{placeholder}"
+
+
 class PackPowerBIFailure(RuntimeError):
     """Raised when one or more Power BI slides fail during a pack run."""
 
@@ -986,8 +1000,14 @@ def run_pack(
         )
 
     slide_filter = {slugify(item) for item in only_slides} if only_slides else None
+    selected_slides = ", ".join(sorted(slide_filter)) if slide_filter else "all"
     logger.info(
-        "Running pack",
+        "Running pack %s -> %s (slides=%s, only=%s, powerbi_concurrency=%s)",
+        pack_path,
+        output_root,
+        len(pack.slides),
+        selected_slides,
+        effective_concurrency,
         extra={
             "pack_path": str(pack_path),
             "artefact_dir": str(output_root),
@@ -1328,21 +1348,6 @@ def run_pack(
                 return
 
             artifact_label = f"[{ordinal}]_{slide_label}"
-            logger.info(
-                "Processing slide",
-                extra={
-                    "slide": slide_label,
-                    "index": index,
-                    "title": slide.title,
-                    "visual_ref": visual_ref,
-                    "placeholder": placeholder_id,
-                },
-            )
-            logger.debug(
-                "Resolved visual",
-                extra={"visual_path": str(visual_path), "visual_type": getattr(visual, "type", None)},
-            )
-
             metadata_update: dict[str, object] = {}
             if slide_payload:
                 metadata_update["context"] = slide_payload
@@ -1387,13 +1392,50 @@ def run_pack(
                 )
                 options.metadata["context"] = merged_context
                 logger.debug(
-                    "Applied context to slide",
+                    "Applied context to slide %s (calculate_count=%s, has_define=%s)",
+                    slide_label,
+                    len(calculate_filters) if calculate_filters else 0,
+                    bool(rendered_define),
                     extra={
                         "slide": slide_label,
                         "calculate_count": len(calculate_filters) if calculate_filters else 0,
                         "has_define": bool(rendered_define),
                     },
                 )
+
+            png_target = next((target.path for target in options.outputs if target.kind is OutputKind.PNG), None)
+            slide_log_context = _format_slide_log_context(
+                index=index,
+                total=len(pack.slides),
+                slide=slide,
+                slide_slug=slide_label,
+                placeholder_id=placeholder_id,
+            )
+            logger.info(
+                "Processing slide %s visual=%s type=%s target=%s artefact_dir=%s",
+                slide_log_context,
+                visual_ref_label,
+                getattr(visual, "type", None),
+                str(png_target) if png_target else "-",
+                slide_dir,
+                extra={
+                    "slide": slide_label,
+                    "index": index,
+                    "slide_count": len(pack.slides),
+                    "title": slide.title,
+                    "visual_ref": visual_ref_label,
+                    "visual_type": getattr(visual, "type", None),
+                    "placeholder": placeholder_id,
+                    "png_target": str(png_target) if png_target else None,
+                    "artefact_dir": str(slide_dir),
+                },
+            )
+            logger.debug(
+                "Resolved visual %s type=%s",
+                visual_path,
+                getattr(visual, "type", None),
+                extra={"visual_path": str(visual_path), "visual_type": getattr(visual, "type", None)},
+            )
 
             if is_python_visual and python_visual is not None:
                 try:
@@ -1444,6 +1486,7 @@ def run_pack(
                 visual_context=visual_context,
             )
 
+            slide_started = time.perf_counter()
             if visual.type == "powerbi":
                 assert powerbi_queue is not None
                 powerbi_queue.enqueue(
@@ -1462,7 +1505,10 @@ def run_pack(
             try:
                 assert resolved_pipeline is not None
                 logger.debug(
-                    "Executing pipeline",
+                    "Executing pipeline for slide %s visual_type=%s target=%s",
+                    slide_label,
+                    getattr(visual, "type", None),
+                    str(png_target) if png_target else "-",
                     extra={
                         "slide": slide_label,
                         "visual_type": getattr(visual, "type", None),
@@ -1477,10 +1523,13 @@ def run_pack(
                 raise
             except Exception as exc:
                 logger.exception(
-                    "Slide failed",
+                    "Slide failed %s visual=%s path=%s",
+                    slide_log_context,
+                    visual_ref_label,
+                    visual_path,
                     extra={
                         "slide": slide_label,
-                        "visual_ref": visual_ref,
+                        "visual_ref": visual_ref_label,
                         "visual_path": str(visual_path),
                     },
                 )
@@ -1497,11 +1546,23 @@ def run_pack(
                     cause=exc,
                 ) from exc
             png_path = _select_png_output(result, options.outputs)
+            duration_ms = int((time.perf_counter() - slide_started) * 1000)
             logger.info(
-                "Slide completed",
+                "Slide completed %s type=%s duration_ms=%s png=%s artefact_dir=%s",
+                slide_log_context,
+                getattr(visual, "type", None),
+                duration_ms,
+                str(png_path) if png_path else "-",
+                slide_dir,
                 extra={
                     "slide": slide_label,
+                    "index": index,
+                    "slide_count": len(pack.slides),
+                    "title": slide.title,
                     "visual_type": getattr(visual, "type", None),
+                    "visual_ref": visual_ref_label,
+                    "placeholder": placeholder_id,
+                    "duration_ms": duration_ms,
                     "png_path": str(png_path) if png_path else None,
                     "artefact_dir": str(slide_dir),
                 },
@@ -1563,7 +1624,10 @@ def run_pack(
 
     if evidence_only:
         logger.info(
-            "Evidence-only pack run: skipping slide execution and PPTX assembly",
+            "Evidence-only pack run: skipping slide execution and PPTX assembly for %s (slides=%s, targets=%s)",
+            pack_path,
+            len(pack.slides),
+            len(evidence_targets),
             extra={"pack_path": str(pack_path), "slide_count": len(pack.slides), "target_count": len(evidence_targets)},
         )
 
@@ -1599,7 +1663,11 @@ def run_pack(
 
             failure_count = sum(1 for entry in manifest_bindings if entry.get("status") == "failed")
             logger.info(
-                "Evidence-only pack run: evidence exports finished",
+                "Evidence-only pack run: evidence exports finished pack=%s targets=%s failures=%s manifest=%s",
+                pack_path,
+                len(manifest_bindings),
+                failure_count,
+                manifest_path,
                 extra={
                     "pack_path": str(pack_path),
                     "manifest_path": str(manifest_path),
@@ -1613,8 +1681,10 @@ def run_pack(
 
         elapsed = time.perf_counter() - started
         logger.info(
-            "Evidence-only pack run completed in %.3fs",
+            "Evidence-only pack run completed in %.3fs pack=%s slides=%s",
             elapsed,
+            pack_path,
+            len(pack.slides),
             extra={"pack": str(pack_path), "slide_count": len(pack.slides)},
         )
 
@@ -1709,7 +1779,12 @@ def run_pack(
                 )
 
             logger.info(
-                "Running pack evidence exports",
+                "Running pack evidence exports pack=%s targets=%s when=%s on_error=%s output_dir=%s",
+                pack_path,
+                len(evidence_targets),
+                evidence_config.when,
+                evidence_config.on_error,
+                evidence_config.output_dir,
                 extra={
                     "pack_path": str(pack_path),
                     "target_count": len(evidence_targets),
@@ -1732,7 +1807,11 @@ def run_pack(
 
             failure_count = sum(1 for entry in manifest_bindings if entry.get("status") == "failed")
             logger.info(
-                "Pack evidence exports finished",
+                "Pack evidence exports finished pack=%s targets=%s failures=%s manifest=%s",
+                pack_path,
+                len(manifest_bindings),
+                failure_count,
+                manifest_path,
                 extra={
                     "pack_path": str(pack_path),
                     "manifest_path": str(manifest_path),
@@ -1743,7 +1822,10 @@ def run_pack(
             )
             if has_failures:
                 logger.warning(
-                    "Pack evidence exports reported failures",
+                    "Pack evidence exports reported failures pack=%s failures=%s manifest=%s",
+                    pack_path,
+                    failure_count,
+                    manifest_path,
                     extra={
                         "pack": str(pack_path),
                         "manifest_path": str(manifest_path),
@@ -1755,7 +1837,10 @@ def run_pack(
                 evidence_failure = (manifest_path, failure_count)
         else:
             logger.info(
-                "Skipping pack evidence exports (pack failures and when=pack_complete)",
+                "Skipping pack evidence exports for %s (failed_powerbi=%s, when=%s)",
+                pack_path,
+                len(failed_powerbi),
+                evidence_config.when,
                 extra={
                     "pack_path": str(pack_path),
                     "when": evidence_config.when,
@@ -1766,7 +1851,9 @@ def run_pack(
     if failed_powerbi:
         failed_slides = [item.job.slide_slug for item in failed_powerbi]
         logger.error(
-            "Power BI slides failed",
+            "Power BI slides failed count=%s slides=%s",
+            len(failed_slides),
+            ", ".join(failed_slides),
             extra={"failed_slide_count": len(failed_slides), "failed_slides": failed_slides},
         )
         summary = _format_powerbi_failure_summary(failed_powerbi)
@@ -1811,8 +1898,12 @@ def run_pack(
 
     elapsed = time.perf_counter() - started
     logger.info(
-        "Pack run completed in %.3fs",
+        "Pack run completed in %.3fs pack=%s slides=%s results=%s result_file=%s",
         elapsed,
+        pack_path,
+        len(pack.slides),
+        len(sorted_results),
+        str(result_file) if result_file else "-",
         extra={
             "pack": str(pack_path),
             "slide_count": len(pack.slides),

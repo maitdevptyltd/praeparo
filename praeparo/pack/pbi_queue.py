@@ -56,13 +56,17 @@ class PowerBIExportQueue:
         )
         self._futures: list[concurrent.futures.Future[PowerBIExportResult]] = []
         logger.info(
-            "Initialised Power BI export queue",
+            "Initialised Power BI export queue (max_concurrent_exports=%s)",
+            max_concurrent_exports,
             extra={"max_concurrent_exports": max_concurrent_exports},
         )
 
     def enqueue(self, job: PowerBIExportJob) -> None:
-        logger.debug(
-            "Enqueued Power BI slide",
+        logger.info(
+            "Queued Power BI export slide=%s title=%r visual=%s",
+            job.slide_slug,
+            job.slide_title,
+            job.visual_path,
             extra={
                 "slide": job.slide_slug,
                 "title": job.slide_title,
@@ -84,7 +88,10 @@ class PowerBIExportQueue:
         success_count = sum(1 for item in results if item.succeeded)
         failure_count = len(results) - success_count
         logger.info(
-            "Power BI export queue drained",
+            "Power BI export queue drained (success=%s, failed=%s, total=%s)",
+            success_count,
+            failure_count,
+            len(results),
             extra={"success_count": success_count, "failure_count": failure_count},
         )
         # Preserve original slide order for downstream callers.
@@ -100,8 +107,13 @@ class PowerBIExportQueue:
             if target.kind is OutputKind.PNG
         ]
 
-        logger.debug(
-            "Starting Power BI export",
+        logger.info(
+            "Starting Power BI export slide=%s title=%r visual=%s target=%s filters=%s",
+            job.slide_slug,
+            job.slide_title,
+            job.visual_path,
+            ", ".join(png_targets) if png_targets else "-",
+            len(filters) if isinstance(filters, (list, dict)) else 0,
             extra={
                 "slide": job.slide_slug,
                 "title": job.slide_title,
@@ -115,8 +127,11 @@ class PowerBIExportQueue:
         try:
             result = self._pipeline.execute(job.visual, job.execution_context)
             duration = time.perf_counter() - start
-            logger.debug(
-                "Power BI export completed",
+            logger.info(
+                "Power BI export completed slide=%s duration_ms=%s target=%s",
+                job.slide_slug,
+                int(duration * 1000),
+                ", ".join(png_targets) if png_targets else "-",
                 extra={
                     "slide": job.slide_slug,
                     "duration_seconds": round(duration, 3),
@@ -127,7 +142,11 @@ class PowerBIExportQueue:
         except Exception as exc:  # pragma: no cover - exercised via tests
             duration = time.perf_counter() - start
             logger.exception(
-                "Power BI export failed",
+                "Power BI export failed slide=%s title=%r duration_ms=%s visual=%s",
+                job.slide_slug,
+                job.slide_title,
+                int(duration * 1000),
+                job.visual_path,
                 extra={
                     "slide": job.slide_slug,
                     "title": job.slide_title,

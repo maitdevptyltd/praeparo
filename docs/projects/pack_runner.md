@@ -659,9 +659,16 @@ or by setting the environment variable:
 PRAEPARO_LOG_LEVEL=INFO poetry run praeparo pack run projects/example/pack.yaml --artefact-dir out/example/pack_png
 ```
 
-Log records include the pack path, slide slug/title, resolved visual type,
-filter key counts, and PNG/artefact destinations to help pinpoint long-running
-slides and timeouts.
+The human-readable INFO message includes the pack path, slide ordinal, slide
+slug/id/title, placeholder id (when applicable), visual ref/type,
+PNG/artefact destinations, and per-slide duration. The same fields remain on
+the structured `extra` payload for log processors, but the visible message is
+scan-friendly for viewers that hide structured fields.
+
+Evidence logs follow the same rule: pack evidence runs include the pack path,
+target count, data mode, output directory, per-binding ordinal, slide slug,
+placeholder id, binding id, metric key, row count, duration, evidence path, and
+manifest path in the message text.
 
 On successful completion, the CLI also prints a short summary including the PPTX
 path (when configured) and the total elapsed duration for the pack run.
@@ -960,6 +967,9 @@ legacy `<pack-slug>.pptx`.
 
 ## Changelog
 
+- 2026-04-29: Expanded pack, slide, Power BI, and evidence INFO log
+  messages so log viewers that hide structured fields still show slide,
+  binding, metric, path, count, and duration context.
 - 2026-02-25: Default `context.metrics` zero-row handling to allow empty results (`allow_empty: true` by default), with optional strict mode via `allow_empty: false`.
 - 2026-02-23: Flow `slide.calculate` into slide metric-context resolution (DEFINE scope) before applying slide `context.metrics.calculate` overrides.
 - 2025-12-12: Inherit `context.metrics.calculate` into slide metric-context execution, with DEFINE/EVALUATE scoping preserved and per-slide by-name overrides.

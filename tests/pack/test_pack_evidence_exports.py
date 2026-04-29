@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from typing import Mapping
 
@@ -291,6 +292,65 @@ def test_run_pack_exports_evidence_for_selected_bindings(tmp_path: Path) -> None
     bindings = manifest.get("bindings")
     assert isinstance(bindings, list)
     assert {entry.get("status") for entry in bindings} == {"skipped"}
+
+
+def test_run_pack_evidence_logs_human_readable_target_context(caplog, tmp_path: Path) -> None:
+    metrics_root = tmp_path / "registry" / "metrics"
+    _write_test_metric(metrics_root)
+
+    pack_path = tmp_path / "registry" / "customers" / "foo" / "pack.yaml"
+    pack_path.parent.mkdir(parents=True, exist_ok=True)
+    pack_path.write_text("{}", encoding="utf-8")
+
+    visual_path = pack_path.parent / "visual.yaml"
+    visual_path.write_text("type: dummy_evidence\n", encoding="utf-8")
+
+    register_visual_bindings_adapter("dummy_evidence", _DummyEvidenceBindingsAdapter(), overwrite=True)
+
+    def stub_visual_loader(path: Path):
+        assert path == visual_path.resolve()
+        from praeparo.models import BaseVisualConfig
+
+        return BaseVisualConfig(type="dummy_evidence")
+
+    pack = PackConfig(
+        schema="test-pack",
+        evidence=PackEvidenceConfig(enabled=True, bindings=PackEvidenceBindingsConfig(select=["sla"])),
+        slides=[PackSlide(id="performance_dashboard", title="Performance", visual=PackVisualRef(ref="visual.yaml"))],
+    )
+
+    caplog.set_level(logging.INFO, logger="praeparo.pack")
+    run_pack(
+        pack_path,
+        pack,
+        project_root=tmp_path,
+        output_root=tmp_path / "artefacts",
+        base_options=PipelineOptions(data=PipelineDataOptions(provider_key="mock")),
+        pipeline=_StubPipeline(),  # type: ignore[arg-type]
+        visual_loader=stub_visual_loader,
+        env=create_pack_jinja_env(),
+    )
+
+    messages = [record.getMessage() for record in caplog.records if record.name.startswith("praeparo.pack")]
+
+    assert any(
+        "Starting pack evidence exports" in message
+        and "targets=2" in message
+        and "mode=mock" in message
+        and "_evidence" in message
+        for message in messages
+    )
+    assert any(
+        "Exporting evidence 1/2 slide=performance_dashboard binding=row_0 metric=documents_sent" in message
+        for message in messages
+    )
+    assert any(
+        "Evidence export completed 1/2 slide=performance_dashboard binding=row_0 metric=documents_sent" in message
+        and "rows=10" in message
+        and "evidence.csv" in message
+        for message in messages
+    )
+    assert any("Pack evidence exports completed" in message and "manifest=" in message for message in messages)
 
 
 def test_run_pack_evidence_reruns_when_metric_definition_changes(tmp_path: Path) -> None:

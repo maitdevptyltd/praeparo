@@ -60,6 +60,15 @@ class PackEvidenceTarget:
     numerator_define_filters: tuple[str, ...]
 
 
+def _format_evidence_target_log_context(*, target: PackEvidenceTarget, index: int, total: int) -> str:
+    placeholder = f" placeholder={target.placeholder_id}" if target.placeholder_id else ""
+    metric_key = target.binding.metric_key or "-"
+    return (
+        f"{index}/{total} slide={target.slide_slug}{placeholder} "
+        f"binding={target.binding.binding_id} metric={metric_key}"
+    )
+
+
 def select_evidence_bindings(
     bindings: Sequence[VisualMetricBinding],
     *,
@@ -368,7 +377,13 @@ def run_pack_evidence_exports(
     manifest_bindings: list[dict[str, object]] = []
 
     logger.info(
-        "Starting pack evidence exports",
+        "Starting pack evidence exports pack=%s targets=%s mode=%s output=%s concurrency=%s skip_existing=%s",
+        pack_path,
+        len(targets),
+        data_mode,
+        evidence_root,
+        config.explain.max_concurrency,
+        config.explain.skip_existing,
         extra={
             "pack_path": str(pack_path),
             "artefact_dir": str(artefact_dir),
@@ -395,9 +410,12 @@ def run_pack_evidence_exports(
         binding = target.binding
         metric_key = binding.metric_key
         metric_slug = slugify(metric_key or binding.binding_id)
+        target_log_context = _format_evidence_target_log_context(target=target, index=index, total=total)
 
         logger.info(
-            "Exporting evidence",
+            "Exporting evidence %s target=%s",
+            target_log_context,
+            target.target_key,
             extra={
                 "pack_path": str(pack_path),
                 "target": target.target_key,
@@ -482,7 +500,10 @@ def run_pack_evidence_exports(
                 overwrite=False,
             )
             logger.info(
-                "Skipped evidence export (fingerprint match)",
+                "Skipped evidence export %s target=%s (fingerprint match) evidence=%s",
+                target_log_context,
+                target.target_key,
+                outputs.evidence_path,
                 extra={
                     "pack_path": str(pack_path),
                     "target": target.target_key,
@@ -516,7 +537,11 @@ def run_pack_evidence_exports(
 
             write_explain_dax(outputs.dax_path, "-- Skipped: binding does not reference a catalogue metric key.\n")
             logger.warning(
-                "Skipping evidence export for non-catalog binding",
+                "Skipping evidence export %s target=%s (non-catalog binding, explicitly_included=%s, on_error=%s)",
+                target_log_context,
+                target.target_key,
+                explicitly_included,
+                config.on_error,
                 extra={
                     "pack_path": str(pack_path),
                     "target": target.target_key,
@@ -576,7 +601,12 @@ def run_pack_evidence_exports(
             )
             elapsed_ms = int((time.perf_counter() - started) * 1000)
             logger.info(
-                "Evidence export completed",
+                "Evidence export completed %s target=%s rows=%s duration_ms=%s evidence=%s",
+                target_log_context,
+                target.target_key,
+                row_count,
+                elapsed_ms,
+                evidence_path,
                 extra={
                     "pack_path": str(pack_path),
                     "target": target.target_key,
@@ -611,7 +641,10 @@ def run_pack_evidence_exports(
             has_failures = True
             elapsed_ms = int((time.perf_counter() - started) * 1000)
             logger.exception(
-                "Evidence export failed",
+                "Evidence export failed %s target=%s duration_ms=%s",
+                target_log_context,
+                target.target_key,
+                elapsed_ms,
                 extra={
                     "pack_path": str(pack_path),
                     "target": target.target_key,
@@ -681,7 +714,13 @@ def run_pack_evidence_exports(
     failure_count = sum(1 for entry in manifest_bindings if entry.get("status") == "failed")
     skipped_count = sum(1 for entry in manifest_bindings if str(entry.get("status", "")).startswith("skipped"))
     logger.info(
-        "Pack evidence exports completed",
+        "Pack evidence exports completed pack=%s targets=%s failures=%s skipped=%s duration_ms=%s manifest=%s",
+        pack_path,
+        len(ordered_targets),
+        failure_count,
+        skipped_count,
+        elapsed_ms,
+        manifest_path,
         extra={
             "pack_path": str(pack_path),
             "manifest_path": str(manifest_path),

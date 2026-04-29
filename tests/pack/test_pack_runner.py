@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import logging
 from dataclasses import dataclass
 from datetime import date
 import threading
@@ -426,6 +427,65 @@ def test_run_pack_resolves_registry_anchored_visual_refs(tmp_path: Path) -> None
     )
 
     assert captured["visual_path"] == visual_path.resolve()
+
+
+def test_run_pack_logs_human_readable_slide_context(caplog, tmp_path: Path) -> None:
+    (tmp_path / "registry" / "metrics").mkdir(parents=True)
+
+    pack_path = tmp_path / "registry" / "customers" / "foo" / "pack.yaml"
+    pack_path.parent.mkdir(parents=True, exist_ok=True)
+    pack_path.write_text("{}", encoding="utf-8")
+
+    visual_path = pack_path.parent / "visual.yaml"
+    visual_path.write_text("type: matrix\n", encoding="utf-8")
+
+    pack = PackConfig(
+        schema="test-pack",
+        slides=[
+            PackSlide(
+                id="dashboard",
+                title="Dashboard",
+                visual=PackVisualRef(ref="visual.yaml"),
+            ),
+        ],
+    )
+
+    def stub_visual_loader(path: Path) -> BaseVisualConfig:
+        assert path == visual_path.resolve()
+        return BaseVisualConfig(type="matrix")
+
+    caplog.set_level(logging.INFO, logger="praeparo.pack.runner")
+    pipeline = _StubPipeline()
+    run_pack(
+        pack_path,
+        pack,
+        project_root=tmp_path,
+        output_root=tmp_path / "artefacts",
+        base_options=PipelineOptions(),
+        visual_loader=stub_visual_loader,
+        pipeline=cast(Any, pipeline),
+        env=create_pack_jinja_env(),
+    )
+
+    messages = [record.getMessage() for record in caplog.records if record.name == "praeparo.pack.runner"]
+
+    assert any(
+        "Running pack" in message and str(pack_path) in message and "slides=1" in message
+        for message in messages
+    )
+    assert any(
+        "Processing slide 1/1 slug=dashboard id=dashboard title='Dashboard'" in message
+        and "visual=visual.yaml" in message
+        and "type=matrix" in message
+        and "[01]_dashboard.png" in message
+        for message in messages
+    )
+    assert any(
+        "Slide completed 1/1 slug=dashboard id=dashboard title='Dashboard'" in message
+        and "duration_ms=" in message
+        and "[01]_dashboard.png" in message
+        for message in messages
+    )
 
 
 def test_run_pack_rejects_registry_anchored_visual_refs_that_escape(tmp_path: Path) -> None:
